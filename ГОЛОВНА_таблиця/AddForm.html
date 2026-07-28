@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #1a3a5c; font-size: 15px; border-bottom: 2px solid #2e6da4; padding-bottom: 7px; margin-bottom: 14px; }
+  .f { margin-bottom: 10px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+  select, input, textarea { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; font-family: Arial, sans-serif; }
+  select:focus, input:focus, textarea:focus { border-color: #2e6da4; outline: none; }
+  textarea { height: 50px; resize: vertical; }
+  .req { color: #c00; }
+
+  /* Кількість */
+  .qty-wrap { display: flex; align-items: center; gap: 8px; }
+  .qty-wrap input { width: 70px; text-align: center; font-size: 15px; font-weight: bold; }
+  .qty-btn { width: 34px; height: 34px; border: 1px solid #ccc; border-radius: 4px; background: #f0f0f0; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; user-select: none; }
+  .qty-btn:hover { background: #2e6da4; color: #fff; border-color: #2e6da4; }
+  .qty-note { font-size: 10px; color: #888; font-style: italic; }
+
+  /* ID preview */
+  .id-preview { background: #1a3a5c; color: #fff; border-radius: 4px; padding: 6px 10px; text-align: center; margin-bottom: 12px; display: none; }
+  .id-preview .lbl { font-size: 9px; opacity: .7; }
+  .id-preview .short { font-size: 20px; font-weight: bold; letter-spacing: 2px; }
+  .id-preview .full  { font-size: 10px; opacity: .55; margin-top: 1px; }
+  .id-preview .range { font-size: 11px; opacity: .8; margin-top: 2px; }
+
+  /* Autocomplete */
+  .ac-wrap { position: relative; }
+  .ac-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; max-height: 160px; overflow-y: auto; z-index: 200; display: none; }
+  .ac-item { padding: 7px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .ac-item.new { color: #2e6da4; font-style: italic; }
+  .ac-item:hover { background: #e8f4fd; }
+
+  .btn { width: 100%; padding: 10px; background: #1a3a5c; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn:hover { background: #2e6da4; }
+  .btn:disabled { background: #999; cursor: not-allowed; }
+  .btn-sec { background: #6c757d; margin-top: 5px; }
+
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok  { background: #d4edda; color: #155724; display: block; }
+  .err { background: #f8d7da; color: #721c24; display: block; }
+
+  /* Результат масового додавання */
+  .result-list { font-size: 11px; margin-top: 6px; max-height: 120px; overflow-y: auto; }
+  .result-item { padding: 4px 0; border-bottom: 1px solid #c3e6cb; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .result-id { font-weight: bold; color: #1a3a5c; font-size: 11px; flex: 1; }
+  .result-short { background: #1a3a5c; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 13px; font-weight: bold; letter-spacing: 2px; text-align: center; white-space: nowrap; }
+</style>
+</head>
+<body>
+<h3>📦 Новий предмет</h3>
+
+<div class="id-preview" id="idPreview">
+  <div class="lbl" id="previewLbl">НА НАКЛЕЙКУ</div>
+  <div class="short" id="shortIdText">—</div>
+  <div class="full"  id="fullIdText"></div>
+  <div class="range" id="rangeText"></div>
+</div>
+
+<div class="f">
+  <label>Тип обладнання <span class="req">*</span></label>
+  <select id="type" onchange="onTypeChange()">
+    <option value="">— оберіть —</option>
+  </select>
+</div>
+
+<div class="f">
+  <label>Назва <span class="req">*</span></label>
+  <div class="ac-wrap">
+    <input type="text" id="name" placeholder="Введи або обери з довідника..." oninput="onNameInput()" onfocus="onNameFocus()" autocomplete="off">
+    <div class="ac-list" id="acList"></div>
+  </div>
+</div>
+
+<div class="f">
+  <label>Закріплення <span class="req">*</span></label>
+  <select id="assignment">
+    <option value="">— оберіть —</option>
+  </select>
+</div>
+
+<div class="f">
+  <label>Статус</label>
+  <select id="status"></select>
+</div>
+
+<div class="f">
+  <label>Відповідальний</label>
+  <div class="ac-wrap">
+    <input type="text" id="responsible" placeholder="ПІБ або позивний" oninput="filterResp()" onfocus="showAllResp()" autocomplete="off">
+    <div class="ac-list" id="acResp"></div>
+  </div>
+</div>
+
+<div class="f">
+  <label>Дата отримання</label>
+  <input type="date" id="date">
+</div>
+
+<!-- КІЛЬКІСТЬ -->
+<div class="f">
+  <label>Кількість <span style="font-weight:normal;text-transform:none;font-size:11px;color:#666">(макс. 20)</span></label>
+  <div class="qty-wrap">
+    <button class="qty-btn" onclick="changeQty(-1)">−</button>
+    <input type="number" id="qty" value="1" min="1" max="20" oninput="onQtyChange()">
+    <button class="qty-btn" onclick="changeQty(1)">+</button>
+    <span class="qty-note" id="qtyNote">1 предмет</span>
+  </div>
+</div>
+
+<div class="f">
+  <label>Примітка</label>
+  <textarea id="note" placeholder="Особливості, комплектація..."></textarea>
+</div>
+
+<button class="btn" id="submitBtn" onclick="submit()">✅ Додати запис</button>
+<button class="btn btn-sec" onclick="clearForm()">🗑️ Очистити</button>
+<div id="msg" class="msg"></div>
+
+<script>
+var formData    = null;
+var typeNames   = {};
+var responsibles = [];
+var currentCode = '';
+var nextNum     = 1;
+
+// Завантажити дані
+google.script.run
+  .withSuccessHandler(function(list) {
+    responsibles = list;
+  })
+  .withFailureHandler(function() {})
+  .getResponsibleList();
+
+google.script.run
+  .withSuccessHandler(function(d) {
+    formData = d;
+    var sel = document.getElementById('type');
+    d.types.forEach(function(v) {
+      var o = document.createElement('option');
+      o.value = v; o.textContent = v; sel.appendChild(o);
+    });
+    var asel = document.getElementById('assignment');
+    d.assignments.forEach(function(v) {
+      var o = document.createElement('option');
+      o.value = v; o.textContent = v; asel.appendChild(o);
+    });
+    var ssel = document.getElementById('status');
+    d.statuses.forEach(function(v) {
+      var o = document.createElement('option');
+      o.value = v; o.textContent = v; ssel.appendChild(o);
+    });
+    document.getElementById('date').value = d.today;
+  })
+  .getFormData();
+
+// Зміна типу
+function onTypeChange() {
+  var v = document.getElementById('type').value;
+  if (!v) { document.getElementById('idPreview').style.display = 'none'; return; }
+  currentCode = v.split(' ')[0];
+
+  if (!typeNames[currentCode]) {
+    google.script.run
+      .withSuccessHandler(function(names) { typeNames[currentCode] = names; })
+      .getNamesByType(currentCode);
+  }
+
+  google.script.run
+    .withSuccessHandler(function(num) {
+      nextNum = num;
+      updatePreview();
+    })
+    .getNextIdNum(currentCode);
+
+  document.getElementById('name').value = '';
+  document.getElementById('acList').style.display = 'none';
+}
+
+function updatePreview() {
+  if (!currentCode) return;
+  var qty = getQty();
+  var today = document.getElementById('date').value.replace(/-/g, '') ||
+    new Date().toISOString().slice(0,10).replace(/-/g,'');
+
+  var firstShort = currentCode + '-' + pad(nextNum, 4);
+  var preview = document.getElementById('idPreview');
+
+  if (qty === 1) {
+    document.getElementById('previewLbl').textContent = 'НА НАКЛЕЙКУ';
+    document.getElementById('shortIdText').textContent = firstShort;
+    document.getElementById('fullIdText').textContent = 'В таблиці: ' + firstShort + '-' + today;
+    document.getElementById('rangeText').textContent = '';
+  } else {
+    var lastShort = currentCode + '-' + pad(nextNum + qty - 1, 4);
+    document.getElementById('previewLbl').textContent = 'НА НАКЛЕЙКИ (' + qty + ' шт)';
+    document.getElementById('shortIdText').textContent = firstShort + ' … ' + lastShort;
+    document.getElementById('fullIdText').textContent = '';
+    document.getElementById('rangeText').textContent =
+      firstShort + '-' + today + '  →  ' + lastShort + '-' + today;
+  }
+  preview.style.display = 'block';
+}
+
+// Кількість
+function getQty() {
+  var v = parseInt(document.getElementById('qty').value, 10);
+  if (isNaN(v) || v < 1) return 1;
+  if (v > 20) return 20;
+  return v;
+}
+
+function changeQty(delta) {
+  var cur = getQty();
+  var next = Math.min(20, Math.max(1, cur + delta));
+  document.getElementById('qty').value = next;
+  onQtyChange();
+}
+
+function onQtyChange() {
+  var q = getQty();
+  document.getElementById('qty').value = q;
+  var note = q === 1 ? '1 предмет' : q + ' предмети/ів';
+  document.getElementById('qtyNote').textContent = note;
+  updatePreview();
+}
+
+// Назва — autocomplete з довідника
+function onNameFocus() {
+  var names = currentCode && typeNames[currentCode] ? typeNames[currentCode] : [];
+  if (names.length) renderAcNames(names, document.getElementById('name').value.trim());
+}
+
+function onNameInput() {
+  var q = document.getElementById('name').value.toLowerCase().trim();
+  var names = (currentCode && typeNames[currentCode]) ? typeNames[currentCode] : [];
+  renderAcNames(names, q);
+}
+
+function renderAcNames(names, q) {
+  var list = document.getElementById('acList');
+  var filtered = q ? names.filter(function(n) { return n.toLowerCase().includes(q); }) : names;
+  var inputVal = document.getElementById('name').value.trim();
+  var html = filtered.map(function(n) {
+    return '<div class="ac-item" onclick="selectName(\'' + esc(n) + '\')">' + esc(n) + '</div>';
+  }).join('');
+  var isNew = inputVal && !names.some(function(n) { return n.toLowerCase() === inputVal.toLowerCase(); });
+  if (isNew) {
+    html += '<div class="ac-item new" onclick="selectName(\'' + esc(inputVal) + '\')">➕ Додати "' + esc(inputVal) + '"</div>';
+  }
+  if (!html) { list.style.display = 'none'; return; }
+  list.innerHTML = html;
+  list.style.display = 'block';
+}
+
+function selectName(name) {
+  document.getElementById('name').value = name;
+  document.getElementById('acList').style.display = 'none';
+}
+
+// Відповідальний — autocomplete
+function filterResp() {
+  var q = document.getElementById('responsible').value.toLowerCase().trim();
+  var list = document.getElementById('acResp');
+  var filtered = q ? responsibles.filter(function(r) { return r.toLowerCase().includes(q); }) : responsibles;
+  if (!filtered.length) { list.style.display = 'none'; return; }
+  list.innerHTML = filtered.map(function(r) {
+    return '<div class="ac-item" onclick="selResp(\'' + esc(r) + '\')">' + esc(r) + '</div>';
+  }).join('');
+  list.style.display = 'block';
+}
+
+function showAllResp() {
+  if (responsibles.length) {
+    filterResp();
+  } else {
+    setTimeout(function() { if (responsibles.length) filterResp(); }, 600);
+  }
+}
+
+function selResp(v) {
+  document.getElementById('responsible').value = v;
+  document.getElementById('acResp').style.display = 'none';
+}
+
+// Сабміт
+function submit() {
+  var type        = document.getElementById('type').value;
+  var name        = document.getElementById('name').value.trim();
+  var assignment  = document.getElementById('assignment').value;
+  var status      = document.getElementById('status').value;
+  var responsible = document.getElementById('responsible').value.trim();
+  var date        = document.getElementById('date').value;
+  var note        = document.getElementById('note').value.trim();
+  var qty         = getQty();
+
+  if (!type)       { showMsg('❌ Оберіть тип обладнання', 'err'); return; }
+  if (!name)       { showMsg('❌ Введіть назву', 'err'); return; }
+  if (!assignment) { showMsg('❌ Оберіть закріплення', 'err'); return; }
+
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = qty > 1 ? '⏳ Додаємо ' + qty + ' записів...' : '⏳ Зберігаємо...';
+
+  google.script.run
+    .withSuccessHandler(function(results) {
+      // Показати результат
+      var el = document.getElementById('msg');
+      if (qty === 1) {
+        var r = results[0];
+        el.innerHTML =
+          '<div style="margin-bottom:5px">✅ ' + esc(r.fullId) + ' — ' + esc(r.name) + '</div>' +
+          '<div style="background:#1a3a5c;color:#fff;padding:6px 10px;border-radius:4px;text-align:center">' +
+            '<div style="font-size:9px;opacity:.7">НА НАКЛЕЙКУ:</div>' +
+            '<div style="font-size:24px;font-weight:bold;letter-spacing:3px">' + esc(r.shortId) + '</div>' +
+          '</div>';
+      } else {
+        var listHtml = results.map(function(r) {
+          return '<div class="result-item">' +
+            '<span class="result-id">' + esc(r.fullId) + '<br><span style="font-weight:normal;font-size:10px;opacity:.8">' + esc(r.name) + '</span></span>' +
+            '<span class="result-short" style="text-align:center;min-width:70px">' + esc(r.shortId) + '</span>' +
+          '</div>';
+        }).join('');
+        el.innerHTML =
+          '<div style="margin-bottom:5px">✅ Додано ' + results.length + ' записів:</div>' +
+          '<div class="result-list">' + listHtml + '</div>';
+      }
+      el.className = 'msg ok';
+
+      // Оновити кеш
+      if (currentCode) {
+        if (!typeNames[currentCode]) typeNames[currentCode] = [];
+        if (typeNames[currentCode].indexOf(name) === -1) typeNames[currentCode].push(name);
+      }
+      if (responsible && responsibles.indexOf(responsible) === -1) {
+        responsibles.push(responsible); responsibles.sort();
+      }
+
+      clearForm();
+      btn.disabled = false;
+      btn.textContent = '✅ Додати запис';
+    })
+    .withFailureHandler(function(e) {
+      showMsg('❌ ' + e.message, 'err');
+      btn.disabled = false;
+      btn.textContent = '✅ Додати запис';
+    })
+    .addItemsFromForm({ type:type, name:name, assignment:assignment,
+      status:status, responsible:responsible, date:date, note:note, qty:qty });
+}
+
+function clearForm() {
+  document.getElementById('type').selectedIndex = 0;
+  document.getElementById('assignment').selectedIndex = 0;
+  document.getElementById('name').value = '';
+  document.getElementById('responsible').value = '';
+  document.getElementById('note').value = '';
+  document.getElementById('qty').value = 1;
+  document.getElementById('qtyNote').textContent = '1 предмет';
+  if (document.getElementById('status').options.length > 0)
+    document.getElementById('status').selectedIndex = 0;
+  if (formData) document.getElementById('date').value = formData.today;
+  document.getElementById('idPreview').style.display = 'none';
+  document.getElementById('acList').style.display = 'none';
+  document.getElementById('acResp').style.display = 'none';
+  currentCode = '';
+}
+
+function pad(n, len) { return String(n).padStart(len, '0'); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showMsg(txt, cls) {
+  var el = document.getElementById('msg');
+  if (typeof txt === 'string') el.textContent = txt; else el.innerHTML = txt;
+  el.className = 'msg ' + cls;
+  if (cls === 'ok') setTimeout(function(){ el.className = 'msg'; }, 10000);
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest) return;
+  if (!e.target.closest('.ac-wrap')) {
+    document.getElementById('acList').style.display = 'none';
+    document.getElementById('acResp').style.display = 'none';
+  }
+});
+</script>
+</body>
+</html>

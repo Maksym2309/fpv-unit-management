@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #1a3a5c; font-size: 15px; border-bottom: 2px solid #2e6da4; padding-bottom: 7px; margin-bottom: 14px; }
+  .fs-icon-btn { position: absolute; top: 9px; right: 12px; height: 24px; display: flex; align-items: center; background: transparent; color: #1a3a5c; border: none; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px; }
+  .fs-icon-btn:hover { color: #2e6da4; }
+  .f { margin-bottom: 11px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+  select, input { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; font-family: Arial, sans-serif; }
+  select:focus, input:focus { border-color: #2e6da4; outline: none; }
+  .hint { font-size: 10px; color: #888; margin-top: 3px; font-style: italic; }
+  .tabs { display: flex; border-bottom: 2px solid #2e6da4; margin-bottom: 14px; }
+  .tab { padding: 7px 10px; cursor: pointer; font-size: 11px; font-weight: bold; color: #666; border-radius: 4px 4px 0 0; flex: 1; text-align: center; }
+  .tab.active { background: #2e6da4; color: #fff; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .card { background: #fff; border: 1px solid #ddd; border-left: 4px solid #2e6da4; border-radius: 4px; padding: 10px; margin-bottom: 8px; }
+  .card-ok   { border-left-color: #155724; }
+  .card-bad  { border-left-color: #721c24; }
+  .card-lost { border-left-color: #3d0000; background: #1a0505; }
+  .card-title { font-weight: bold; font-size: 12px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+  .card-meta  { font-size: 11px; color: #666; line-height: 1.7; }
+  .card-lost .card-meta { color: #ff9999; }
+  .card-lost .card-title { color: #ff9999; }
+  .st-badge { font-size: 10px; padding: 2px 7px; border-radius: 8px; }
+  .st-ok   { background: #d4edda; color: #155724; }
+  .st-bad  { background: #f8d7da; color: #721c24; }
+  .st-lost { background: #3d0000; color: #ff9999; }
+  .btn { width: 100%; padding: 10px; background: #1a3a5c; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn:hover { background: #2e6da4; }
+  .btn:disabled { background: #999; }
+  .btn-sm { width: auto; padding: 4px 10px; font-size: 11px; background: #6c757d; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin-right: 3px; }
+  .btn-sm:hover { background: #495057; }
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok  { background: #d4edda; color: #155724; display: block; }
+  .err { background: #f8d7da; color: #721c24; display: block; }
+  .loading { text-align: center; color: #888; padding: 20px; }
+  .empty { text-align: center; color: #aaa; padding: 20px; font-size: 12px; }
+  hr { border: none; border-top: 2px solid #e0e0e0; margin: 16px 0; }
+  .section-title { font-weight: bold; color: #1a3a5c; margin-bottom: 10px; font-size: 13px; }
+  .ac-wrap { position: relative; }
+  .ac-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; max-height: 150px; overflow-y: auto; z-index: 100; display: none; }
+  .ac-item { padding: 7px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .ac-item:hover { background: #e8f4fd; }
+</style>
+</head>
+<body>
+<h3>📡 Sinotrack</h3>
+<button class="fs-icon-btn" id="fsBtn" onclick="goFullscreen()" title="На весь екран">⛶</button>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('list')">📋 Трекери</div>
+  <div class="tab" onclick="switchTab('sims')">📱 SIM-карти</div>
+  <div class="tab" onclick="switchTab('add')">➕ Додати</div>
+</div>
+
+<div id="tab-list" class="tab-content active">
+  <div id="trackerList" class="loading">⏳ Завантаження...</div>
+</div>
+
+<div id="tab-sims" class="tab-content">
+  <div id="simList" class="loading">⏳ Завантаження...</div>
+</div>
+
+<div id="tab-add" class="tab-content">
+
+  <div class="section-title">📡 Новий трекер</div>
+  <div class="f"><label>Модель *</label>
+    <div class="ac-wrap">
+      <input type="text" id="newModel" placeholder="напр. Sinotrack ST-906" oninput="acModel()" autocomplete="off">
+      <div class="ac-list" id="acModel"></div>
+    </div>
+  </div>
+  <div class="f"><label>ID трекера</label>
+    <input type="text" id="newImei" placeholder="ID з SMS-відповіді (не IMEI)">
+    <div class="hint">💡 Надішли SMS з текстом <strong>669000</strong> на номер SIM трекера — отримаєш ID і координати</div>
+  </div>
+  <div class="f"><label>SIM-карта (прив'язати існуючу)</label>
+    <select id="newSimBind">
+      <option value="">— оберіть або залиш порожнім —</option>
+    </select>
+    <div class="hint">Якщо SIM ще немає — спочатку додай її нижче</div>
+  </div>
+  <div class="f"><label>Примітка</label>
+    <input type="text" id="newNote" placeholder="необов'язково"></div>
+  <button class="btn" id="addTrackerBtn" onclick="addTracker()">➕ Додати трекер</button>
+
+  <hr>
+
+  <div class="section-title">📱 Нова SIM-карта</div>
+  <div class="f"><label>Назва контакту *</label>
+    <div class="ac-wrap">
+      <input type="text" id="newSimCName" placeholder="напр. Kyivstar-1" oninput="acSimName()" autocomplete="off">
+      <div class="ac-list" id="acSimName"></div>
+    </div>
+  </div>
+  <div class="f"><label>Номер *</label>
+    <input type="text" id="newSimNum" placeholder="+380XXXXXXXXX"
+      oninput="validatePhone(this)">
+    <div class="hint" id="phoneHint"></div>
+  </div>
+  <button class="btn" id="addSimBtn" onclick="addSim()">➕ Додати SIM</button>
+
+  <div id="msgAdd" class="msg"></div>
+</div>
+
+<script>
+var trackers = [];
+var sims     = [];
+var loaded   = 0;
+
+function goFullscreen() { google.script.run.openSinotrackModal(); }
+(function(){
+  var wide = window.innerWidth > 700 || document.body.classList.contains('in-app');
+  if (wide) {
+    var fs = document.getElementById('fsBtn');
+    if (fs) fs.style.display = 'none';
+    document.body.classList.add('wide-mode');
+  }
+})();
+
+var knownModels   = ['Sinotrack ST-901','Sinotrack ST-906','Sinotrack ST-907','Sinotrack GT02'];
+var knownContacts = [];
+
+google.script.run.withSuccessHandler(function(list) {
+  trackers = list;
+  // Зібрати унікальні моделі для autocomplete
+  list.forEach(function(t) { if (t.model && knownModels.indexOf(t.model) === -1) knownModels.push(t.model); });
+  loaded++; if (loaded >= 2) renderAll();
+}).withFailureHandler(function() { trackers = []; loaded++; if (loaded >= 2) renderAll(); }).getSinotrackList();
+
+google.script.run.withSuccessHandler(function(list) {
+  sims = list;
+  list.forEach(function(s) { if (s.contact && knownContacts.indexOf(s.contact) === -1) knownContacts.push(s.contact); });
+  loaded++; if (loaded >= 2) renderAll();
+}).withFailureHandler(function() { sims = []; loaded++; if (loaded >= 2) renderAll(); }).getSimList();
+
+function renderAll() {
+  renderTrackers();
+  renderSims();
+  // Заповнити select SIM для трекера
+  var sel = document.getElementById('newSimBind');
+  if (sel) {
+    sel.innerHTML = '<option value="">— оберіть або залиш порожнім —</option>' +
+      sims.filter(function(s) { return !s.binding; }).map(function(s) {
+        return '<option value="' + esc(s.id) + '">' + esc(s.contact) + ' · ' + esc(s.number) + '</option>';
+      }).join('');
+  }
+}
+
+function renderTrackers() {
+  var el = document.getElementById('trackerList');
+  if (!trackers.length) {
+    el.innerHTML = '<div class="empty">Трекерів ще немає.<br>Перейди на вкладку "Додати".</div>';
+    return;
+  }
+  el.innerHTML = trackers.map(function(t) {
+    var cardCls = t.status === 'Зламаний' ? 'card card-bad' : (t.status === 'Втрачений' ? 'card card-lost' : 'card card-ok');
+    var stCls   = t.status === 'Зламаний' ? 'st-badge st-bad' : (t.status === 'Втрачений' ? 'st-badge st-lost' : 'st-badge st-ok');
+    var simInfo = t.simContact
+      ? '📱 ' + esc(t.simContact) + ' · ' + esc(t.simNumber)
+      : '📱 SIM не прив\'язана';
+    // Показуємо заводський ID якщо є, інакше наш SNT-xxx
+    var displayId = t.imei ? esc(t.imei) : esc(t.id);
+    var subId     = t.imei ? '<span style="font-size:10px;color:#888;margin-left:4px">('+esc(t.id)+')</span>' : '';
+
+    return '<div class="' + cardCls + '">' +
+      '<div class="card-title">' +
+        '<span>' + displayId + subId + ' — ' + esc(t.model) + '</span>' +
+        '<span class="' + stCls + '">' + esc(t.status) + '</span>' +
+      '</div>' +
+      '<div class="card-meta">' +
+        simInfo + '<br>' +
+        (t.binding ? '🔗 Борт: ' + esc(t.binding) : '') +
+      '</div>' +
+      '<div style="margin-top:6px">' +
+        '<button class="btn-sm" onclick="changeStatus(\'' + esc(t.id) + '\',\'Робочий\')">✅ Робочий</button>' +
+        '<button class="btn-sm" onclick="changeStatus(\'' + esc(t.id) + '\',\'Зламаний\')">🔧 Зламаний</button>' +
+        '<button class="btn-sm" onclick="changeStatus(\'' + esc(t.id) + '\',\'Втрачений\')">❌ Втрачений</button>' +
+      '</div>' +
+      (t.simContact
+        ? '<button class="btn-sm" style="background:#721c24;margin-top:4px;width:100%" onclick="doUnbindSim(this.dataset.id)" data-id="'+esc(t.id)+'">🔌 Відв\'язати SIM</button>'
+        : '<button class="btn-sm" style="background:#14532d;margin-top:4px;width:100%" onclick="openBindSim(this.dataset.id)" data-id="'+esc(t.id)+'">🔗 Прив\'язати SIM</button>') +
+    '</div>';
+  }).join('');
+}
+
+function renderSims() {
+  var el = document.getElementById('simList');
+  if (!sims.length) {
+    el.innerHTML = '<div class="empty">SIM-карт ще немає.<br>Додай через вкладку "Додати".</div>';
+    return;
+  }
+  el.innerHTML = sims.map(function(s) {
+    var lost = s.status==='Втрачена';
+    var cardCls = lost ? 'card card-lost' : 'card card-ok';
+
+    var stBadge = s.status==='Активна'
+      ? '<span class="st-badge st-ok">'+esc(s.status)+'</span>'
+      : (s.status==='Втрачена'
+        ? '<span class="st-badge st-lost">'+esc(s.status)+'</span>'
+        : '<span class="st-badge st-bad">'+esc(s.status)+'</span>');
+
+    return '<div class="'+cardCls+'">' +
+      '<div class="card-title">'+
+        '<span>'+esc(s.id)+' — '+esc(s.contact)+'</span>'+stBadge+
+      '</div>'+
+      '<div class="card-meta">📞 '+esc(s.number)+
+        (s.binding ? '<br>🔗 Трекер: <strong>'+esc(s.binding)+'</strong>' : '<br><span style="color:#aaa">— вільна</span>')+
+      '</div>'+
+      '<div style="margin-top:6px">' +
+        '<button class="btn-sm" data-id="'+esc(s.id)+'" data-st="Активна" onclick="changeSimStatus(this.dataset.id,this.dataset.st)">✅ Активна</button> '+
+        '<button class="btn-sm" data-id="'+esc(s.id)+'" data-st="Заблокована" onclick="changeSimStatus(this.dataset.id,this.dataset.st)">🚫 Заблок.</button> '+
+        '<button class="btn-sm" data-id="'+esc(s.id)+'" data-st="Втрачена" onclick="changeSimStatus(this.dataset.id,this.dataset.st)">❌ Втрачена</button> '+
+        '<button class="btn-sm" data-id="'+esc(s.id)+'" data-st="Невідомо" onclick="changeSimStatus(this.dataset.id,this.dataset.st)">❓ Невідомо</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+// Autocomplete моделі
+function acModel() {
+  var q = document.getElementById('newModel').value.toLowerCase();
+  var list = document.getElementById('acModel');
+  var filtered = knownModels.filter(function(m) { return m.toLowerCase().includes(q); });
+  if (!q || !filtered.length) { list.style.display = 'none'; return; }
+  list.innerHTML = filtered.map(function(m) {
+    return '<div class="ac-item" onclick="selModel(\'' + esc(m) + '\')">' + esc(m) + '</div>';
+  }).join('');
+  list.style.display = 'block';
+}
+function selModel(v) {
+  document.getElementById('newModel').value = v;
+  document.getElementById('acModel').style.display = 'none';
+}
+
+// Autocomplete SIM контакту
+function acSimName() {
+  var q = document.getElementById('newSimCName').value.toLowerCase();
+  var list = document.getElementById('acSimName');
+  var filtered = knownContacts.filter(function(c) { return c.toLowerCase().includes(q); });
+  if (!q || !filtered.length) { list.style.display = 'none'; return; }
+  list.innerHTML = filtered.map(function(c) {
+    return '<div class="ac-item" onclick="selSimName(\'' + esc(c) + '\')">' + esc(c) + '</div>';
+  }).join('');
+  list.style.display = 'block';
+}
+function selSimName(v) {
+  document.getElementById('newSimCName').value = v;
+  document.getElementById('acSimName').style.display = 'none';
+}
+
+// Валідація телефону — тільки підказка, не блокує
+function validatePhone(input) {
+  var val = input.value.trim();
+  var hint = document.getElementById('phoneHint');
+  if (!val) { hint.textContent = ''; return; }
+  var clean = val.replace(/[\s\-\(\)]/g, '');
+  if (/^\+380\d{9}$/.test(clean) || /^380\d{9}$/.test(clean) || /^0\d{9}$/.test(clean)) {
+    hint.style.color = '#155724';
+    hint.textContent = '✅ Формат правильний';
+  } else {
+    hint.style.color = '#888';
+    hint.textContent = 'Формат: +380XXXXXXXXX або 0XXXXXXXXX';
+  }
+}
+
+function changeSimStatus(id, status) {
+  google.script.run
+    .withSuccessHandler(function(){
+      var s = sims.find(function(x){ return x.id===id; });
+      if (s) s.status = status;
+      renderSims();
+    })
+    .withFailureHandler(function(e){ alert('❌ '+e.message); })
+    .updateSimStatus(id, status);
+}
+
+function changeStatus(id, status) {
+  google.script.run
+    .withSuccessHandler(function() {
+      var t = trackers.find(function(x) { return x.id === id; });
+      if (t) t.status = status;
+      renderTrackers();
+    })
+    .withFailureHandler(function(e) { alert('❌ ' + e.message); })
+    .updateSinotrackStatus(id, status, '');
+}
+
+function addTracker() {
+  var model  = document.getElementById('newModel').value.trim();
+  var simId  = document.getElementById('newSimBind').value;
+  if (!model) { showMsg('❌ Введіть модель', 'err'); return; }
+
+  // Знайти SIM дані якщо обрана
+  var simData = simId ? sims.find(function(s) { return s.id === simId; }) : null;
+
+  var btn = document.getElementById('addTrackerBtn');
+  btn.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(id) {
+      var newT = {
+        id: id, model: model, status: 'Робочий',
+        simContact: simData ? simData.contact : '',
+        simNumber:  simData ? simData.number  : '',
+        imei:       document.getElementById('newImei').value.trim(),
+        binding: '', note: document.getElementById('newNote').value.trim()
+      };
+      trackers.push(newT);
+      if (model && knownModels.indexOf(model) === -1) knownModels.push(model);
+      renderTrackers();
+      // Прив'язати SIM якщо обрана
+      if (simId) {
+        google.script.run.bindSimToTracker(simId, id);
+        var s = sims.find(function(x) { return x.id === simId; });
+        if (s) s.binding = id;
+      }
+      showMsg('✅ Трекер ' + id + ' додано', 'ok');
+      document.getElementById('newModel').value = '';
+      document.getElementById('newImei').value  = '';
+      document.getElementById('newNote').value  = '';
+      document.getElementById('newSimBind').value = '';
+      btn.disabled = false;
+    })
+    .withFailureHandler(function(e) { showMsg('❌ ' + e.message, 'err'); btn.disabled = false; })
+    .addSinotrack({
+      model:      model,
+      imei:       document.getElementById('newImei').value.trim(),
+      simContact: simData ? simData.contact : '',
+      simNumber:  simData ? simData.number  : '',
+      note:       document.getElementById('newNote').value.trim(),
+    });
+}
+
+function addSim() {
+  var contact = document.getElementById('newSimCName').value.trim();
+  var number  = document.getElementById('newSimNum').value.trim();
+  if (!contact || !number) { showMsg('❌ Заповніть контакт і номер', 'err'); return; }
+  var btn = document.getElementById('addSimBtn');
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(id) {
+      var newSim = { id: id, contact: contact, number: number, status: 'Активна', binding: '' };
+      sims.push(newSim);
+      if (knownContacts.indexOf(contact) === -1) knownContacts.push(contact);
+      renderSims();
+      // Оновити select трекера
+      var sel = document.getElementById('newSimBind');
+      if (sel) {
+        var opt = document.createElement('option');
+        opt.value = id; opt.textContent = contact + ' · ' + number;
+        sel.appendChild(opt);
+      }
+      showMsg('✅ SIM ' + id + ' додано', 'ok');
+      document.getElementById('newSimCName').value = '';
+      document.getElementById('newSimNum').value   = '';
+      document.getElementById('phoneHint').textContent = '';
+      btn.disabled = false;
+    })
+    .withFailureHandler(function(e) { showMsg('❌ ' + e.message, 'err'); btn.disabled = false; })
+    .addSim({ contact: contact, number: number });
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelector('[onclick="switchTab(\'' + tab + '\')"]').classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+}
+
+function doUnbindSim(trackerId) {
+  if (!confirm('Відв\'язати SIM від трекера ' + trackerId + '?')) return;
+  google.script.run
+    .withSuccessHandler(function(){
+      var t = trackers.find(function(x){ return x.id===trackerId; });
+      if (t) { t.simContact=''; t.simNumber=''; }
+      var s = sims.find(function(x){ return x.binding===trackerId; });
+      if (s) s.binding='';
+      renderTrackers(); renderSims();
+    })
+    .withFailureHandler(function(e){ alert('❌ '+e.message); })
+    .unbindSimFromTracker(trackerId);
+}
+
+function openBindSim(trackerId) {
+  var freeSims = sims.filter(function(s){ return !s.binding; });
+  if (!freeSims.length) { alert('Немає вільних SIM-карт. Додай нову.'); return; }
+  var opts = freeSims.map(function(s){ return s.id+' — '+s.contact+' · '+s.number; }).join('\n');
+  var choice = prompt('Вибери SIM (введи ID):\n\n'+opts);
+
+  if (!choice) return;
+  choice = choice.trim();
+  var sim = sims.find(function(s){ return s.id===choice; });
+  if (!sim) { alert('SIM не знайдено: '+choice); return; }
+
+  google.script.run
+    .withSuccessHandler(function(){
+      var t = trackers.find(function(x){ return x.id===trackerId; });
+      if (t) { t.simContact=sim.contact; t.simNumber=sim.number; }
+      sim.binding = trackerId;
+      renderTrackers(); renderSims();
+    })
+    .withFailureHandler(function(e){
+      var msg = e.message || '';
+      // Жорсткі блокування — не можна обійти
+      if (msg.indexOf('ВТРАЧЕН') !== -1) {
+        alert(msg); return;
+      }
+      // М'які попередження — можна примусово
+      if (confirm(msg + "\n\nПрив'язати все одно?")) {
+        google.script.run
+          .withSuccessHandler(function(){
+            var t = trackers.find(function(x){ return x.id===trackerId; });
+            if (t) { t.simContact=sim.contact; t.simNumber=sim.number; }
+            var oldT = trackers.find(function(x){ return x.simNumber===sim.number && x.id!==trackerId; });
+            if (oldT) { oldT.simContact=''; oldT.simNumber=''; }
+            sim.binding = trackerId;
+            renderTrackers(); renderSims();
+          })
+          .withFailureHandler(function(e2){ alert('❌ '+e2.message); })
+          .bindSimToTracker(sim.id, trackerId, true);
+      }
+    })
+    .bindSimToTracker(sim.id, trackerId, false);
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showMsg(txt, cls) {
+  var el = document.getElementById('msgAdd');
+  el.textContent = txt; el.className = 'msg ' + cls;
+  if (cls === 'ok') setTimeout(function(){ el.className = 'msg'; }, 6000);
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest || !e.target.closest('.ac-wrap')) {
+    ['acModel','acSimName'].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.style.display = 'none';
+    });
+  }
+});
+</script>
+</body>
+</html>

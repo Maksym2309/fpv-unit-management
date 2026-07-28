@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #1a3a5c; font-size: 15px; border-bottom: 2px solid #2e6da4; padding-bottom: 7px; margin-bottom: 14px; }
+  .f { margin-bottom: 11px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+  select, input, textarea { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; font-family: Arial, sans-serif; }
+  select:focus, input:focus, textarea:focus { border-color: #2e6da4; outline: none; }
+  textarea { height: 54px; resize: vertical; }
+  .info { background: #e8f4fd; border: 1px solid #b8daff; border-radius: 4px; padding: 8px; font-size: 12px; margin-bottom: 10px; display: none; line-height: 1.6; }
+
+  /* Блок Втрачений */
+  .lost-block { background: #2d0a0a; border: 1px solid #ff6b6b; border-radius: 6px; padding: 10px; margin-bottom: 10px; display: none; }
+  .lost-block label { color: #ff9999; }
+  .lost-block input, .lost-block textarea { background: #1a0505; color: #ffcccc; border-color: #ff6b6b; }
+  .lost-block input:focus, .lost-block textarea:focus { border-color: #ff9999; outline: none; }
+  .lost-title { color: #ff6b6b; font-weight: bold; font-size: 12px; margin-bottom: 8px; }
+  .lost-hint { color: #ff9999; font-size: 10px; margin-top: 3px; font-style: italic; }
+
+  .btn { width: 100%; padding: 10px; background: #1a3a5c; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn:hover { background: #2e6da4; }
+  .btn:disabled { background: #999; cursor: not-allowed; }
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok  { background: #d4edda; color: #155724; display: block; }
+  .err { background: #f8d7da; color: #721c24; display: block; }
+  .loading { text-align: center; color: #888; padding: 30px; }
+  .search-wrap { position: relative; }
+  .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 100; display: none; }
+  .dropdown-item { padding: 8px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .dropdown-item:hover { background: #e8f4fd; }
+  .item-id { font-weight: bold; color: #1a3a5c; }
+  .item-meta { color: #666; font-size: 11px; }
+  .fields { display: none; }
+</style>
+</head>
+<body>
+<h3>✏️ Зміна статусу</h3>
+<div id="body" class="loading">⏳ Завантаження...</div>
+
+<script>
+var items = [];
+var responsibles = [];
+var loadedCount = 0;
+
+function onDataLoaded() {
+  loadedCount++;
+  if (loadedCount >= 2) renderForm();
+}
+
+google.script.run
+  .withSuccessHandler(function(list) { responsibles = list; onDataLoaded(); })
+  .withFailureHandler(function() { onDataLoaded(); })
+  .getResponsibleList();
+
+google.script.run
+  .withSuccessHandler(function(list) { items = list; onDataLoaded(); })
+  .withFailureHandler(function(e) {
+    document.getElementById('body').innerHTML = '<div class="err" style="display:block">❌ ' + e.message + '</div>';
+  })
+  .getInventoryList();
+
+function renderForm() {
+  var statuses = ['Робочий','Ремонт','На перевірці','Несправний','Втрачений','Списаний','Резерв'];
+  var statusOpts = statuses.map(function(s) {
+    return '<option value="' + s + '">' + s + '</option>';
+  }).join('');
+
+  document.getElementById('body').innerHTML =
+    '<div class="f"><label>Пошук предмета *</label>' +
+    '<div class="search-wrap">' +
+      '<input type="text" id="search" placeholder="Введи ID або назву..." oninput="filterItems()" autocomplete="off">' +
+      '<div class="dropdown" id="dropdown"></div>' +
+    '</div></div>' +
+
+    '<div class="info" id="infoBox"></div>' +
+    '<input type="hidden" id="selectedId">' +
+
+    '<div class="fields" id="fields">' +
+      '<div class="f"><label>Новий статус *</label>' +
+      '<select id="status" onchange="onStatusChange()">' + statusOpts + '</select></div>' +
+
+      // Блок для втраченого борту
+      '<div id="lostBlock" style="display:none;background:#3d0000;border:1px solid #5a0a0a;border-radius:6px;padding:12px;margin-bottom:10px">' +
+        '<div style="color:#ffaaaa;font-weight:bold;font-size:13px;margin-bottom:10px;text-align:center">⚠️ ДЕТАЛІ ВТРАТИ</div>' +
+
+        '<div class="f"><label style="color:#ffaaaa;font-size:10px">ДАТА ВТРАТИ</label>' +
+        '<div style="position:relative">' +
+          '<input type="date" id="lostDate" style="width:100%;background:#2d0a0a;color:#ffaaaa;border:1px solid #7a2020;border-radius:4px;padding:6px 36px 6px 8px;text-align:center;color-scheme:dark">' +
+          '<button onclick="setLostDateToday()" title="Сьогодні" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;padding:0;line-height:1">📅</button>' +
+        '</div></div>' +
+
+        '<div class="f"><label style="color:#ffaaaa;font-size:10px">КООРДИНАТИ GPS</label>' +
+        '<input type="text" id="coords" placeholder="48.123456, 37.654321" style="background:#2d0a0a;color:#ffaaaa;border:1px solid #7a2020;border-radius:4px;padding:6px;width:100%"></div>' +
+
+        '<div class="f"><label style="color:#ffaaaa;font-size:10px">ПОСИЛАННЯ GOOGLE MAPS</label>' +
+        '<input type="text" id="mapsLink" placeholder="https://maps.app.goo.gl/..." style="background:#2d0a0a;color:#ffaaaa;border:1px solid #7a2020;border-radius:4px;padding:6px;width:100%"></div>' +
+
+        '<div class="f"><label style="color:#ffaaaa;font-size:10px">УМОВИ ВТРАТИ</label>' +
+        '<textarea id="lostReason" placeholder="Що трапилось, де, за яких обставин..." style="background:#2d0a0a;color:#ffaaaa;border:1px solid #7a2020;border-radius:4px;padding:6px;width:100%;height:60px;resize:vertical;font-family:Arial;font-size:12px"></textarea></div>' +
+
+        '<div style="color:#ff9999;font-size:10px;font-style:italic;text-align:center">Ця інфо збережеться як нотатка на ID — видно при наведенні</div>' +
+      '</div>' +
+
+      '<div class="f"><label>Відповідальний</label>' +
+      '<div class="search-wrap"><input type="text" id="responsible" placeholder="ПІБ або позивний" oninput="filterResp()" onfocus="showAllResp()" autocomplete="off">' +
+      '<div class="dropdown" id="acResp" style="max-height:120px"></div></div></div>' +
+      '<div class="f"><label>Коментар до зміни</label>' +
+      '<input type="text" id="comment" placeholder="причина, деталі — збережеться як нотатка..."></div>' +
+
+      '<button class="btn" id="submitBtn" onclick="submitEdit()">✅ Зберегти зміну</button>' +
+    '</div>' +
+    '<div id="msg" class="msg"></div>';
+}
+
+function filterItems() {
+  var q = document.getElementById('search').value.toLowerCase().trim();
+  var dd = document.getElementById('dropdown');
+  if (!q) { dd.style.display = 'none'; return; }
+  var filtered = items.filter(function(it) {
+    return it.id.toLowerCase().includes(q) || it.name.toLowerCase().includes(q);
+  }).slice(0, 10);
+  if (!filtered.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = filtered.map(function(it) {
+    var isLost = it.status === 'Втрачений';
+    return '<div class="dropdown-item" onclick="selectItem(\'' + esc(it.id) + '\')" ' +
+      (isLost ? 'style="background:#2d0a0a;color:#ff9999"' : '') + '>' +
+      '<div class="item-id">' + esc(it.id) + (isLost ? ' ⚠️' : '') + '</div>' +
+      '<div class="item-meta">' + esc(it.name) + ' · ' + esc(it.assignment) + ' · ' + esc(it.status) + '</div>' +
+    '</div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function selectItem(id) {
+  var it = items.find(function(i) { return i.id === id; });
+  if (!it) return;
+  document.getElementById('search').value = it.id + ' — ' + it.name;
+  document.getElementById('selectedId').value = it.id;
+  document.getElementById('dropdown').style.display = 'none';
+  var box = document.getElementById('infoBox');
+  box.innerHTML = '<strong>' + esc(it.name) + '</strong><br>' +
+    esc(it.type) + ' · ' + esc(it.assignment) + '<br>' +
+    'Статус: <strong>' + esc(it.status) + '</strong>' +
+    (it.responsible ? ' · ' + esc(it.responsible) : '');
+  box.style.display = 'block';
+  document.getElementById('status').value = it.status;
+  document.getElementById('responsible').value = it.responsible || '';
+  document.getElementById('fields').style.display = 'block';
+  onStatusChange();
+  document.getElementById('msg').className = 'msg';
+}
+
+function filterResp() {
+  var q = (document.getElementById('responsible') || {}).value || '';
+  q = q.toLowerCase().trim();
+  var list = document.getElementById('acResp');
+  if (!list) return;
+  var filtered = q ? responsibles.filter(function(r){ return r.toLowerCase().includes(q); }) : responsibles;
+  if (!filtered.length) { list.style.display='none'; return; }
+  list.innerHTML = filtered.map(function(r){
+    return '<div class="dropdown-item" onclick="selResp(\''+esc(r)+'\')">'+esc(r)+'</div>';
+  }).join('');
+  list.style.display='block';
+}
+function showAllResp() {
+  if (responsibles.length) filterResp();
+  else setTimeout(function(){ if(responsibles.length) filterResp(); }, 600);
+}
+function selResp(v) {
+  var el = document.getElementById('responsible');
+  if (el) el.value = v;
+  var list = document.getElementById('acResp');
+  if (list) list.style.display='none';
+}
+
+function onStatusChange() {
+  var s = document.getElementById('status');
+  if (!s) return;
+  var lostBlock = document.getElementById('lostBlock');
+  if (lostBlock) {
+    lostBlock.style.display = s.value === 'Втрачений' ? 'block' : 'none';
+    // Автоматично встановити сьогоднішню дату
+    if (s.value === 'Втрачений') {
+      var d = document.getElementById('lostDate');
+      if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+    }
+  }
+}
+
+function setLostDateToday() {
+  var d = document.getElementById('lostDate');
+  if (d) d.value = new Date().toISOString().slice(0, 10);
+}
+
+function submitEdit() {
+  var id          = document.getElementById('selectedId').value.trim();
+  var status      = document.getElementById('status').value;
+  var responsible = document.getElementById('responsible').value.trim();
+  var comment     = document.getElementById('comment').value.trim();
+  if (!id) { showMsg('❌ Введіть ID предмета', 'err'); return; }
+
+  // Збираємо коментар до клітинки статусу
+  var cellComment = '';
+  if (status === 'Втрачений') {
+    var lostDate   = document.getElementById('lostDate')   ? document.getElementById('lostDate').value   : '';
+    var coords     = document.getElementById('coords')     ? document.getElementById('coords').value.trim()     : '';
+    var mapsLink   = document.getElementById('mapsLink')   ? document.getElementById('mapsLink').value.trim()   : '';
+    var lostReason = document.getElementById('lostReason') ? document.getElementById('lostReason').value.trim() : '';
+
+    // Форматуємо дату
+    var dateStr = lostDate
+      ? new Date(lostDate).toLocaleDateString('uk-UA', {day:'2-digit',month:'2-digit',year:'numeric'})
+      : new Date().toLocaleDateString('uk-UA', {day:'2-digit',month:'2-digit',year:'numeric'});
+
+    var parts = ['⚠️ ВТРАЧЕНО ' + dateStr];
+    if (coords)     parts.push('📍 GPS: ' + coords);
+    if (mapsLink)   parts.push('🗺 Maps: ' + mapsLink);
+    if (lostReason) parts.push('📋 Умови: ' + lostReason);
+    if (comment)    parts.push('💬 ' + comment);
+    cellComment = parts.join('\n');
+  } else if (comment) {
+    cellComment = comment;
+  }
+
+  var data = { id: id, status: status, responsible: responsible, comment: comment, cellComment: cellComment };
+
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = '⏳ Зберігаємо...';
+
+  google.script.run
+    .withSuccessHandler(function(r) {
+      showMsg('✅ ' + r, 'ok');
+      var it = items.find(function(i) { return i.id === id; });
+      if (it) { it.status = status; it.responsible = responsible; }
+      btn.disabled = false; btn.textContent = '✅ Зберегти зміну';
+    })
+    .withFailureHandler(function(e) {
+      showMsg('❌ ' + e.message, 'err');
+      btn.disabled = false; btn.textContent = '✅ Зберегти зміну';
+    })
+    .updateItemStatusById(data);
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showMsg(txt, cls) {
+  var el = document.getElementById('msg');
+  el.textContent = txt; el.className = 'msg ' + cls;
+  if (cls === 'ok') setTimeout(function(){ el.className = 'msg'; }, 6000);
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest || !e.target.closest('.search-wrap')) {
+    var dd = document.getElementById('dropdown');
+    if (dd) dd.style.display = 'none';
+    var ac = document.getElementById('acResp');
+    if (ac) ac.style.display = 'none';
+  }
+});
+</script>
+</body>
+</html>

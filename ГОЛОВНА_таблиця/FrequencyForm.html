@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 12px; padding: 12px; background: #f8f9fa; }
+  h3 { color: #1a3a5c; font-size: 15px; border-bottom: 2px solid #2e6da4; padding-bottom: 7px; margin-bottom: 10px; }
+  .section { font-weight: bold; color: #1a3a5c; font-size: 12px; margin: 12px 0 6px; }
+  .refresh-btn { width: 100%; padding: 8px; background: #1a3a5c; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-bottom: 10px; }
+  .refresh-btn:hover { background: #2e6da4; }
+  .fs-icon-btn { position: absolute; top: 9px; right: 12px; height: 24px; display: flex; align-items: center; background: transparent; color: #1a3a5c; border: none; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px; }
+  .fs-icon-btn:hover { color: #2e6da4; }
+  .active-flight { background: #fff; border: 1px solid #ddd; border-left: 4px solid #2e6da4; border-radius: 4px; padding: 6px 8px; margin-bottom: 5px; font-size: 11px; }
+  .af-mine { border-left-color: #2e7d32; background: #f0fff0; }
+  .af-unit { border-left-color: #1565c0; background: #f0f7ff; }
+  .af-ext  { border-left-color: #757575; background: #f5f5f5; }
+  .af-crew { font-weight: bold; }
+  .af-sys { display: inline-block; background: #e8f4fd; border-radius: 7px; padding: 0 6px; font-size: 10px; margin-left: 3px; }
+  .matrix-wrap { overflow: auto; max-height: 560px; margin-bottom: 10px; border: 1px solid #ddd; }
+  .matrix { border-collapse: collapse; font-size: 10px; }
+  .matrix th { background: #2e6da4; color: #fff; padding: 4px 3px; text-align: center; position: sticky; top: 0; z-index: 3; font-weight: bold; }
+  .matrix th.band-label { background: #1a3a5c; text-align: left; padding: 4px 5px; position: sticky; left: 0; top: 0; z-index: 4; width: 70px; max-width: 70px; font-size: 9px; line-height: 1.2; }
+  .cell-tag { font-size: 8px; line-height: 1; max-width: 42px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .matrix td { padding: 0; text-align: center; border: 1px solid #e0e0e0; }
+  .cell { width: 50px; height: 36px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; font-size: 10px; line-height: 1.15; position: relative; }
+  .wide-mode .cell { width: 80px; height: 44px; font-size: 12px; }
+  .wide-mode .matrix-wrap { max-height: 760px; }
+  .cols { display: flex; gap: 20px; align-items: flex-start; }
+  .col-matrix { flex: 0 0 auto; }
+  .col-side { flex: 1; min-width: 280px; max-width: 520px; }
+  .cols .section:first-child { margin-top: 0; }
+  .col-matrix > .section:first-child, .col-side > .section:first-child { margin-top: 0; }
+  .wide-mode .matrix th { padding: 8px 4px; font-size: 12px; }
+  .wide-mode .band-row-label, .wide-mode .matrix th.band-label { width: 100px; max-width: 100px; font-size: 11px; }
+  .wide-mode body, .wide-mode { font-size: 14px; }
+  .wide-mode .cell-freq { font-size: 13px; }
+  .cell-freq { font-weight: bold; font-size: 10px; }
+  .cell-free     { background: #ffffff; }
+  .cell-moderate { background: #fff3cd; }
+  .cell-warning  { background: #fff3cd; box-shadow: inset 0 0 0 2px #f0ad4e; }
+  .cell-reserve  { background: #fff; box-shadow: inset 0 0 0 2px #9c27b0; border-style: dashed; }
+  .cell-serious  { background: #ffcc80; }
+  .cell-critical { background: #f8d7da; }
+  .cell-mine { background: #c8e6c9 !important; box-shadow: inset 0 0 0 3px #2e7d32; }
+  .cell-unit { box-shadow: inset 0 0 0 3px #1565c0; }
+  .cell-ext  { background: #e0e0e0 !important; box-shadow: inset 0 0 0 3px #424242; }
+  .band-row-label { background: #1a3a5c !important; color: #fff; padding: 4px 5px; text-align: left; font-weight: bold; position: sticky; left: 0; z-index: 2; font-size: 9px; line-height: 1.2; width: 70px; max-width: 70px; white-space: normal; overflow-wrap: break-word; box-shadow: none !important; }
+  .legend { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 9px; font-size: 11px; line-height: 1.8; margin-top: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .lg-box { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
+  .conflict-detail { background: #fff; border: 1px solid #eee; border-radius: 4px; padding: 5px 8px; margin-bottom: 3px; font-size: 11px; }
+  .cd-freq { font-weight: bold; color: #1a3a5c; }
+  .cd-crews { color: #c0392b; font-size: 10px; }
+  .ext-item { display: flex; align-items: center; justify-content: space-between; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 5px 8px; margin-bottom: 4px; font-size: 11px; }
+  .ext-del { background: none; border: none; color: #c00; cursor: pointer; font-size: 14px; }
+  .vtx-box { background: #fff; border: 1px solid #2e6da4; border-radius: 6px; padding: 8px; margin-bottom: 6px; }
+  .vtx-crew { font-size: 12px; color: #1a3a5c; margin-bottom: 6px; }
+  .vtx-btns { display: flex; flex-wrap: wrap; gap: 5px; }
+  .vtx-btn { background: #e8f4fd; border: 1px solid #2e6da4; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; color: #1a3a5c; font-weight: bold; }
+  .vtx-btn:hover { background: #2e6da4; color: #fff; }
+  .switch-btn { background: #2e6da4; color: #fff; border: none; border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; font-weight: bold; }
+  .switch-btn:hover { background: #1a3a5c; }
+  .switch-menu { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .loading { text-align: center; color: #888; padding: 30px; }
+  .empty { text-align: center; color: #aaa; padding: 12px; font-size: 11px; }
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; }
+  .modal-bg.open { display: flex; align-items: center; justify-content: center; }
+  .modal { background: #fff; border-radius: 8px; padding: 16px; width: 280px; }
+  .modal input { width: 100%; padding: 7px; border: 1px solid #ccc; border-radius: 4px; margin: 8px 0; }
+  .modal button { width: 100%; padding: 8px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+</style>
+</head>
+<body>
+<h3>📻 Карта частот</h3>
+<button class="refresh-btn" onclick="load()">🔄 Оновити</button>
+<button class="fs-icon-btn" id="fsBtn" onclick="goFullscreen()" title="На весь екран">⛶</button>
+<div id="body"><div class="loading">⏳ Завантаження...</div></div>
+
+<div class="modal-bg" id="extModal">
+  <div class="modal">
+    <div style="font-weight:bold;color:#1a3a5c;margin-bottom:6px">Чужа частота</div>
+    <div id="extFreqLabel" style="font-size:12px;color:#666"></div>
+    <input type="text" id="extDesc" placeholder="Опис (напр. Сусідній підрозділ)">
+    <button style="background:#1565c0;color:#fff" onclick="confirmExt()">Додати</button>
+    <button style="background:#ccc;margin-top:5px" onclick="closeExt()">Скасувати</button>
+  </div>
+</div>
+
+<script>
+var data = {};
+var pendingExtFreq = 0;
+
+// Визначаємо чи ми в modal (широке вікно) чи sidebar
+function isModal() { return window.innerWidth > 700; }
+
+function goFullscreen() {
+  google.script.run.openFrequencyModal();
+}
+
+function load() {
+  // Широкий режим: якщо в modal або всередині застосунку (in-app)
+  var fs = document.getElementById('fsBtn');
+  var wide = isModal() || document.body.classList.contains('in-app');
+  if (wide) {
+    if (fs) fs.style.display = 'none';
+    document.body.classList.add('wide-mode');
+  }
+  document.getElementById('body').innerHTML = '<div class="loading">⏳ Завантаження...</div>';
+  google.script.run
+    .withSuccessHandler(function(d){ data = d; render(); })
+    .withFailureHandler(function(e){ document.getElementById('body').innerHTML = '<div style="color:#c00">❌ '+e.message+'</div>'; })
+    .getFrequencyAnalysis();
+}
+load();
+
+function levelClass(lvl) {
+  return lvl==='critical'?'cell-critical':lvl==='serious'?'cell-serious':lvl==='moderate'?'cell-moderate':lvl==='warning'?'cell-warning':'cell-free';
+}
+
+function render() {
+  var active = data.active || [];
+  var bands = data.bands || {};
+
+  // Мапа КОД (бенд+канал) → джерело — бо одна частота може бути в кількох бендах
+  // freqCode типу 'H2 (5765)' → беремо 'H2'
+  function cleanCode(fc) { return String(fc||'').replace(/\s*\(\d+\)/, '').trim(); }
+
+  var codeSource = {}; // 'H2' → {source, crew}
+  active.forEach(function(a){
+    var code = cleanCode(a.freqCode);
+    if (code) codeSource[code] = { source: a.source, crew: a.crew };
+    // Для зовнішніх freqCode може бути порожній — позначаємо по МГц fallback
+    else if (a.freq) codeSource['_mhz_'+a.freq] = { source: a.source, crew: a.crew };
+  });
+
+  // Зайняті частоти (для розрахунку конфліктів за логікою Drin)
+  var occupiedFreqs = active.filter(function(a){ return a.freq; }).map(function(a){
+    return { freq: a.freq, crew: a.crew, system: a.system, source: a.source };
+  });
+
+  // Інфо для зміни частоти
+  var crewFreqInfo = data.crewFreqInfo || [];
+  var myEmail = data.myEmail || '';
+  var adminEmail = data.adminEmail || '';
+  var crewInfoMap = {};
+  crewFreqInfo.forEach(function(c){ crewInfoMap[c.crew] = c; });
+
+  // Резервні VTX частоти екіпажів — по коду
+  var reserves = data.reserves || [];
+  var reserveMap = {}; // 'H2' → {crew}
+  reserves.forEach(function(r){
+    var code = cleanCode(r.freqCode);
+    if (code) reserveMap[code] = { crew: r.crew, system: r.system };
+  });
+
+  // Розрахунок рівня конфлікту (Drin: Δ<20 червоний, 20-40 жовтий + IMD3 помаранчевий)
+  // code — код клітинки (H2), щоб не рахувати конфлікт клітинки самої з собою,
+  // але рахувати конфлікт з ОДНАКОВОЮ частотою в ІНШОМУ бенді (Δ0 = прямий)
+  function freqLevel(f, code) {
+    var level = 'free';
+    var hits = [];
+    var selfSrc = code ? (codeSource[code] || null) : null;
+    // 1. Пряма дистанція
+    occupiedFreqs.forEach(function(o){
+      // Пропускаємо тільки якщо це та сама зайнята клітинка (той самий екіпаж на цьому ж коді)
+      if (selfSrc && o.crew === selfSrc.crew && o.freq === f) return;
+      var d = Math.abs(f - o.freq);
+      if (d < 20) { level = 'critical'; hits.push(o); }
+      else if (d < 40 && level !== 'critical') { level = 'serious'; hits.push(o); }
+    });
+    // 2. IMD3 — найнижчий пріоритет (жовтий)
+    if (level !== 'critical' && level !== 'serious') {
+      for (var i = 0; i < occupiedFreqs.length; i++) {
+        for (var j = 0; j < occupiedFreqs.length; j++) {
+          if (i === j) continue;
+          var imd = 2 * occupiedFreqs[i].freq - occupiedFreqs[j].freq;
+          if (Math.abs(f - imd) < 10) {
+            level = 'moderate';
+            hits.push({ imd: true, a: occupiedFreqs[i].crew, b: occupiedFreqs[j].crew });
+          }
+        }
+      }
+    }
+    return { level: level, hits: hits };
+  }
+  // Нерекомендовані частоти
+  var warningFreqs = data.warningFreqs || {};
+
+  // analysis тепер рахуємо локально
+  var analysis = {};
+  Object.keys(bands).forEach(function(b){
+    bands[b].forEach(function(f, idx){
+      var code = b + (idx + 1);
+      var lv = freqLevel(f, code);
+      if (warningFreqs[f] && lv.level === 'free') lv.level = 'warning';
+      // analysis по коду (бо одна частота в різних бендах може мати різний стан зайнятості)
+      analysis[code] = lv;
+      if (!analysis[f]) analysis[f] = lv; // fallback по МГц
+    });
+  });
+
+  var html = '';
+  var matrixHtml = '';
+  var sideTop = '';
+  var sideRest = '';
+
+  // Функція картки (showSwitch — чи показувати кнопку зміни частоти)
+  function flightCard(a, cls, showSwitch) {
+    var codeStr = a.freqCode || freqCode(a.freq);
+    var cc = codeStr.replace(/\s*\(\d+\)/, '');
+    var info = crewInfoMap[a.crew];
+    var canSwitch = showSwitch && info && info.reserves.length > 0 &&
+                    (info.author === myEmail || myEmail === adminEmail);
+    var switchId = 'sw-' + a.crew;
+    var html = '<div class="active-flight '+cls+'">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center">'+
+        '<span class="af-crew">'+esc(a.crew)+'</span>'+(a.pilot?' · '+esc(a.pilot):'')+
+        (canSwitch?'<button class="switch-btn" onclick="toggleSwitch(\''+switchId+'\')">🎚 Змінити</button>':'')+
+      '</div>'+
+      '<div style="font-size:11px;color:#555">'+
+        (a.system && a.system!=='Зовнішній'?esc(a.system)+' ':'')+
+        (a.freq?'<strong>'+esc(cc)+'</strong> ('+esc(a.freq)+' МГц)':'<span style="color:#c00">без частоти</span>')+
+      '</div>';
+    if (canSwitch) {
+      html += '<div class="switch-menu" id="'+switchId+'" style="display:none">';
+      info.reserves.forEach(function(r){
+        var rClean = r.replace(/\s*\(\d+\)/, '');
+        html += '<button class="vtx-btn" onclick="swapFreq(\''+esc(a.crew)+'\',\''+esc(r)+'\')">→ '+esc(rClean)+'</button>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // Розділяємо: вильоти (mine/unit без crew), екіпажі (crew), чужі (external)
+  var flightsList = active.filter(function(a){ return a.source==='mine' || a.source==='unit'; });
+  var crewsList   = active.filter(function(a){ return a.source==='crew'; });
+  var extList     = active.filter(function(a){ return a.source==='external'; });
+
+  // ── Активні вильоти ──
+  sideTop += '<div class="section">✈️ Активні вильоти ('+flightsList.length+')</div>';
+  if (!flightsList.length) {
+    sideTop += '<div class="empty">Немає активних вильотів</div>';
+  } else {
+    flightsList.forEach(function(a){
+      sideTop += flightCard(a, a.source==='mine'?'af-mine':'af-unit');
+    });
+  }
+  if (crewsList.length) {
+    sideTop += '<div class="section">👥 Наші екіпажі ('+crewsList.length+')</div>';
+    crewsList.forEach(function(a){
+      sideTop += flightCard(a, 'af-unit', true);
+    });
+  }
+
+  // ── Матриця → ліва колонка ──
+  matrixHtml += '<div class="section">📊 Сітка (клік = чужа частота)</div>';
+  matrixHtml += '<div class="matrix-wrap"><table class="matrix">';
+  matrixHtml += '<tr><th class="band-label">Кан. \\\\ Бенд</th>';
+  for (var ch = 1; ch <= 8; ch++) matrixHtml += '<th>'+ch+'</th>';
+  matrixHtml += '</tr>';
+
+  var bandOrder = data.bandOrder || Object.keys(bands);
+  bandOrder.forEach(function(band){
+    if (!bands[band]) return;
+    matrixHtml += '<tr><td class="band-row-label">'+esc(band)+'</td>';
+    bands[band].forEach(function(freq, idx){
+      var code = band + (idx + 1); // 'H2'
+      var a = analysis[code] || analysis[freq] || { level: 'free' };
+      var src = codeSource[code] || codeSource['_mhz_'+freq];
+      var cls = levelClass(a.level);
+      if (src) {
+        if (src.source==='mine') cls = levelClass(a.level)+' cell-mine';
+        else if (src.source==='external') cls = 'cell-ext';
+        else cls = levelClass(a.level)+' cell-unit'; // unit і crew — синя
+      }
+      // Резервна частота (контур, без фарбування конфлікту) — по коду
+      var resv = reserveMap[code];
+      if (resv && !src) cls = 'cell-reserve';
+
+      var label = '';
+      if (src) {
+        if (src.source==='external') label = '<span class="cell-tag">'+esc(src.crew||'чужий')+'</span>';
+        else label = '<span class="cell-tag">'+esc(src.crew)+'</span>';
+      } else if (resv) {
+        label = '<span class="cell-tag" style="color:#666">'+esc(resv.crew)+'</span>';
+      }
+      var warnTitle = warningFreqs[freq] ? ' ⚠️ ' + warningFreqs[freq] : '';
+      matrixHtml += '<td><div class="cell '+cls+'" data-freq="'+freq+'" data-code="'+code+'" onclick="cellClick('+freq+')" title="'+code+' — '+freq+' МГц'+esc(warnTitle)+'">'+
+        '<span class="cell-freq">'+freq+'</span>'+label+
+        (warningFreqs[freq]?'<span style="font-size:9px">⚠️</span>':'')+
+      '</div></td>';
+    });
+    matrixHtml += '</tr>';
+  });
+  matrixHtml += '</table></div>';
+
+  // ── Чужі частоти ──
+  var ext = active.filter(function(a){ return a.source==='external'; });
+  if (ext.length) {
+    sideRest += '<div class="section">⚫ Чужі підрозділи</div>';
+    ext.forEach(function(e){
+      sideRest += '<div class="ext-item">'+
+        '<span><strong>'+esc(e.freq)+'</strong> ('+esc(freqCode(e.freq))+') — '+esc(e.crew)+'</span>'+
+        '<button class="ext-del" onclick="delExt('+e.freq+')">✕</button>'+
+      '</div>';
+    });
+  }
+
+  // ── Конфлікти між РІЗНИМИ екіпажами ──
+  // Перебираємо пари активних вильотів і шукаємо реальні конфлікти
+  var realConf = [];
+  var occupied = active.filter(function(a){ return a.freq; });
+
+  for (var i = 0; i < occupied.length; i++) {
+    for (var j = i+1; j < occupied.length; j++) {
+      var a1 = occupied[i], a2 = occupied[j];
+      // Не порівнюємо екіпаж сам із собою
+      if (a1.crew === a2.crew) continue;
+
+      var f1 = a1.freq, f2 = a2.freq;
+      var gap = Math.abs(f1 - f2);
+
+      // Логіка Drin: Δ<20 прямий конфлікт, 20-40 близькі (жовтий)
+      if (gap < 20) {
+        realConf.push({ level:'critical', type:'Прямий', a:a1, b:a2,
+          detail: a1.crew+' @'+f1+' ↔ '+a2.crew+' @'+f2+' (Δ'+gap+' МГц)' });
+      } else if (gap < 40) {
+        realConf.push({ level:'serious', type:'Близькі канали', a:a1, b:a2,
+          detail: a1.crew+' @'+f1+' ↔ '+a2.crew+' @'+f2+' (Δ'+gap+' МГц)' });
+      }
+      // IMD3 — жовтий, тільки якщо реально потрапляє в чийсь канал
+      var imd1 = 2*f1 - f2, imd2 = 2*f2 - f1;
+      occupied.forEach(function(a3){
+        if (a3.crew===a1.crew || a3.crew===a2.crew) return;
+        if (Math.abs(a3.freq - imd1) < 10 || Math.abs(a3.freq - imd2) < 10) {
+          realConf.push({ level:'moderate', type:'IMD3', a:a1, b:a2,
+            detail: '2×'+f1+'−'+f2+'='+imd1+' б\'є по '+a3.crew });
+        }
+      });
+    }
+  }
+
+  sideRest += '<div class="section">⚠️ Конфлікти між екіпажами</div>';
+  if (realConf.length) {
+    var order = { critical:0, serious:1, moderate:2 };
+    realConf.sort(function(a,b){ return order[a.level]-order[b.level]; });
+    realConf.forEach(function(c){
+      sideRest += '<div class="conflict-detail" style="border-left:3px solid '+lvlColor(c.level)+'">'+
+        icon(c.level)+' <strong>'+esc(c.a.crew)+'</strong> ↔ <strong>'+esc(c.b.crew)+'</strong> — '+esc(c.type)+
+        '<div class="cd-crews">'+esc(c.detail)+'</div>'+
+      '</div>';
+    });
+  } else {
+    sideRest += '<div class="empty">✅ Конфліктів між екіпажами немає</div>';
+  }
+
+  // ── Конфлікти резервних VTX (проти активних + між резервними) ──
+  var resConf = [];
+  reserves.forEach(function(r){
+    // Резерв проти активних чужих
+    occupiedFreqs.forEach(function(o){
+      if (o.crew === r.crew) return;
+      var d = Math.abs(r.freq - o.freq);
+      if (d < 20) {
+        resConf.push({ level:'critical',
+          detail: '🔄 '+r.crew+' резерв '+r.freq+' ↔ '+o.crew+' активна '+o.freq+' (Δ'+d+')' });
+      } else if (d < 40) {
+        resConf.push({ level:'serious',
+          detail: '🔄 '+r.crew+' резерв '+r.freq+' ↔ '+o.crew+' '+o.freq+' (Δ'+d+')' });
+      }
+    });
+  });
+  // Між резервними різних екіпажів
+  for (var ri = 0; ri < reserves.length; ri++) {
+    for (var rj = ri+1; rj < reserves.length; rj++) {
+      if (reserves[ri].crew === reserves[rj].crew) continue;
+      var dd = Math.abs(reserves[ri].freq - reserves[rj].freq);
+      if (dd < 20) {
+        resConf.push({ level:'serious',
+          detail: '🔄 '+reserves[ri].crew+' ↔ 🔄 '+reserves[rj].crew+' резерви '+reserves[ri].freq+'/'+reserves[rj].freq+' (Δ'+dd+')' });
+      }
+    }
+  }
+
+  if (resConf.length) {
+    sideRest += '<div class="section">🔄 Конфлікти резервних VTX</div>';
+    var ord2 = { critical:0, serious:1, moderate:2 };
+    resConf.sort(function(a,b){ return ord2[a.level]-ord2[b.level]; });
+    resConf.forEach(function(c){
+      sideRest += '<div class="conflict-detail" style="border-left:3px solid '+lvlColor(c.level)+'">'+
+        icon(c.level)+' <span class="cd-crews">'+esc(c.detail)+'</span>'+
+      '</div>';
+    });
+  }
+
+  // ── Легенда ──
+  sideRest += '<div class="section">📖 Легенда</div>';
+  sideRest += '<div class="legend">'+
+    '<div class="legend-item"><span class="lg-box" style="background:#c8e6c9;box-shadow:inset 0 0 0 2px #2e7d32"></span><strong>Твоя</strong> частота</div>'+
+    '<div class="legend-item"><span class="lg-box" style="box-shadow:inset 0 0 0 2px #1565c0;background:#fff"></span><strong>Наш підрозділ</strong> (інший екіпаж)</div>'+
+    '<div class="legend-item"><span class="lg-box" style="background:#e0e0e0;box-shadow:inset 0 0 0 2px #424242"></span><strong>Чужий</strong> підрозділ</div>'+
+    '<div class="legend-item"><span class="lg-box" style="background:#dc3545"></span><strong>Прямий</strong> (Δ&lt;20 МГц)</div>'+
+    '<div class="legend-item"><span class="lg-box" style="background:#ff9800"></span><strong>Близькі</strong> (Δ 20-40 МГц)</div>'+
+    '<div class="legend-item"><span class="lg-box" style="background:#ffc107"></span><strong>IMD3</strong> інтермодуляція</div>'+
+    '<div class="legend-item"><span class="lg-box" style="background:#fff3cd;box-shadow:inset 0 0 0 2px #f0ad4e"></span>⚠️ <strong>Нерекомендована</strong> частота</div>'+
+    '<div class="legend-item"><span class="lg-box" style="background:#fff;box-shadow:inset 0 0 0 2px #9c27b0;border:1px dashed #9c27b0"></span>🔄 <strong>Резервна VTX</strong> (перемикання в повітрі)</div>'+
+  '</div>';
+
+  // Збірка
+  var wide = document.body.classList.contains('wide-mode');
+  if (wide) {
+    // Дві колонки: зліва матриця, справа все інше
+    html = '<div class="cols">'+
+      '<div class="col-matrix">' + matrixHtml + '</div>'+
+      '<div class="col-side">' + sideTop + sideRest + '</div>'+
+    '</div>';
+  } else {
+    // Вузько: активні зверху, матриця, решта знизу
+    html = sideTop + matrixHtml + sideRest;
+  }
+  document.getElementById('body').innerHTML = html;
+}
+
+function srcShort(src) {
+  if (src.source==='mine') return '🟢 моя';
+  if (src.source==='external') return '⚫ чужа';
+  return '🔵 ' + src.crew;
+}
+
+function freqCode(freq) {
+  var bands = data.bands || {};
+  for (var b in bands) {
+    var i = bands[b].indexOf(Number(freq));
+    if (i !== -1) return b + (i+1);
+  }
+  return '?';
+}
+
+function cellClick(freq) {
+  // Якщо вже чужа — видалити
+  var ext = (data.active||[]).filter(function(a){ return a.source==='external' && a.freq===freq; });
+  if (ext.length) { delExt(freq); return; }
+  // Інакше — додати чужу
+  pendingExtFreq = freq;
+  document.getElementById('extFreqLabel').textContent = freq + ' МГц (' + freqCode(freq) + ')';
+  document.getElementById('extDesc').value = '';
+  document.getElementById('extModal').classList.add('open');
+}
+
+function confirmExt() {
+  var desc = document.getElementById('extDesc').value.trim() || 'Чужий підрозділ';
+  google.script.run
+    .withSuccessHandler(function(){ closeExt(); load(); })
+    .withFailureHandler(function(e){ alert('❌ '+e.message); })
+    .addExternalFreq(pendingExtFreq, desc);
+}
+
+function closeExt() { document.getElementById('extModal').classList.remove('open'); }
+
+function delExt(freq) {
+  google.script.run
+    .withSuccessHandler(function(){ load(); })
+    .withFailureHandler(function(e){ alert('❌ '+e.message); })
+    .removeExternalFreq(freq);
+}
+
+function sysWidth(sys) {
+  var W = { 'Аналог':20, 'HDZero':27, 'DJI':20, 'Walksnail':20, 'Hornet Vision':20, 'Зовнішній':20 };
+  return W[sys] || 20;
+}
+
+function toggleSwitch(id) {
+  var el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+}
+
+function swapFreq(crewId, newMainCode) {
+  google.script.run
+    .withSuccessHandler(function(){ load(); })
+    .withFailureHandler(function(e){ alert('❌ '+e.message); })
+    .swapCrewFrequency(crewId, newMainCode);
+}
+
+function icon(lvl) { return lvl==='critical'?'🔴':lvl==='serious'?'🟠':lvl==='moderate'?'🟡':'✅'; }
+function lvlColor(lvl) { return lvl==='critical'?'#dc3545':lvl==='serious'?'#ff9800':lvl==='moderate'?'#ffc107':'#28a745'; }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>

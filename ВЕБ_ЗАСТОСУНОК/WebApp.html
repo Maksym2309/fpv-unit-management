@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WILD HORNETS — Tactical OS</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* ═══ HORNET TACTICAL OS · Web App ═══ */
+:root {
+  --bg: #131313; --bg-low: #0e0e0e;
+  --panel: #1c1b1b; --panel-2: #201f1f; --panel-3: #2a2a2a; --panel-4: #353534;
+  --line: #353534; --line-2: #514532;
+  --text: #e5e2e1; --muted: #a8a5a2; --dim: #7f7c78;
+  --accent: #ffb800; --accent-hi: #ffca3d; --accent-soft: #ffdca1; --on-accent: #1a1300;
+  --blue: #3498db; --blue-deep: #2a486b; --blue-soft: #abc9f2;
+  --green: #2ecc71; --green-bg: #11301d;
+  --red: #e74c3c; --red-soft: #ff8580; --red-bg: #3a1512;
+  --orange: #f39c12; --orange-bg: #33270e;
+  --yellow: #f1c40f; --purple: #9b59b6; --grey: #7f8c8d;
+  --font-ui: 'Archivo Narrow', Arial, sans-serif;
+  --font-data: 'JetBrains Mono', Consolas, monospace;
+  --sidebar-w: 264px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-ui); font-size: 14px; color: var(--text);
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.012) 0 1px, transparent 1px 3px),
+    var(--bg);
+  overflow: hidden;
+}
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--line-2); border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ── Каркас ── */
+#app { display: flex; flex-direction: column; height: 100vh; }
+header.topbar {
+  height: 56px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; background: var(--bg); border-bottom: 1px solid var(--line-2); z-index: 40;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand-name { font-size: 20px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
+.brand-sub { font-family: var(--font-data); font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .2em; }
+.top-stats { display: flex; align-items: center; gap: 18px; font-family: var(--font-data); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.top-stats b { color: var(--accent); font-weight: 700; }
+.top-stats .warn-b { color: var(--red-soft); }
+.icon-btn { background: none; border: 1px solid transparent; color: var(--accent); font-size: 16px; cursor: pointer; padding: 6px 9px; }
+.icon-btn:hover { border-color: var(--accent); background: var(--panel-3); }
+#layout { display: flex; flex: 1; min-height: 0; }
+
+/* ── Сайдбар ── */
+aside.sidebar {
+  width: var(--sidebar-w); flex-shrink: 0; background: var(--bg-low); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; padding: 16px 0 10px; overflow-y: auto;
+}
+.unit-box { padding: 0 16px 14px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.unit-name { font-size: 17px; font-weight: 700; color: var(--accent-soft); text-transform: uppercase; letter-spacing: .05em; }
+.unit-status { display: flex; align-items: center; gap: 6px; font-family: var(--font-data); font-size: 9px; color: var(--green); text-transform: uppercase; letter-spacing: .12em; margin-top: 5px; }
+.pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+.new-flight-btn {
+  margin: 0 16px 16px; padding: 12px; background: var(--accent); color: var(--on-accent);
+  border: none; font-family: var(--font-data); font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em; cursor: pointer;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+}
+.new-flight-btn:hover { background: var(--accent-hi); }
+nav.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 11px 16px; cursor: pointer;
+  font-family: var(--font-data); font-size: 11px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); border-left: 3px solid transparent;
+  background: none; border-top: none; border-right: none; border-bottom: none; text-align: left; width: 100%;
+}
+.nav-item:hover { color: var(--text); background: var(--panel); }
+.nav-item.active {
+  color: var(--on-accent); background: var(--accent); border-left-color: var(--accent-hi);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 100%, 0 100%);
+}
+.nav-icon { font-size: 14px; width: 18px; text-align: center; }
+.sidebar-foot { margin-top: auto; padding: 12px 16px 4px; border-top: 1px solid var(--line); }
+.user-email { font-family: var(--font-data); font-size: 9px; color: var(--dim); word-break: break-all; margin-bottom: 8px; }
+.sync-line { font-family: var(--font-data); font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+.sync-line b { color: var(--green); }
+
+/* ── Контент ── */
+main.content { flex: 1; min-width: 0; overflow-y: auto; padding: 20px 24px 40px; }
+.view-title { font-size: 24px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text); margin-bottom: 4px; }
+.view-title .accent { color: var(--accent); }
+.view-sub { font-family: var(--font-data); font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .12em; margin-bottom: 18px; }
+
+/* ── Загальні елементи ── */
+.panel { background: var(--panel); border: 1px solid var(--line); padding: 12px; }
+.panel-title { font-family: var(--font-data); font-size: 10px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .12em; border-left: 3px solid var(--accent); padding-left: 8px; margin-bottom: 10px; }
+.panel-title.red { color: var(--red-soft); border-left-color: var(--red); }
+.panel-title.blue { color: var(--blue-soft); border-left-color: var(--blue); }
+label { display: block; font-weight: 700; color: var(--dim); margin-bottom: 4px; font-size: 9px; text-transform: uppercase; letter-spacing: .12em; font-family: var(--font-data); }
+select, input, textarea {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 0;
+  font-size: 13px; background: var(--bg-low); color: var(--text); font-family: var(--font-data);
+}
+select:focus, input:focus, textarea:focus { border-color: var(--accent); outline: none; box-shadow: inset 0 -1px 0 0 var(--accent); }
+input::placeholder, textarea::placeholder { color: #5c5955; }
+select option, select optgroup { background: var(--bg-low); color: var(--text); }
+textarea { height: 54px; resize: vertical; }
+.f { margin-bottom: 11px; }
+.hint { font-size: 10px; color: var(--dim); margin-top: 3px; font-family: var(--font-data); }
+.btn {
+  width: 100%; padding: 10px; background: var(--accent); color: var(--on-accent); border: none;
+  font-size: 12px; font-weight: 700; cursor: pointer; margin-top: 8px;
+  font-family: var(--font-data); text-transform: uppercase; letter-spacing: .06em;
+}
+.btn:hover { background: var(--accent-hi); }
+.btn:disabled { background: var(--panel-3); color: var(--dim); cursor: not-allowed; }
+.btn-green { background: var(--green-bg); color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.btn-green:hover { background: var(--green); color: #04180c; }
+.btn-red { background: var(--red-bg); color: var(--red-soft); box-shadow: inset 0 0 0 1px var(--red); }
+.btn-red:hover { background: var(--red); color: #1c0503; }
+.btn-sec { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-2); }
+.btn-sec:hover { background: var(--panel-3); color: var(--text); }
+.btn-mini { width: auto; padding: 4px 10px; margin: 0; font-size: 10px; }
+.btn-row { display: flex; gap: 6px; }
+.btn-row .btn { flex: 1; }
+.chip { display: inline-block; background: var(--panel-3); color: var(--text); border: 1px solid var(--line-2); padding: 3px 8px; font-size: 11px; margin: 2px; font-family: var(--font-data); }
+.chip.click { cursor: pointer; }
+.chip.click:hover { background: var(--red-bg); border-color: var(--red); color: var(--red-soft); }
+.chip-freq { border-color: var(--blue); color: var(--blue-soft); }
+.chip-main { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+.st-chip { display: inline-flex; align-items: center; font-size: 10px; padding: 2px 8px 2px 6px; white-space: nowrap; font-family: var(--font-data); font-weight: 700; border-left: 4px solid; }
+.st-green  { background: var(--green-bg);  color: var(--green);    border-left-color: var(--green); }
+.st-orange { background: var(--orange-bg); color: var(--orange);   border-left-color: var(--orange); }
+.st-red    { background: var(--red-bg);    color: var(--red-soft); border-left-color: var(--red); }
+.st-dark   { background: #2a0505;          color: var(--red-soft); border-left-color: #7a2020; }
+.st-grey   { background: var(--panel-3);   color: var(--muted);    border-left-color: var(--grey); }
+.st-blue   { background: #152535;          color: var(--blue-soft);border-left-color: var(--blue); }
+.msg-box { padding: 9px; margin-top: 9px; font-size: 12px; display: none; font-family: var(--font-data); }
+.msg-box.ok  { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); display: block; }
+.msg-box.err { background: var(--red-bg); color: var(--red-soft); border: 1px solid var(--red); display: block; }
+.empty { text-align: center; color: var(--dim); padding: 18px; font-size: 12px; font-family: var(--font-data); }
+.loading-view { text-align: center; padding: 80px 0; color: var(--dim); font-family: var(--font-data); font-size: 12px; text-transform: uppercase; letter-spacing: .15em; }
+.loading-view .pulse-dot { display: inline-block; margin-right: 8px; }
+
+/* ── Стат-плитки ── */
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.stat-tile { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); padding: 10px 12px; }
+.stat-tile.green { border-left-color: var(--green); }
+.stat-tile.red { border-left-color: var(--red); }
+.stat-tile.blue { border-left-color: var(--blue); }
+.stat-num { font-family: var(--font-data); font-size: 26px; font-weight: 700; color: var(--text); line-height: 1.1; }
+.stat-lbl { font-family: var(--font-data); font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .12em; margin-top: 2px; }
+
+/* ── Тактичні картки ── */
+.tcard {
+  background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  padding: 10px 12px; margin-bottom: 8px; position: relative;
+}
+.tcard.mine { border-left-color: var(--accent); background: #211d10; }
+.tcard.other { opacity: .75; }
+.tcard.lost { border-left-color: #7a2020; background: #1d0a0a; }
+.tcard.ok { border-left-color: var(--green); }
+.tcard.bad { border-left-color: var(--red); }
+.tcard-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.tcard-id { font-family: var(--font-data); font-size: 14px; font-weight: 700; color: var(--accent-soft); }
+.tcard-meta { font-size: 12px; color: var(--muted); line-height: 1.8; }
+.tcard-meta b { color: var(--text); }
+.tcard-meta .mono { font-family: var(--font-data); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* ── Статусні кнопки вильоту ── */
+.st-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 8px; }
+@media (max-width: 600px) { .st-grid { grid-template-columns: 1fr 1fr; } }
+.st-btn { padding: 7px 4px; border: 1px solid var(--line-2); text-align: center; cursor: pointer; font-size: 10px; font-weight: 700; font-family: var(--font-data); color: var(--muted); background: var(--bg-low); }
+.st-btn:hover { color: var(--text); }
+.st-btn.sel-ok   { background: var(--green-bg);  color: var(--green);    border-color: var(--green);  box-shadow: 0 0 0 1px var(--green); }
+.st-btn.sel-fix  { background: var(--orange-bg); color: var(--orange);   border-color: var(--orange); box-shadow: 0 0 0 1px var(--orange); }
+.st-btn.sel-bad  { background: var(--red-bg);    color: var(--red-soft); border-color: var(--red);    box-shadow: 0 0 0 1px var(--red); }
+.st-btn.sel-lost { background: #2a0505;          color: var(--red-soft); border-color: #7a2020;       box-shadow: 0 0 0 1px #7a2020; }
+.lost-box { background: #1d0a0a; border: 1px solid var(--red); padding: 10px; margin-top: 8px; }
+.lost-box label { color: var(--red-soft); }
+.lost-box input, .lost-box textarea { background: #140505; border-color: #7a2020; color: #ffcccc; }
+
+/* ── Таблиці ── */
+.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-table th {
+  font-family: var(--font-data); font-size: 9px; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--accent); text-align: left; padding: 8px; background: var(--panel-3);
+  border: 1px solid var(--line); position: sticky; top: 0; z-index: 2;
+}
+.data-table td { padding: 7px 8px; border: 1px solid #262525; color: var(--text); }
+.data-table tr:nth-child(odd) td { background: #161616; }
+.data-table tr:nth-child(even) td { background: var(--panel); }
+.data-table tr:hover td { background: var(--panel-3); }
+.data-table .mono { font-family: var(--font-data); }
+.table-wrap { overflow: auto; border: 1px solid var(--line); max-height: 62vh; }
+.filter-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+.filter-row input, .filter-row select { width: auto; min-width: 160px; flex: 0 1 auto; }
+.filter-chip { padding: 5px 10px; font-family: var(--font-data); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; background: var(--panel); border: 1px solid var(--line-2); color: var(--muted); cursor: pointer; }
+.filter-chip.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* ── Карта частот ── */
+.freq-topbar { background: var(--panel); border: 1px solid var(--line); padding: 10px 14px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; margin-bottom: 12px; }
+.freq-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-family: var(--font-data); font-size: 10px; color: var(--muted); }
+.freq-legend .li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.lg-sq { width: 11px; height: 11px; flex-shrink: 0; }
+.freq-layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: stretch; }
+@media (max-width: 1100px) { .freq-layout { grid-template-columns: 1fr; } }
+.matrix-panel { background: var(--panel-2); border: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
+.matrix-panel-head { padding: 7px 10px; border-bottom: 1px solid var(--line); background: var(--panel-3); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.matrix-panel-head .cap { font-family: var(--font-data); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.matrix-wrap { overflow: auto; flex: 1; padding: 6px 8px 8px; }
+.matrix { border-collapse: collapse; width: 100%; table-layout: fixed; font-family: var(--font-data); min-width: 620px; }
+.matrix th { color: var(--dim); font-size: 10px; font-weight: 700; letter-spacing: .08em; padding: 7px 2px; border-bottom: 1px solid var(--line-2); text-align: center; position: sticky; top: -6px; background: var(--panel-2); z-index: 3; }
+.matrix th.band-col, .matrix td.band { width: 104px; text-align: left; padding-left: 8px; }
+.matrix td.band { color: var(--accent); font-size: 10px; line-height: 1.25; white-space: normal; overflow-wrap: break-word; border-right: 1px solid var(--line-2); font-weight: 700; }
+.matrix td { padding: 3px; }
+.cell { height: 40px; display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 12px; background: var(--panel-3); border: 1px solid rgba(81,69,50,.45); color: var(--muted); overflow: hidden; }
+.cell:hover { border-color: var(--accent); color: var(--text); }
+.cell .ctag { font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 58%; }
+.cell-mine     { background: var(--green); border-color: var(--green); color: #06210f; font-weight: 700; }
+.cell-unit     { background: rgba(52,152,219,.16); border: 1px solid var(--blue); color: var(--blue); font-weight: 700; }
+.cell-ext      { background: var(--grey); border-color: var(--grey); color: #10171a; font-weight: 700; }
+.cell-critical { background: var(--red); border-color: var(--red); color: #fff; font-weight: 700; animation: pulse 1.6s infinite; }
+.cell-serious  { background: var(--orange); border-color: var(--orange); color: #231604; font-weight: 700; }
+.cell-moderate { background: var(--yellow); border-color: var(--yellow); color: #231d04; font-weight: 700; }
+.cell-warning  { background: var(--orange-bg); border: 1px solid var(--orange); color: var(--orange); }
+.cell-reserve  { background: transparent; border: 1px dashed var(--purple); color: #c9a6dd; }
+/* Вільні, але небезпечні клітинки — приглушені відтінки (без пульсації) */
+.cell-critF { background: rgba(231,76,60,.15);  border-color: rgba(231,76,60,.55);  color: #ff9a94; }
+.cell-serF  { background: rgba(243,156,18,.13); border-color: rgba(243,156,18,.5);  color: var(--orange); }
+.cell-modF  { background: rgba(241,196,15,.11); border-color: rgba(241,196,15,.45); color: #e8d44d; }
+/* ── Права панель частот ── */
+.side-panel { background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; margin-bottom: 10px; min-height: 0; }
+.side-head { background: var(--panel-2); border-bottom: 1px solid var(--line); padding: 9px 10px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; }
+.side-head:hover { background: var(--panel-3); }
+.side-head .cap { font-family: var(--font-data); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text); display: flex; align-items: center; gap: 7px; }
+.side-head .arr { color: var(--accent); font-size: 11px; }
+.count-pill { background: var(--panel-4); padding: 1px 8px; font-family: var(--font-data); font-size: 10px; color: var(--muted); }
+.side-body { padding: 8px; overflow-y: auto; max-height: 46vh; }
+.side-body.hid { display: none; }
+.af-card { background: var(--panel-2); border: 1px solid var(--line); padding: 10px 10px 10px 14px; position: relative; margin-bottom: 8px; clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%); }
+.af-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--blue); }
+.af-card.mine .af-bar { background: var(--green); }
+.af-card.ext .af-bar { background: var(--grey); }
+.af-card.conflict { border-color: rgba(231,76,60,.5); }
+.af-card.conflict .af-bar { background: var(--red); animation: pulse 1.6s infinite; }
+.af-badge { position: absolute; right: 0; top: 0; background: var(--red); color: #1c0503; font-family: var(--font-data); font-size: 8px; font-weight: 700; padding: 2px 5px; letter-spacing: .08em; }
+.af-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 5px; }
+.af-title { font-weight: 700; font-size: 13px; color: var(--accent-soft); }
+.af-freq { font-family: var(--font-data); font-size: 11px; color: var(--green); white-space: nowrap; }
+.af-freq.blue { color: var(--blue); } .af-freq.red { color: var(--red-soft); } .af-freq.grey { color: var(--muted); }
+.af-meta { font-family: var(--font-data); font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+.af-note { font-family: var(--font-data); font-size: 9px; color: var(--red-soft); margin-bottom: 6px; }
+.af-btn { width: 100%; border: 1px solid var(--accent); background: transparent; color: var(--accent); padding: 6px; font-family: var(--font-data); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; cursor: pointer; }
+.af-btn:hover { background: var(--accent); color: var(--on-accent); }
+.af-btn.red { border-color: var(--red); color: var(--red-soft); background: rgba(231,76,60,.08); }
+.af-btn.red:hover { background: var(--red); color: #1c0503; }
+.crew-table { width: 100%; border-collapse: collapse; font-family: var(--font-data); font-size: 11px; }
+.crew-table th { text-align: left; font-weight: 400; color: var(--dim); padding: 6px 8px; background: var(--panel-2); border-bottom: 1px solid var(--line); }
+.crew-table th:last-child, .crew-table td:last-child { text-align: right; }
+.crew-table td { padding: 7px 8px; border-bottom: 1px solid #242322; color: var(--text); }
+.crew-table tr:hover td { background: var(--panel-3); }
+.crew-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--blue); background: rgba(52,152,219,.25); margin-right: 7px; vertical-align: middle; }
+.crew-dot.purple { border-color: var(--purple); background: transparent; }
+.crew-freq { color: var(--blue); } .crew-freq.purple { color: var(--purple); opacity: .75; }
+.conflict-item { border: 1px solid var(--line); border-left: 3px solid var(--red); background: var(--panel-2); padding: 6px 8px; margin-bottom: 4px; font-size: 11px; }
+.conflict-item .detail { font-family: var(--font-data); font-size: 10px; color: var(--red-soft); margin-top: 2px; }
+.swap-menu { display: none; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.swap-menu.open { display: flex; }
+.vtx-btn { background: var(--panel-2); border: 1px solid var(--blue); padding: 3px 9px; font-size: 10px; cursor: pointer; color: var(--blue-soft); font-weight: 700; font-family: var(--font-data); }
+.vtx-btn:hover { background: var(--blue); color: #06121c; }
+/* ── Спектр-аналізатор ── */
+.spectrum { margin-top: 14px; background: var(--bg-low); border: 1px solid var(--line); position: relative; }
+.spec-head { display: flex; justify-content: space-between; align-items: center; font-family: var(--font-data); font-size: 9px; letter-spacing: .1em; color: rgba(255,184,0,.65); padding: 6px 10px; text-transform: uppercase; }
+.spec-head .tgl { cursor: pointer; color: var(--accent); background: none; border: none; font-size: 11px; padding: 0 4px; }
+.spec-area { position: relative; height: 110px; margin: 4px 14px 12px; border-bottom: 1px solid var(--line-2); }
+.spec-area.hid { display: none; }
+.spec-mark { position: absolute; top: 14px; bottom: 0; border-left: 1px solid; }
+.spec-mark.dash { border-left-style: dashed; }
+.spec-lbl { position: absolute; top: -13px; transform: translateX(-50%); font-family: var(--font-data); font-size: 8px; font-weight: 700; padding: 1px 4px; color: #0d0d0d; white-space: nowrap; }
+
+/* ── Модалки ── */
+#modalBg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 100; backdrop-filter: blur(3px); align-items: flex-start; justify-content: center; overflow-y: auto; padding: 40px 16px; }
+#modalBg.open { display: flex; }
+.modal { background: #1a1a1a; border: 1px solid var(--blue); padding: 18px; width: 460px; max-width: 100%; box-shadow: 0 12px 48px rgba(0,0,0,.85); }
+.modal.wide { width: 560px; }
+.modal-title { font-family: var(--font-data); font-weight: 700; color: var(--accent); font-size: 13px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; text-transform: uppercase; letter-spacing: .08em; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--dim); line-height: 1; }
+.modal-close:hover { color: var(--red); }
+
+/* ── Автодоповнення ── */
+.ac-wrap { position: relative; }
+.ac-list { position: absolute; top: 100%; left: 0; right: 0; background: var(--panel-2); border: 1px solid var(--accent); border-top: none; max-height: 190px; overflow-y: auto; z-index: 300; display: none; box-shadow: 0 10px 24px rgba(0,0,0,.7); }
+.ac-item { padding: 8px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--line); }
+.ac-item:hover { background: var(--panel-3); box-shadow: inset 3px 0 0 var(--accent); }
+.ac-id { font-weight: 700; color: var(--accent-soft); font-size: 11px; font-family: var(--font-data); }
+.ac-meta { color: var(--dim); font-size: 11px; }
+
+/* ── Тост ── */
+#toast { position: fixed; top: 66px; right: 20px; z-index: 500; display: flex; flex-direction: column; gap: 8px; }
+.toast-item { padding: 10px 14px; font-family: var(--font-data); font-size: 12px; border-left: 4px solid var(--green); background: var(--panel); border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--text); box-shadow: 0 6px 20px rgba(0,0,0,.6); max-width: 380px; }
+.toast-item.err { border-left-color: var(--red); color: var(--red-soft); }
+
+/* ── Демо-банер ── */
+#demoBanner { display: none; background: var(--orange-bg); border-bottom: 1px solid var(--orange); color: var(--orange); font-family: var(--font-data); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; text-align: center; padding: 5px; }
+
+/* ── Мобільний ── */
+#burger { display: none; }
+@media (max-width: 800px) {
+  #burger { display: block; }
+  aside.sidebar { position: fixed; left: 0; top: 56px; bottom: 0; z-index: 60; transform: translateX(-100%); transition: transform .18s; }
+  aside.sidebar.open { transform: translateX(0); box-shadow: 20px 0 40px rgba(0,0,0,.6); }
+  main.content { padding: 14px 12px 40px; }
+  .freq-layout { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="demoBanner">⚠ Демо-режим — дані тестові, google.script.run недоступний</div>
+  <header class="topbar">
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="icon-btn" id="burger" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</button>
+      <div class="brand">
+        <span class="brand-name">Wild Hornets</span>
+        <span class="brand-sub">Tactical OS</span>
+      </div>
+    </div>
+    <div class="top-stats">
+      <span>Екіпажі: <b id="statCrews">–</b></span>
+      <span>Вильоти: <b id="statFlights">–</b></span>
+      <span id="statConflictsWrap" style="display:none">Конфлікти: <b class="warn-b" id="statConflicts">0</b></span>
+      <button class="icon-btn" title="Оновити дані" onclick="loadAll(true)">⟳</button>
+    </div>
+  </header>
+  <div id="layout">
+    <aside class="sidebar">
+      <div class="unit-box">
+        <div class="unit-name">FPV Підрозділ</div>
+        <div class="unit-status"><span class="pulse-dot"></span>Оперативний стан: активний</div>
+      </div>
+      <button class="new-flight-btn" onclick="openNewFlightModal()">+ Новий виліт</button>
+      <nav class="nav">
+        <button class="nav-item active" data-view="flights" onclick="setView('flights')"><span class="nav-icon">✈️</span>Журнал польоту</button>
+        <button class="nav-item" data-view="freq" onclick="setView('freq')"><span class="nav-icon">📻</span>Карта частот</button>
+        <button class="nav-item" data-view="trackers" onclick="setView('trackers')"><span class="nav-icon">📡</span>GPS трекери</button>
+        <button class="nav-item" data-view="inventory" onclick="setView('inventory')"><span class="nav-icon">📦</span>Інвентар</button>
+        <button class="nav-item" data-view="crews" onclick="setView('crews')"><span class="nav-icon">👥</span>Екіпаж</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="user-email" id="userEmail"></div>
+        <div class="sync-line">Оновлено: <b id="syncTime">–</b></div>
+      </div>
+    </aside>
+    <main class="content" id="content">
+      <div class="loading-view"><span class="pulse-dot"></span>Завантаження даних…</div>
+    </main>
+  </div>
+</div>
+<div id="modalBg" onclick="if(event.target===this)closeModal()"><div class="modal" id="modalBox"></div></div>
+<div id="toast"></div>
+
+<script>
+/* ═══════════ ДАНІ ТА КОНСТАНТИ ═══════════ */
+var VIDEO_SYSTEMS = ['Аналог','HDZero','DJI','Walksnail','Hornet Vision'];
+var BANDS = {
+  'A':[5865,5845,5825,5805,5785,5765,5745,5725],
+  'B':[5733,5752,5771,5790,5809,5828,5847,5866],
+  'E':[5705,5685,5665,5645,5885,5905,5925,5945],
+  'F':[5740,5760,5780,5800,5820,5840,5860,5880],
+  'R':[5658,5695,5732,5769,5806,5843,5880,5917],
+  'H':[5653,5693,5733,5773,5813,5853,5893,5933],
+  'HV-H':[5745,5765,5785,5805,5825],
+  'L':[5362,5399,5436,5473,5510,5547,5584,5621],
+  'L (Foxeer)':[5333,5373,5413,5453,5493,5533,5573,5613],
+  'HV-L':[5240,5260,5280,5300,5320],
+  'U':[5325,5348,5366,5384,5402,5420,5438,5456],
+  'O':[5474,5492,5510,5528,5546,5564,5582,5600],
+  'S':[6002,6028,6054,6080,6106,6132,6158,6184],
+  'X':[4990,5020,5050,5080,5110,5140,5170,5200],
+  '3.3G A':[3330,3350,3370,3390,3410,3430,3450,3470],
+  '3.3G B':[3170,3190,3210,3230,3250,3270,3290,3310],
+  '3.3G A (GepRC)':[3083,3114,3145,3176,3207,3238,3269,3300],
+  '3.3G B (GepRC)':[3215,3235,3255,3275,3295,3315,3335,3355],
+  '3.3G C (GepRC)':[3170,3190,3210,3230,3250,3270,3290,3310],
+  '3.3G D (GepRC)':[3320,3345,3370,3395,3420,3445,3470,3495],
+  '3.3G E (GepRC)':[3310,3330,3355,3380,3405,3430,3455,3480]
+};
+var S = { items:[], trackers:[], sims:[], flights:[], freq:null, me:'', admin:'', view:'flights', loadedAt:null };
+var DEMO = (typeof google === 'undefined' || !google.script);
+
+/* ═══════════ ДЕМО-ДАНІ (працює і без таблиці) ═══════════ */
+var DEMO_DATA = {
+  getCurrentUserEmail: 'pilot@unit.mil',
+  getAdminEmail: 'pilot@unit.mil',
+  getInventoryList: [
+    {id:'FPV-101', name:'Hornet 7"', type:'FPV-7', assignment:'На виїзд', status:'Робочий', responsible:'Сокіл', kit:'KIT-01'},
+    {id:'FPV-102', name:'Hornet 7"', type:'FPV-7', assignment:'На виїзд', status:'Робочий', responsible:'Сокіл', kit:'KIT-01'},
+    {id:'FPV-205', name:'Hornet 10"', type:'FPV-10', assignment:'Sting', status:'Ремонт', responsible:'Грім', kit:''},
+    {id:'STNG-01', name:'Sting 5"', type:'STNG', assignment:'Sting', status:'Робочий', responsible:'Грім', kit:''},
+    {id:'GNST-01', name:'Наземна станція #1', type:'GNST', assignment:'На виїзд', status:'Робочий', responsible:'Сокіл', kit:'KIT-01'},
+    {id:'GNST-02', name:'Наземна станція #2', type:'GNST', assignment:'Школа', status:'Робочий', responsible:'', kit:''}
+  ],
+  getSinotrackList: [
+    {id:'SNT-001', model:'ST-901', status:'Робочий', simContact:'Vodafone-07', simNumber:'+380671112233', binding:'FPV-101', imei:'8641290055512', note:''},
+    {id:'SNT-002', model:'ST-901', status:'Робочий', simContact:'', simNumber:'', binding:'', imei:'', note:''},
+    {id:'SNT-003', model:'ST-907', status:'Зламаний', simContact:'KS-11', simNumber:'+380979998877', binding:'', imei:'8641290099944', note:''}
+  ],
+  getSimList: [
+    {id:'SIM-01', contact:'Vodafone-07', number:'+380671112233', status:'Активна', binding:'SNT-001'},
+    {id:'SIM-02', contact:'KS-11', number:'+380979998877', status:'Активна', binding:'SNT-003'},
+    {id:'SIM-03', contact:'Life-3', number:'+380631234567', status:'Невідомо', binding:''}
+  ],
+  getFlightList: [
+    {id:'CRW-001', date:'2026-07-23', crew:'CRW-001', gnst:'GNST-01', drones:'FPV-101|FPV-102', bind:'hornet-7', pilot:'', tracker:'SNT-001', trackerOk:'Перевірено', start:'', end:'', status:'Активний', note:'', creatorEmail:'pilot@unit.mil', system:'Аналог', freq:'R6 (5843)', reserves:'A1 (5865)|B2 (5752)'},
+    {id:'CRW-002', date:'2026-07-23', crew:'CRW-002', gnst:'GNST-02', drones:'FPV-205', bind:'thunder-2', pilot:'', tracker:'SNT-002', trackerOk:'', start:'', end:'', status:'Активний', note:'', creatorEmail:'other@unit.mil', system:'DJI', freq:'E4 (5645)', reserves:'E7 (5925)'},
+    {id:'FLT-0041', date:'2026-07-23', crew:'CRW-001', gnst:'GNST-01', drones:'FPV-101', bind:'hornet-7', pilot:'Сокіл', tracker:'SNT-001', trackerOk:'Перевірено', start:'14:22', end:'', status:'Активний', note:'', creatorEmail:'pilot@unit.mil', system:'Аналог', freq:'R6 (5843)', reserves:''},
+    {id:'FLT-0040', date:'2026-07-23', crew:'CRW-002', gnst:'GNST-02', drones:'FPV-205', bind:'thunder-2', pilot:'Грім', tracker:'', trackerOk:'', start:'12:03', end:'12:41', status:'Завершено', note:'', creatorEmail:'other@unit.mil', system:'DJI', freq:'E4 (5645)', reserves:''},
+    {id:'FLT-0039', date:'2026-07-22', crew:'CRW-001', gnst:'GNST-01', drones:'FPV-102', bind:'hornet-7', pilot:'Сокіл', tracker:'SNT-003', trackerOk:'', start:'09:15', end:'09:58', status:'Завершено', note:'⚠️ ВТРАЧЕНО', creatorEmail:'pilot@unit.mil', system:'Аналог', freq:'A1 (5865)', reserves:''}
+  ],
+  getFrequencyAnalysis: {
+    active: [
+      {source:'mine', crew:'CRW-001', pilot:'Сокіл', system:'Аналог', freq:5843, freqCode:'R6 (5843)'},
+      {source:'crew', crew:'CRW-002', pilot:'', system:'DJI', freq:5645, freqCode:'E4 (5645)'},
+      {source:'external', crew:'Сусідній підрозділ', freq:5790, freqCode:''}
+    ],
+    reserves: [
+      {crew:'CRW-001', freqCode:'A1 (5865)', freq:5865, system:'Аналог'},
+      {crew:'CRW-002', freqCode:'E7 (5925)', freq:5925, system:'DJI'}
+    ],
+    bands: BANDS,
+    bandOrder: Object.keys(BANDS),
+    warningFreqs: {5240:'Канал HV-L1 (5240 МГц) використовувати НЕ рекомендовано!'},
+    myEmail: 'pilot@unit.mil', adminEmail: 'pilot@unit.mil',
+    crewFreqInfo: [{crew:'CRW-001', main:'R6 (5843)', reserves:['A1 (5865)','B2 (5752)'], author:'pilot@unit.mil'}]
+  }
+};
+
+/* ═══════════ RPC-ОБГОРТКА ═══════════ */
+function rpc(fn, args, ok, fail) {
+  args = args || [];
+  if (DEMO) {
+    setTimeout(function(){
+      if (DEMO_DATA.hasOwnProperty(fn)) { ok && ok(JSON.parse(JSON.stringify(DEMO_DATA[fn]))); }
+      else { ok && ok({demo:true}); }
+    }, 120);
+    return;
+  }
+  var runner = google.script.run
+    .withSuccessHandler(function(res){ ok && ok(res); })
+    .withFailureHandler(function(e){ if (fail) fail(e); else toast('❌ ' + e.message, true); });
+  runner[fn].apply(runner, args);
+}
+
+/* ═══════════ УТИЛІТИ ═══════════ */
+function esc(s){ return String(s===undefined||s===null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function $(id){ return document.getElementById(id); }
+function toast(txt, isErr) {
+  var el = document.createElement('div');
+  el.className = 'toast-item' + (isErr ? ' err' : '');
+  el.textContent = txt;
+  $('toast').appendChild(el);
+  setTimeout(function(){ el.style.opacity = '0'; el.style.transition = 'opacity .4s'; setTimeout(function(){ el.remove(); }, 400); }, 4200);
+}
+function isMine(f) {
+  if (!f.creatorEmail) return true;
+  if (S.me && S.me === S.admin && S.admin !== 'YOUR_EMAIL@gmail.com') return true;
+  return f.creatorEmail === S.me;
+}
+function activeCrews() { return S.flights.filter(function(f){ return f.id.indexOf('CRW-')===0 && f.status && f.status.trim()==='Активний'; }); }
+function activeFlights() { return S.flights.filter(function(f){ return f.id.indexOf('CRW-')!==0 && f.status && f.status.trim()==='Активний'; }); }
+function busyDrones() {
+  var busy = {};
+  activeFlights().forEach(function(f){
+    var id = f.drones ? f.drones.split('|')[0].trim() : '';
+    if (id) busy[id] = f.crew || '?';
+  });
+  return busy;
+}
+function crewById(id) { return S.flights.find(function(f){ return f.id === id; }); }
+function statusChip(st) {
+  st = String(st||'').trim();
+  var cls = 'st-grey';
+  if (st==='Робочий'||st==='Завершено'||st==='Активна') cls='st-green';
+  else if (st==='Активний') cls='st-blue';
+  else if (st==='Ремонт'||st==='На перевірці'||st==='Зламаний'||st==='Резерв'||st==='Заблокована'||st==='Невідомо') cls='st-orange';
+  else if (st==='Несправний') cls='st-red';
+  else if (st==='Втрачений'||st==='Втрачена'||st==='Списаний') cls='st-dark';
+  return '<span class="st-chip '+cls+'">'+esc(st||'—')+'</span>';
+}
+function freqOptionsHtml(system) {
+  var html = '';
+  Object.keys(BANDS).forEach(function(band){
+    html += '<optgroup label="Бенд '+band+'">';
+    BANDS[band].forEach(function(f, i){
+      html += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
+    });
+    html += '</optgroup>';
+  });
+  return html;
+}
+
+/* ═══════════ ЗАВАНТАЖЕННЯ ДАНИХ ═══════════ */
+var _loading = 0;
+function loadAll(showToast) {
+  if (_loading) return;
+  _loading = 5;
+  function done() {
+    _loading--;
+    if (_loading > 0) return;
+    S.loadedAt = new Date();
+    $('syncTime').textContent = S.loadedAt.toTimeString().slice(0,8);
+    updateTopStats();
+    renderView();
+    if (showToast) toast('✅ Дані оновлено');
+  }
+  rpc('getCurrentUserEmail', [], function(v){ S.me = v || ''; $('userEmail').textContent = S.me; done(); }, function(){ done(); });
+  rpc('getAdminEmail', [], function(v){ S.admin = v || ''; done(); }, function(){ done(); });
+  rpc('getInventoryList', [], function(v){ S.items = v || []; done(); }, function(){ S.items=[]; done(); });
+  rpc('getSinotrackList', [], function(v){ S.trackers = v || []; done(); }, function(){ S.trackers=[]; done(); });
+  rpc('getFlightList', [], function(v){ S.flights = v || []; loadFreqAndSims(done); }, function(){ S.flights=[]; loadFreqAndSims(done); });
+}
+function loadFreqAndSims(done) {
+  var n = 2;
+  function sub(){ n--; if (!n) done(); }
+  rpc('getSimList', [], function(v){ S.sims = v || []; sub(); }, function(){ S.sims=[]; sub(); });
+  rpc('getFrequencyAnalysis', [], function(v){ S.freq = v; sub(); }, function(){ S.freq=null; sub(); });
+}
+function updateTopStats() {
+  $('statCrews').textContent = activeCrews().length;
+  $('statFlights').textContent = activeFlights().length;
+  var conf = countConflicts();
+  $('statConflictsWrap').style.display = conf ? '' : 'none';
+  $('statConflicts').textContent = conf;
+}
+
+/* ═══════════ НАВІГАЦІЯ ═══════════ */
+function setView(v) {
+  S.view = v;
+  document.querySelectorAll('.nav-item').forEach(function(el){ el.classList.toggle('active', el.dataset.view === v); });
+  document.querySelector('.sidebar').classList.remove('open');
+  renderView();
+}
+function renderView() {
+  var c = $('content');
+  if (!S.loadedAt) { c.innerHTML = '<div class="loading-view"><span class="pulse-dot"></span>Завантаження даних…</div>'; return; }
+  if (S.view === 'flights') renderFlights(c);
+  else if (S.view === 'freq') renderFreq(c);
+  else if (S.view === 'trackers') renderTrackers(c);
+  else if (S.view === 'inventory') renderInventory(c);
+  else if (S.view === 'crews') renderCrews(c);
+}
+
+/* ═══════════ ВИД: ЖУРНАЛ ПОЛЬОТУ ═══════════ */
+var fltStatuses = {};
+function renderFlights(c) {
+  var act = activeFlights();
+  var crews = activeCrews();
+  var inAir = act.length;
+  var conf = countConflicts();
+  var lostCount = S.flights.filter(function(f){ return f.id.indexOf('CRW-')!==0 && f.status==='Втрачений'; }).length;
+
+  var html = '<div class="view-title">Журнал <span class="accent">польоту</span></div>'+
+    '<div class="view-sub">Активні вильоти · історія · статуси бортів</div>'+
+    '<div class="stat-row">'+
+      '<div class="stat-tile blue"><div class="stat-num">'+inAir+'</div><div class="stat-lbl">В повітрі зараз</div></div>'+
+      '<div class="stat-tile"><div class="stat-num">'+crews.length+'</div><div class="stat-lbl">Активні екіпажі</div></div>'+
+      '<div class="stat-tile '+(conf?'red':'green')+'"><div class="stat-num">'+conf+'</div><div class="stat-lbl">Конфлікти частот</div></div>'+
+      '<div class="stat-tile '+(lostCount?'red':'green')+'"><div class="stat-num">'+lostCount+'</div><div class="stat-lbl">Втрачені борти</div></div>'+
+    '</div>';
+
+  // Активні вильоти
+  html += '<div class="panel-title">✈ В повітрі зараз</div>';
+  if (!inAir) {
+    html += '<div class="empty">Немає активних вильотів — натисни «+ Новий виліт»</div>';
+  } else {
+    html += '<div class="grid-cards">' + act.map(function(f){ return flightCard(f); }).join('') + '</div>';
+  }
+
+  // Історія
+  html += '<div class="panel-title" style="margin-top:22px">📋 Історія вильотів</div>'+
+    '<div class="filter-row"><input type="text" id="logSearch" placeholder="Пошук: борт, пілот, екіпаж…" oninput="renderLogTable()"></div>'+
+    '<div class="table-wrap"><table class="data-table" id="logTable"></table></div>';
+
+  c.innerHTML = html;
+  renderLogTable();
+}
+function flightCard(f) {
+  var mine = isMine(f);
+  var sel = fltStatuses[f.id] || '';
+  var stBtns = mine
+    ? '<div class="st-grid">'+
+        '<div class="st-btn'+(sel==='Робочий'?' sel-ok':'')+'" onclick="setFltSt(\''+esc(f.id)+'\',\'Робочий\')">✅ РОБОЧИЙ</div>'+
+        '<div class="st-btn'+(sel==='Ремонт'?' sel-fix':'')+'" onclick="setFltSt(\''+esc(f.id)+'\',\'Ремонт\')">🔧 РЕМОНТ</div>'+
+        '<div class="st-btn'+(sel==='Несправний'?' sel-bad':'')+'" onclick="setFltSt(\''+esc(f.id)+'\',\'Несправний\')">❌ НЕСПРАВ.</div>'+
+        '<div class="st-btn'+(sel==='Втрачений'?' sel-lost':'')+'" onclick="setFltSt(\''+esc(f.id)+'\',\'Втрачений\')">🔍 ВТРАЧЕНИЙ</div>'+
+      '</div>'+
+      (sel==='Втрачений'
+        ? '<div class="lost-box" id="lostBox-'+esc(f.id)+'">'+
+            '<label>Деталі втрати</label>'+
+            '<input type="text" id="lostCoords-'+esc(f.id)+'" placeholder="📍 Координати (48.123, 35.456)" style="margin-bottom:5px">'+
+            '<input type="text" id="lostLink-'+esc(f.id)+'" placeholder="🗺 Посилання з трекера" style="margin-bottom:5px">'+
+            '<textarea id="lostCirc-'+esc(f.id)+'" placeholder="📋 Обставини втрати…"></textarea>'+
+            '<div class="hint">⚠ Трекер і SIM цього вильоту теж стануть втраченими</div>'+
+          '</div>'
+        : '')+
+      '<input type="text" id="endNote-'+esc(f.id)+'" placeholder="Примітка…" style="margin-top:8px">'+
+      '<button class="btn btn-green" onclick="doEnd(\''+esc(f.id)+'\')">🛬 Приземлився</button>'
+    : '<div class="hint" style="margin-top:8px">🔒 Тільки автор вильоту може завершити</div>';
+
+  var crewObj = crewById(f.crew);
+  var bindInfo = crewObj && crewObj.bind ? ' · Bind: <b class="mono">'+esc(crewObj.bind)+'</b>' : '';
+  return '<div class="tcard '+(mine?'mine':'other')+'">'+
+    '<div class="tcard-head">'+
+      '<span class="tcard-id">'+esc(f.drones)+'</span>'+
+      (f.freq?'<span class="chip chip-freq">'+esc(f.freq)+'</span>':'')+
+      statusChip(f.status)+
+    '</div>'+
+    '<div class="tcard-meta mono">🕐 '+esc(f.start)+(f.pilot?' · 👤 '+esc(f.pilot):'')+' · '+esc(f.crew)+bindInfo+
+    (f.tracker?'<br>📡 '+esc(f.tracker):'')+(f.system?' · 📹 '+esc(f.system):'')+'</div>'+
+    stBtns+
+  '</div>';
+}
+function setFltSt(fid, st) { fltStatuses[fid] = (fltStatuses[fid]===st ? '' : st); renderView(); }
+function doEnd(fid) {
+  var st = fltStatuses[fid];
+  if (!st) { toast('⚠ Обери статус борта перед посадкою', true); return; }
+  var f = S.flights.find(function(x){ return x.id===fid; });
+  var droneId = f && f.drones ? f.drones.split('|')[0].trim() : '';
+  var note = ($('endNote-'+fid) && $('endNote-'+fid).value) || '';
+  var ds = [{ id: droneId, status: st }];
+  if (st === 'Втрачений') {
+    ds[0].lostData = {
+      coords: ($('lostCoords-'+fid)&&$('lostCoords-'+fid).value)||'',
+      mapsLink: ($('lostLink-'+fid)&&$('lostLink-'+fid).value)||'',
+      conditions: ($('lostCirc-'+fid)&&$('lostCirc-'+fid).value)||''
+    };
+    if (!confirm('❗ Позначити борт '+droneId+' як ВТРАЧЕНИЙ? Трекер і SIM теж стануть втраченими.')) return;
+  }
+  rpc('endFlight', [fid, ds, note], function(){
+    delete fltStatuses[fid];
+    toast('🛬 Виліт '+fid+' завершено');
+    loadAll();
+  });
+}
+function renderLogTable() {
+  var q = ($('logSearch') ? $('logSearch').value : '').toLowerCase();
+  var list = S.flights.filter(function(f){ return f.id.indexOf('CRW-')!==0; }).slice().reverse();
+  if (q) list = list.filter(function(f){
+    return (f.id+' '+f.drones+' '+f.pilot+' '+f.crew+' '+f.status).toLowerCase().indexOf(q) !== -1;
+  });
+  var rows = list.slice(0, 100).map(function(f){
+    return '<tr>'+
+      '<td class="mono">'+esc(f.id)+'</td>'+
+      '<td class="mono">'+esc(f.date)+'</td>'+
+      '<td class="mono">'+esc(f.start)+(f.end?' → '+esc(f.end):'')+'</td>'+
+      '<td class="mono">'+esc(f.drones)+'</td>'+
+      '<td>'+esc(f.pilot)+'</td>'+
+      '<td class="mono">'+esc(f.crew)+'</td>'+
+      '<td class="mono">'+esc(f.freq||'')+'</td>'+
+      '<td>'+statusChip(f.status)+'</td>'+
+    '</tr>';
+  }).join('');
+  $('logTable').innerHTML = '<thead><tr><th>ID</th><th>Дата</th><th>Час</th><th>Борт</th><th>Пілот</th><th>Екіпаж</th><th>Частота</th><th>Статус</th></tr></thead>'+
+    '<tbody>'+(rows || '<tr><td colspan="8" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
+}
+
+/* ═══════════ МОДАЛКА: НОВИЙ ВИЛІТ ═══════════ */
+function openNewFlightModal() {
+  var crews = activeCrews();
+  if (!crews.length) {
+    toast('⚠ Спочатку створи екіпаж (розділ «Екіпаж»)', true);
+    setView('crews');
+    return;
+  }
+  var crewOpts = crews.map(function(c){
+    var dl = c.drones ? c.drones.split('|').filter(Boolean) : [];
+    return '<option value="'+esc(c.id)+'">'+esc(c.id)+(c.bind?' ['+esc(c.bind)+']':'')+' — '+esc(dl.join(', '))+'</option>';
+  }).join('');
+  var sysOpts = VIDEO_SYSTEMS.map(function(s){ return '<option value="'+s+'">'+s+'</option>'; }).join('');
+  openModal(
+    '🛫 Новий виліт',
+    '<div class="f"><label>Екіпаж *</label><select id="nfCrew" onchange="nfCrewChange()"><option value="">— оберіть —</option>'+crewOpts+'</select></div>'+
+    '<div id="nfCrewInfo"></div>'+
+    '<div class="f"><label>Відповідальна особа *</label><input type="text" id="nfPilot" placeholder="Позивний або ПІБ…"></div>'+
+    '<div class="f" id="nfDroneBlock" style="display:none"><label>Борт (який летить зараз) *</label><select id="nfDrone"></select></div>'+
+    '<div class="f" id="nfTrkBlock" style="display:none"><label>Sinotrack з цим бортом</label><select id="nfTrk"></select></div>'+
+    '<div class="f"><label>Відеосистема</label><select id="nfSystem"><option value="">— авто з екіпажу —</option>'+sysOpts+'</select></div>'+
+    '<div class="f"><label>Частота (МГц)</label><select id="nfFreq"><option value="">— оберіть —</option>'+freqOptionsHtml()+'</select>'+
+    '<div class="hint">📻 Перевір карту частот на конфлікти</div></div>'+
+    '<button class="btn btn-green" id="nfBtn" onclick="doStartFlight()">🛫 Злетів</button>'
+  );
+}
+function nfCrewChange() {
+  var id = $('nfCrew').value;
+  var info = $('nfCrewInfo'), block = $('nfDroneBlock'), trkBlock = $('nfTrkBlock');
+  if (!id) { info.innerHTML=''; block.style.display='none'; trkBlock.style.display='none'; return; }
+  var c = crewById(id);
+  if (!c) return;
+  var dl = c.drones ? c.drones.split('|').filter(Boolean) : [];
+  var busy = busyDrones();
+
+  info.innerHTML = '<div class="tcard" style="border-left-color:var(--blue)"><div class="tcard-meta mono">'+
+    (c.gnst?'📡 '+esc(c.gnst)+'<br>':'')+
+    (c.bind?'🔗 Bind: <b>'+esc(c.bind)+'</b><br>':'')+
+    (c.tracker?'📡 '+esc(c.tracker.split('|').join(', '))+(c.trackerOk==='Перевірено'?' ✅':'')+'<br>':'')+
+    (c.system?'📹 '+esc(c.system)+'<br>':'')+
+    (c.freq?'📻 Основна: <b>'+esc(c.freq)+'</b><br>':'')+
+    (c.reserves?'🔄 Резервні: '+esc(c.reserves.split('|').join(', '))+'<br>':'')+
+    '🛸 Пул: '+esc(dl.join(', '))+
+  '</div></div>';
+
+  if (c.system) $('nfSystem').value = c.system;
+
+  // Частоти: якщо екіпаж задав — тільки основна + резервні
+  var freqSel = $('nfFreq');
+  if (c.freq || c.reserves) {
+    var opts = '<option value="">— оберіть —</option>';
+    if (c.freq) opts += '<option value="'+esc(c.freq)+'">⭐ Основна: '+esc(c.freq)+'</option>';
+    (c.reserves||'').split('|').filter(Boolean).forEach(function(r){
+      opts += '<option value="'+esc(r)+'">🔄 Резерв: '+esc(r)+'</option>';
+    });
+    freqSel.innerHTML = opts;
+    if (c.freq) freqSel.value = c.freq;
+  } else {
+    freqSel.innerHTML = '<option value="">— оберіть —</option>' + freqOptionsHtml();
+  }
+
+  $('nfDrone').innerHTML = '<option value="">— оберіть —</option>' + dl.map(function(did){
+    var it = S.items.find(function(i){ return i.id===did; });
+    var inFlight = busy[did];
+    return '<option value="'+esc(did)+'">'+esc(did)+(it?' — '+esc(it.name):'')+(inFlight?' ✈ вже в повітрі':'')+'</option>';
+  }).join('');
+  block.style.display = 'block';
+
+  var crewTrks = (c.tracker||'').split('|').map(function(s){return s.trim();}).filter(Boolean);
+  if (crewTrks.length) {
+    var busyTrk = {};
+    activeFlights().forEach(function(f){ if (f.tracker) busyTrk[f.tracker.trim()] = f.id; });
+    $('nfTrk').innerHTML = '<option value="">— без трекера —</option>' + crewTrks.map(function(tid){
+      var t = S.trackers.find(function(x){ return x.id===tid; });
+      var lbl = (t&&t.imei?t.imei:tid)+(t?' — '+t.model:'')+(busyTrk[tid]?' ✈ вже летить':'');
+      return '<option value="'+esc(tid)+'">'+esc(lbl)+'</option>';
+    }).join('');
+    trkBlock.style.display = 'block';
+  } else trkBlock.style.display = 'none';
+}
+function doStartFlight() {
+  var crewId = $('nfCrew').value, pilot = $('nfPilot').value.trim(), drone = $('nfDrone').value;
+  if (!crewId) { toast('⚠ Обери екіпаж', true); return; }
+  if (!pilot) { toast('⚠ Вкажи відповідальну особу', true); return; }
+  if (!drone) { toast('⚠ Обери борт', true); return; }
+  var busy = busyDrones();
+  if (busy[drone] && !confirm('⚠ Борт '+drone+' вже в повітрі ('+busy[drone]+'). Все одно злетіти?')) return;
+  var c = crewById(crewId);
+  var btn = $('nfBtn'); btn.disabled = true; btn.textContent = '⏳ Запис…';
+  rpc('startFlight', [{
+    crew: crewId, gnst: '', drones: drone, bind: '', pilot: pilot,
+    tracker: $('nfTrk') ? $('nfTrk').value : '', trackerOk: (c && c.trackerOk) || '',
+    note: '', system: $('nfSystem').value, freq: $('nfFreq').value
+  }], function(res){
+    closeModal();
+    toast('🛫 Виліт '+ (res && res.id ? res.id : '') +' розпочато');
+    loadAll();
+  }, function(e){ btn.disabled=false; btn.textContent='🛫 Злетів'; toast('❌ '+e.message, true); });
+}
+
+/* ═══════════ ВИД: КАРТА ЧАСТОТ ═══════════ */
+var bandGroup = 'all';
+function bandOf(band) {
+  var f = BANDS[band][0];
+  if (f >= 5600) return '5.8';
+  if (f >= 4900) return '5.0';
+  return '3.3';
+}
+function cleanCode(fc) { return String(fc||'').replace(/\s*\(\d+\)/, '').trim(); }
+function freqToCodeLocal(freq) {
+  for (var b in BANDS) { var i = BANDS[b].indexOf(Number(freq)); if (i !== -1) return b + (i+1); }
+  return '?';
+}
+function countConflicts() {
+  if (!S.freq) return 0;
+  var occupied = (S.freq.active||[]).filter(function(a){ return a.freq; });
+  var n = 0;
+  for (var i = 0; i < occupied.length; i++)
+    for (var j = i+1; j < occupied.length; j++) {
+      if (occupied[i].crew === occupied[j].crew) continue;
+      if (Math.abs(occupied[i].freq - occupied[j].freq) < 40) n++;
+    }
+  return n;
+}
+var specOpen = true;
+var sidePanels = { af: true, crews: true, conf: true };
+function togglePanel(key) { sidePanels[key] = !sidePanels[key]; renderView(); }
+function toggleSpec() { specOpen = !specOpen; renderView(); }
+
+function renderFreq(c) {
+  var d = S.freq;
+  if (!d) { c.innerHTML = '<div class="empty">Дані частот недоступні</div>'; return; }
+  var active = d.active || [];
+  var bands = d.bands || BANDS;
+  var bandOrder = (d.bandOrder || Object.keys(bands)).filter(function(b){ return bands[b]; });
+  var warningFreqs = d.warningFreqs || {};
+  var reserves = d.reserves || [];
+
+  var codeSource = {};
+  active.forEach(function(a){
+    var code = cleanCode(a.freqCode);
+    if (code && code !== '?') codeSource[code] = a;
+    else if (a.freq) codeSource['_mhz_'+a.freq] = a;
+  });
+  var occupied = active.filter(function(a){ return a.freq; });
+  var reserveMap = {};
+  reserves.forEach(function(r){ var code = cleanCode(r.freqCode); if (code) reserveMap[code] = r; });
+  var crewInfoMap = {};
+  (d.crewFreqInfo||[]).forEach(function(ci){ crewInfoMap[ci.crew] = ci; });
+
+  function freqLevel(f, code) {
+    var level = 'free';
+    var selfSrc = code ? (codeSource[code] || codeSource['_mhz_'+f] || null) : null;
+    occupied.forEach(function(o){
+      if (selfSrc && o.crew === selfSrc.crew && o.freq === f) return;
+      var dd = Math.abs(f - o.freq);
+      if (dd < 20) level = 'critical';
+      else if (dd < 40 && level !== 'critical') level = 'serious';
+    });
+    if (level !== 'critical' && level !== 'serious') {
+      for (var i = 0; i < occupied.length; i++)
+        for (var j = 0; j < occupied.length; j++) {
+          if (i === j) continue;
+          if (Math.abs(f - (2*occupied[i].freq - occupied[j].freq)) < 10) level = 'moderate';
+        }
+    }
+    return level;
+  }
+  // Конфлікти конкретного екіпажу (для бейджів на картках)
+  function conflictOf(a) {
+    if (!a.freq) return null;
+    for (var i = 0; i < occupied.length; i++) {
+      var o = occupied[i];
+      if (o.crew === a.crew) continue;
+      var gap = Math.abs(a.freq - o.freq);
+      if (gap < 20) return { with: o, gap: gap, level: 'critical' };
+    }
+    for (var k = 0; k < occupied.length; k++) {
+      var o2 = occupied[k];
+      if (o2.crew === a.crew) continue;
+      var g2 = Math.abs(a.freq - o2.freq);
+      if (g2 < 40) return { with: o2, gap: g2, level: 'serious' };
+    }
+    return null;
+  }
+
+  // ── Верхня панель: легенда як у макеті ──
+  var legend = '<div class="freq-topbar"><div class="freq-legend">'+
+    '<div class="li"><span class="lg-sq" style="background:#2ecc71"></span>Своя частота</div>'+
+    '<div class="li"><span class="lg-sq" style="border:1px solid #3498db;background:rgba(52,152,219,.2)"></span>Екіпаж підрозділу</div>'+
+    '<div class="li"><span class="lg-sq" style="background:#7f8c8d"></span>Зовнішні (інші)</div>'+
+    '<div class="li"><span class="lg-sq" style="background:#e74c3c"></span>Конфлікт</div>'+
+    '<div class="li"><span class="lg-sq" style="background:#f39c12"></span>Близько до конфлікту</div>'+
+    '<div class="li"><span class="lg-sq" style="background:#f1c40f"></span>Інтермодуляція</div>'+
+    '<div class="li"><span class="lg-sq" style="border:1px dashed #9b59b6"></span>Резерв</div>'+
+    '<div class="li"><span class="lg-sq" style="background:#33270e;border:1px solid #f39c12"></span>⚠ Нерекомендована</div>'+
+  '</div></div>';
+
+  // ── Матриця (на всю ширину, table-layout: fixed) ──
+  var visibleBands = bandOrder.filter(function(b){ return bandGroup==='all' || bandOf(b)===bandGroup; });
+  var maxCh = 0;
+  visibleBands.forEach(function(b){ if (bands[b].length > maxCh) maxCh = bands[b].length; });
+  var groupLbl = bandGroup==='all' ? 'ВСІ БЕНДИ' : bandGroup + ' GHz';
+  var filters = ['all','5.8','5.0','3.3'].map(function(g){
+    var lbl = g==='all' ? 'ВСІ' : g + ' GHz';
+    return '<button class="filter-chip'+(bandGroup===g?' active':'')+'" onclick="bandGroup=\''+g+'\';renderView()">'+lbl+'</button>';
+  }).join('');
+
+  var m = '<div class="matrix-panel">'+
+    '<div class="matrix-panel-head"><span class="cap">Сітка каналів · '+groupLbl+'</span><div style="display:flex;gap:6px">'+filters+'</div></div>'+
+    '<div class="matrix-wrap"><table class="matrix"><tr><th class="band-col">Band / CH</th>';
+  for (var ch = 1; ch <= maxCh; ch++) m += '<th>'+ch+'</th>';
+  m += '</tr>';
+  visibleBands.forEach(function(band){
+    m += '<tr><td class="band">'+esc(band)+'</td>';
+    bands[band].forEach(function(freq, idx){
+      var code = band + (idx + 1);
+      var lvl = freqLevel(freq, code);
+      var src = codeSource[code] || codeSource['_mhz_'+freq];
+      var resv = reserveMap[code];
+      var cls, tag = '';
+      if (src) {
+        // Зайнята клітинка: конфлікт перекриває колір власника
+        if (lvl === 'critical') cls = 'cell-critical';
+        else if (lvl === 'serious') cls = 'cell-serious';
+        else if (src.source === 'mine') cls = 'cell-mine';
+        else if (src.source === 'external') cls = 'cell-ext';
+        else cls = 'cell-unit';
+        tag = '<span class="ctag">('+esc(src.source==='mine' ? 'ВИ' : (src.crew||'чужий'))+')</span>';
+      } else if (resv) {
+        cls = 'cell-reserve';
+        tag = '<span class="ctag">('+esc(resv.crew)+')</span>';
+      } else if (lvl !== 'free') {
+        cls = lvl==='critical' ? 'cell-critF' : (lvl==='serious' ? 'cell-serF' : 'cell-modF');
+      } else if (warningFreqs[freq]) {
+        cls = 'cell-warning';
+      } else {
+        cls = '';
+      }
+      m += '<td><div class="cell '+cls+'" onclick="cellClick('+freq+')" title="'+code+' — '+freq+' МГц'+(warningFreqs[freq]?' ⚠':'')+'">'+
+        freq + tag + '</div></td>';
+    });
+    for (var pad = bands[band].length; pad < maxCh; pad++) m += '<td></td>';
+    m += '</tr>';
+  });
+  m += '</table></div></div>';
+
+  // ── Права панель ──
+  var flightsList = active.filter(function(a){ return a.source==='mine' || a.source==='unit'; });
+  var crewsList = active.filter(function(a){ return a.source==='crew'; });
+  var extList = active.filter(function(a){ return a.source==='external'; });
+
+  function afCard(a) {
+    var cc = cleanCode(a.freqCode) || freqToCodeLocal(a.freq);
+    var conf = conflictOf(a);
+    var isExt = a.source === 'external';
+    var isMineA = a.source === 'mine';
+    var info = crewInfoMap[a.crew];
+    var canSwitch = !isExt && info && info.reserves && info.reserves.length &&
+      (info.author === S.me || S.me === d.adminEmail);
+    var swId = 'sw-' + String(a.crew).replace(/[^\w-]/g, '_');
+    var freqCls = conf && conf.level==='critical' ? 'red' : (isMineA ? '' : (isExt ? 'grey' : 'blue'));
+
+    var h = '<div class="af-card'+(isMineA?' mine':'')+(isExt?' ext':'')+(conf&&conf.level==='critical'?' conflict':'')+'">'+
+      '<div class="af-bar"></div>'+
+      (conf&&conf.level==='critical'?'<div class="af-badge">КОНФЛІКТ!</div>':'')+
+      '<div class="af-head">'+
+        '<div class="af-title">'+esc(a.crew)+(isMineA?' (ВИ)':'')+(isExt?' (ЗОВН)':'')+'</div>'+
+        '<div class="af-freq '+freqCls+'">📶 '+(a.freq?esc(cc)+' ('+esc(a.freq)+')':'—')+'</div>'+
+      '</div>'+
+      ((a.pilot||a.system)?'<div class="af-meta">'+(a.pilot?'👤 '+esc(a.pilot):'')+(a.pilot&&a.system?' · ':'')+(a.system&&a.system!=='Зовнішній'?esc(a.system):'')+'</div>':'');
+    if (conf) h += '<div class="af-note">&gt; Δ'+conf.gap+' МГц з '+esc(conf.with.crew)+'</div>';
+    if (canSwitch) {
+      h += '<button class="af-btn" onclick="document.getElementById(\''+swId+'\').classList.toggle(\'open\')">Змінити частоту</button>'+
+        '<div class="swap-menu" id="'+swId+'">';
+      info.reserves.forEach(function(r){
+        h += '<button class="vtx-btn" onclick="doSwapFreq(\''+esc(a.crew)+'\',\''+esc(r)+'\')">→ '+esc(cleanCode(r))+'</button>';
+      });
+      h += '</div>';
+    }
+    if (isExt) h += '<button class="af-btn red" onclick="delExt('+a.freq+')">✕ Зняти позначку</button>';
+    return h + '</div>';
+  }
+
+  var afList = flightsList.concat(extList);
+  var side = '<div class="side-panel">'+
+    '<div class="side-head" onclick="togglePanel(\'af\')"><span class="cap">✈ Активні вильоти</span>'+
+    '<span><span class="count-pill">'+afList.length+' В ЕФІРІ</span> <span class="arr">'+(sidePanels.af?'▲':'▼')+'</span></span></div>'+
+    '<div class="side-body'+(sidePanels.af?'':' hid')+'">'+
+    (afList.length ? afList.map(afCard).join('') : '<div class="empty">Немає активних вильотів</div>')+
+    '</div></div>';
+
+  // Наші екіпажі — таблиця як у макеті
+  var crewRows = '';
+  crewsList.forEach(function(a){
+    var cc = cleanCode(a.freqCode) || freqToCodeLocal(a.freq);
+    var info = crewInfoMap[a.crew];
+    var canSwitch = info && info.reserves && info.reserves.length && (info.author === S.me || S.me === d.adminEmail);
+    var swId = 'swc-' + String(a.crew).replace(/[^\w-]/g, '_');
+    crewRows += '<tr><td><span class="crew-dot"></span>'+esc(a.crew)+'</td>'+
+      '<td><span class="crew-freq">'+esc(cc)+' ('+esc(a.freq)+')</span>'+
+      (canSwitch?' <button class="vtx-btn" style="padding:1px 6px;margin-left:4px" onclick="document.getElementById(\''+swId+'\').classList.toggle(\'open\')">🎚</button>':'')+
+      '</td></tr>';
+    if (canSwitch) {
+      crewRows += '<tr><td colspan="2" style="padding:0 8px"><div class="swap-menu" id="'+swId+'" style="margin:0 0 6px">';
+      info.reserves.forEach(function(r){
+        crewRows += '<button class="vtx-btn" onclick="doSwapFreq(\''+esc(a.crew)+'\',\''+esc(r)+'\')">→ '+esc(cleanCode(r))+'</button>';
+      });
+      crewRows += '</div></td></tr>';
+    }
+  });
+  reserves.forEach(function(r){
+    crewRows += '<tr><td><span class="crew-dot purple"></span>'+esc(r.crew)+'</td>'+
+      '<td><span class="crew-freq purple">РЕЗЕРВ '+esc(cleanCode(r.freqCode))+'</span></td></tr>';
+  });
+  side += '<div class="side-panel">'+
+    '<div class="side-head" onclick="togglePanel(\'crews\')"><span class="cap">👥 Наші екіпажі</span><span class="arr">'+(sidePanels.crews?'▲':'▼')+'</span></div>'+
+    '<div class="side-body'+(sidePanels.crews?'':' hid')+'" style="padding:0">'+
+    (crewRows ? '<table class="crew-table"><tr><th>Позивний</th><th>Частота</th></tr>'+crewRows+'</table>' : '<div class="empty">Екіпажів немає</div>')+
+    '</div></div>';
+
+  // Конфлікти (активні + резервні)
+  var realConf = [];
+  for (var i = 0; i < occupied.length; i++)
+    for (var j = i+1; j < occupied.length; j++) {
+      var a1 = occupied[i], a2 = occupied[j];
+      if (a1.crew === a2.crew) continue;
+      var gap = Math.abs(a1.freq - a2.freq);
+      if (gap < 20) realConf.push({lvl:'🔴', t:'Прямий', d:a1.crew+' @'+a1.freq+' ↔ '+a2.crew+' @'+a2.freq+' (Δ'+gap+' МГц)'});
+      else if (gap < 40) realConf.push({lvl:'🟠', t:'Близькі канали', d:a1.crew+' @'+a1.freq+' ↔ '+a2.crew+' @'+a2.freq+' (Δ'+gap+' МГц)'});
+    }
+  reserves.forEach(function(r){
+    occupied.forEach(function(o){
+      if (o.crew === r.crew) return;
+      var dd = Math.abs(r.freq - o.freq);
+      if (dd < 20) realConf.push({lvl:'🔴', t:'Резерв ↔ активна', d:'🔄 '+r.crew+' резерв '+r.freq+' ↔ '+o.crew+' '+o.freq+' (Δ'+dd+')'});
+      else if (dd < 40) realConf.push({lvl:'🟠', t:'Резерв ↔ активна', d:'🔄 '+r.crew+' резерв '+r.freq+' ↔ '+o.crew+' '+o.freq+' (Δ'+dd+')'});
+    });
+  });
+  side += '<div class="side-panel">'+
+    '<div class="side-head" onclick="togglePanel(\'conf\')"><span class="cap">⚠ Конфлікти</span>'+
+    '<span>'+(realConf.length?'<span class="count-pill" style="color:var(--red-soft)">'+realConf.length+'</span> ':'')+'<span class="arr">'+(sidePanels.conf?'▲':'▼')+'</span></span></div>'+
+    '<div class="side-body'+(sidePanels.conf?'':' hid')+'">'+
+    (realConf.length
+      ? realConf.map(function(cf){ return '<div class="conflict-item">'+cf.lvl+' '+esc(cf.t)+'<div class="detail">'+esc(cf.d)+'</div></div>'; }).join('')
+      : '<div class="empty">✅ Конфліктів немає</div>')+
+    '</div></div>';
+
+  // ── Спектр-аналізатор ──
+  var range;
+  if (bandGroup === '5.8') range = [5600, 6200];
+  else if (bandGroup === '5.0') range = [4900, 5700];
+  else if (bandGroup === '3.3') range = [3000, 3600];
+  else {
+    var fs = occupied.map(function(o){ return o.freq; }).concat(reserves.map(function(r){ return r.freq; }));
+    if (fs.length) range = [Math.min.apply(null, fs) - 100, Math.max.apply(null, fs) + 100];
+    else range = [5600, 6000];
+  }
+  function pos(f) { return Math.max(1.5, Math.min(98.5, (f - range[0]) / (range[1] - range[0]) * 100)); }
+  var marks = '';
+  occupied.forEach(function(o){
+    if (o.freq < range[0] || o.freq > range[1]) return;
+    var conf = conflictOf(o);
+    var col = conf && conf.level==='critical' ? '#e74c3c' : (o.source==='mine' ? '#2ecc71' : (o.source==='external' ? '#7f8c8d' : '#3498db'));
+    var lbl = (o.source==='mine' ? 'ВИ' : o.crew) + ' (' + o.freq + ')';
+    marks += '<div class="spec-mark'+(conf&&conf.level==='critical'?' dash':'')+'" style="left:'+pos(o.freq)+'%;border-color:'+col+'">'+
+      '<div class="spec-lbl" style="background:'+col+'">'+esc(lbl)+'</div></div>';
+  });
+  reserves.forEach(function(r){
+    if (r.freq < range[0] || r.freq > range[1]) return;
+    marks += '<div class="spec-mark dash" style="left:'+pos(r.freq)+'%;border-color:#9b59b6">'+
+      '<div class="spec-lbl" style="background:#9b59b6">🔄 '+esc(r.crew)+' ('+r.freq+')</div></div>';
+  });
+  var spectrum = '<div class="spectrum">'+
+    '<div class="spec-head"><span>'+(range[0]/1000).toFixed(1)+' GHz</span><span>Аналізатор спектру · зайнятість</span>'+
+    '<span>'+(range[1]/1000).toFixed(1)+' GHz <button class="tgl" onclick="toggleSpec()">'+(specOpen?'▼':'▲')+'</button></span></div>'+
+    '<div class="spec-area'+(specOpen?'':' hid')+'">'+marks+'</div></div>';
+
+  c.innerHTML = '<div class="view-title">Матриця <span class="accent">частот</span> <span style="font-size:14px;color:var(--dim)">(VHF/UHF)</span></div>'+
+    '<div class="view-sub">Клік по клітинці — позначити/зняти чужу частоту</div>'+
+    legend +
+    '<div class="freq-layout">'+ m +'<div>'+ side +'</div></div>'+
+    spectrum;
+}
+function cellClick(freq) {
+  var ext = (S.freq && S.freq.active || []).filter(function(a){ return a.source==='external' && a.freq===freq; });
+  if (ext.length) { delExt(freq); return; }
+  openModal('⚫ Чужа частота',
+    '<div class="tcard-meta mono" style="margin-bottom:10px">'+freq+' МГц ('+esc(freqToCodeLocal(freq))+')</div>'+
+    '<div class="f"><label>Опис</label><input type="text" id="extDesc" placeholder="Напр. Сусідній підрозділ"></div>'+
+    '<button class="btn" onclick="confirmExt('+freq+')">Позначити зайнятою</button>'
+  );
+}
+function confirmExt(freq) {
+  var desc = $('extDesc').value.trim() || 'Чужий підрозділ';
+  rpc('addExternalFreq', [freq, desc], function(){ closeModal(); toast('⚫ '+freq+' МГц позначено'); reloadFreq(); });
+}
+function delExt(freq) {
+  rpc('removeExternalFreq', [freq], function(){ toast('✅ '+freq+' МГц звільнено'); reloadFreq(); });
+}
+function doSwapFreq(crewId, code) {
+  rpc('swapCrewFrequency', [crewId, code], function(){ toast('🎚 '+crewId+' → '+code); loadAll(); });
+}
+function reloadFreq() {
+  rpc('getFrequencyAnalysis', [], function(v){ S.freq = v; updateTopStats(); renderView(); });
+}
+
+/* ═══════════ ВИД: GPS ТРЕКЕРИ ═══════════ */
+function renderTrackers(c) {
+  var trks = S.trackers, sims = S.sims;
+  var html = '<div class="view-title">GPS <span class="accent">трекери</span></div>'+
+    '<div class="view-sub">Sinotrack · SIM-карти · прив\'язки</div>'+
+    '<div class="btn-row" style="max-width:420px;margin-bottom:16px">'+
+      '<button class="btn btn-mini" onclick="openAddTracker()">+ Трекер</button>'+
+      '<button class="btn btn-mini btn-sec" onclick="openAddSim()">+ SIM-карта</button>'+
+    '</div>'+
+    '<div class="grid-2">';
+
+  html += '<div><div class="panel-title">📡 Трекери ('+trks.length+')</div>';
+  html += trks.length ? trks.map(function(t){
+    var cls = t.status==='Зламаний' ? 'bad' : (t.status==='Втрачений' ? 'lost' : 'ok');
+    return '<div class="tcard '+cls+'">'+
+      '<div class="tcard-head"><span class="tcard-id">'+esc(t.imei||t.id)+(t.imei?' <span style="font-size:10px;color:var(--dim)">('+esc(t.id)+')</span>':'')+'</span>'+statusChip(t.status)+'</div>'+
+      '<div class="tcard-meta mono">'+esc(t.model)+
+      '<br>📱 '+(t.simContact?esc(t.simContact)+' · '+esc(t.simNumber):'SIM не прив\'язана')+
+      (t.binding?'<br>🔗 Борт: '+esc(t.binding):'')+'</div>'+
+      '<div class="btn-row" style="margin-top:8px">'+
+        '<button class="btn btn-mini btn-sec" onclick="doTrkStatus(\''+esc(t.id)+'\',\'Робочий\')">✅</button>'+
+        '<button class="btn btn-mini btn-sec" onclick="doTrkStatus(\''+esc(t.id)+'\',\'Зламаний\')">🔧</button>'+
+        '<button class="btn btn-mini btn-sec" onclick="doTrkStatus(\''+esc(t.id)+'\',\'Втрачений\')">❌</button>'+
+        (t.simContact
+          ? '<button class="btn btn-mini btn-red" onclick="doUnbindSim(\''+esc(t.id)+'\')">🔌 Відв\'язати SIM</button>'
+          : '<button class="btn btn-mini btn-green" onclick="openBindSim(\''+esc(t.id)+'\')">🔗 SIM</button>')+
+      '</div>'+
+    '</div>';
+  }).join('') : '<div class="empty">Трекерів ще немає</div>';
+  html += '</div>';
+
+  html += '<div><div class="panel-title">📱 SIM-карти ('+sims.length+')</div>';
+  html += sims.length ? sims.map(function(s){
+    var cls = s.status==='Втрачена' ? 'lost' : (s.status==='Активна' ? 'ok' : 'bad');
+    return '<div class="tcard '+cls+'">'+
+      '<div class="tcard-head"><span class="tcard-id">'+esc(s.id)+' — '+esc(s.contact)+'</span>'+statusChip(s.status)+'</div>'+
+      '<div class="tcard-meta mono">📞 '+esc(s.number)+
+      (s.binding?'<br>🔗 Трекер: <b>'+esc(s.binding)+'</b>':'<br><span style="color:var(--dim)">— вільна</span>')+'</div>'+
+      '<div class="btn-row" style="margin-top:8px">'+
+        '<button class="btn btn-mini btn-sec" onclick="doSimStatus(\''+esc(s.id)+'\',\'Активна\')">✅</button>'+
+        '<button class="btn btn-mini btn-sec" onclick="doSimStatus(\''+esc(s.id)+'\',\'Заблокована\')">🚫</button>'+
+        '<button class="btn btn-mini btn-sec" onclick="doSimStatus(\''+esc(s.id)+'\',\'Втрачена\')">❌</button>'+
+        '<button class="btn btn-mini btn-sec" onclick="doSimStatus(\''+esc(s.id)+'\',\'Невідомо\')">❓</button>'+
+      '</div>'+
+    '</div>';
+  }).join('') : '<div class="empty">SIM-карт ще немає</div>';
+  html += '</div></div>';
+  c.innerHTML = html;
+}
+function doTrkStatus(id, st) {
+  if (st === 'Втрачений' && !confirm('❗ Позначити трекер '+id+' ВТРАЧЕНИМ? Це незворотньо, SIM теж стане втраченою.')) return;
+  rpc('updateSinotrackStatus', [id, st, ''], function(){ toast('📡 '+id+' → '+st); loadAll(); });
+}
+function doSimStatus(id, st) {
+  rpc('updateSimStatus', [id, st], function(){ toast('📱 '+id+' → '+st); loadAll(); });
+}
+function openAddTracker() {
+  var simOpts = S.sims.filter(function(s){ return !s.binding; }).map(function(s){
+    return '<option value="'+esc(s.id)+'">'+esc(s.contact)+' · '+esc(s.number)+'</option>';
+  }).join('');
+  openModal('📡 Новий трекер',
+    '<div class="f"><label>Модель *</label><input type="text" id="atModel" placeholder="ST-901"></div>'+
+    '<div class="f"><label>Заводський ID / IMEI</label><input type="text" id="atImei" placeholder="8641290055512"></div>'+
+    '<div class="f"><label>SIM-карта</label><select id="atSim"><option value="">— без SIM —</option>'+simOpts+'</select></div>'+
+    '<div class="f"><label>Примітка</label><input type="text" id="atNote"></div>'+
+    '<button class="btn" onclick="doAddTracker()">➕ Додати трекер</button>'
+  );
+}
+function doAddTracker() {
+  var model = $('atModel').value.trim();
+  if (!model) { toast('⚠ Вкажи модель', true); return; }
+  var simId = $('atSim').value;
+  rpc('addSinotrack', [{ model: model, imei: $('atImei').value.trim(), note: $('atNote').value.trim() }], function(newId){
+    if (simId) {
+      rpc('bindSimToTracker', [simId, newId, false], function(){ toast('📡 '+newId+' додано + SIM'); closeModal(); loadAll(); });
+    } else { toast('📡 '+newId+' додано'); closeModal(); loadAll(); }
+  });
+}
+function openAddSim() {
+  openModal('📱 Нова SIM-карта',
+    '<div class="f"><label>Назва контакту *</label><input type="text" id="asContact" placeholder="Vodafone-07"></div>'+
+    '<div class="f"><label>Номер *</label><input type="text" id="asNumber" placeholder="+380671112233"></div>'+
+    '<button class="btn" onclick="doAddSim()">➕ Додати SIM</button>'
+  );
+}
+function doAddSim() {
+  var contact = $('asContact').value.trim(), number = $('asNumber').value.trim();
+  if (!contact || !number) { toast('⚠ Заповни контакт і номер', true); return; }
+  rpc('addSim', [{ contact: contact, number: number }], function(newId){ toast('📱 '+newId+' додано'); closeModal(); loadAll(); });
+}
+function openBindSim(trackerId) {
+  var freeSims = S.sims.filter(function(s){ return !s.binding && s.status !== 'Втрачена'; });
+  if (!freeSims.length) { toast('⚠ Немає вільних SIM-карт', true); return; }
+  openModal('🔗 Прив\'язати SIM до '+esc(trackerId),
+    '<div class="f"><label>SIM-карта</label><select id="bsSim">'+
+    freeSims.map(function(s){ return '<option value="'+esc(s.id)+'">'+esc(s.id)+' — '+esc(s.contact)+' · '+esc(s.number)+'</option>'; }).join('')+
+    '</select></div>'+
+    '<button class="btn" onclick="doBindSim(\''+esc(trackerId)+'\')">🔗 Прив\'язати</button>'
+  );
+}
+function doBindSim(trackerId) {
+  var simId = $('bsSim').value;
+  rpc('bindSimToTracker', [simId, trackerId, false], function(){
+    toast('🔗 SIM прив\'язано'); closeModal(); loadAll();
+  }, function(e){
+    if (confirm('⚠ ' + e.message + '\n\nПрив\'язати примусово?')) {
+      rpc('bindSimToTracker', [simId, trackerId, true], function(){ toast('🔗 SIM прив\'язано (примусово)'); closeModal(); loadAll(); });
+    }
+  });
+}
+function doUnbindSim(trackerId) {
+  if (!confirm('🔌 Відв\'язати SIM від '+trackerId+'?')) return;
+  rpc('unbindSimFromTracker', [trackerId], function(){ toast('🔌 SIM відв\'язано'); loadAll(); });
+}
+
+/* ═══════════ ВИД: ІНВЕНТАР ═══════════ */
+var invFilter = { q:'', type:'all', status:'all' };
+function renderInventory(c) {
+  var types = {};
+  S.items.forEach(function(it){ var t = String(it.type||'').split('-')[0]; if (t) types[t] = 1; });
+  var typeChips = ['all'].concat(Object.keys(types).sort()).map(function(t){
+    return '<button class="filter-chip'+(invFilter.type===t?' active':'')+'" onclick="invFilter.type=\''+t+'\';renderView()">'+(t==='all'?'ВСІ':esc(t))+'</button>';
+  }).join('');
+  var stats = {};
+  S.items.forEach(function(it){ var s = String(it.status||'').trim(); stats[s] = (stats[s]||0)+1; });
+
+  c.innerHTML = '<div class="view-title">Інвентар <span class="accent">підрозділу</span></div>'+
+    '<div class="view-sub">'+S.items.length+' одиниць · довідково (редагування — в таблиці)</div>'+
+    '<div class="stat-row">'+
+      '<div class="stat-tile green"><div class="stat-num">'+(stats['Робочий']||0)+'</div><div class="stat-lbl">Робочі</div></div>'+
+      '<div class="stat-tile"><div class="stat-num">'+(stats['Ремонт']||0)+'</div><div class="stat-lbl">В ремонті</div></div>'+
+      '<div class="stat-tile red"><div class="stat-num">'+((stats['Несправний']||0)+(stats['Втрачений']||0))+'</div><div class="stat-lbl">Несправні + втрачені</div></div>'+
+      '<div class="stat-tile blue"><div class="stat-num">'+(stats['Резерв']||0)+'</div><div class="stat-lbl">Резерв</div></div>'+
+    '</div>'+
+    '<div class="filter-row">'+
+      '<input type="text" id="invSearch" placeholder="Пошук: ID, назва, відповідальний…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderInvTable()">'+
+      typeChips+
+    '</div>'+
+    '<div class="table-wrap"><table class="data-table" id="invTable"></table></div>';
+  renderInvTable();
+}
+function renderInvTable() {
+  var q = invFilter.q.toLowerCase();
+  var list = S.items.filter(function(it){
+    if (invFilter.type !== 'all' && String(it.type||'').split('-')[0] !== invFilter.type) return false;
+    if (q && (it.id+' '+it.name+' '+it.type+' '+it.responsible+' '+it.assignment).toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  });
+  var rows = list.map(function(it){
+    return '<tr><td class="mono">'+esc(it.id)+'</td><td>'+esc(it.name)+'</td><td class="mono">'+esc(it.type)+'</td>'+
+      '<td>'+esc(it.assignment)+'</td><td>'+statusChip(it.status)+'</td><td>'+esc(it.responsible)+'</td><td class="mono">'+esc(it.kit)+'</td></tr>';
+  }).join('');
+  $('invTable').innerHTML = '<thead><tr><th>ID</th><th>Назва</th><th>Тип</th><th>Закріплення</th><th>Статус</th><th>Відповідальний</th><th>Комплект</th></tr></thead>'+
+    '<tbody>'+(rows || '<tr><td colspan="7" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
+}
+
+/* ═══════════ ВИД: ЕКІПАЖ ═══════════ */
+var crewForm = { drones: [], trackers: [], reserves: [], editId: null };
+function renderCrews(c) {
+  var crews = activeCrews();
+  var html = '<div class="view-title">Екіпажі <span class="accent">підрозділу</span></div>'+
+    '<div class="view-sub">'+crews.length+' активних</div>'+
+    '<div class="grid-2">';
+
+  html += '<div><div class="panel-title">👥 Активні екіпажі</div>';
+  html += crews.length ? crews.map(function(cr){
+    var mine = isMine(cr);
+    var dl = cr.drones ? cr.drones.split('|').filter(Boolean) : [];
+    return '<div class="tcard '+(mine?'mine':'other')+'">'+
+      '<div class="tcard-head"><span class="tcard-id">'+esc(cr.id)+'</span>'+(mine?'<span class="chip chip-main">МІЙ</span>':'')+'</div>'+
+      '<div class="tcard-meta mono">'+
+        (cr.gnst?'📡 '+esc(cr.gnst)+'<br>':'')+
+        (cr.bind?'🔗 Bind: <b>'+esc(cr.bind)+'</b><br>':'')+
+        (cr.tracker?'🛰 '+esc(cr.tracker.split('|').join(', '))+'<br>':'')+
+        (cr.system?'📹 '+esc(cr.system)+'<br>':'')+
+        (cr.freq?'📻 <b>'+esc(cr.freq)+'</b>'+(cr.reserves?' · 🔄 '+esc(cr.reserves.split('|').join(', ')):'')+'<br>':'')+
+        '🛸 '+dl.map(function(d){ return '<span class="chip">'+esc(d)+'</span>'; }).join('')+
+      '</div>'+
+      (mine
+        ? '<div class="btn-row" style="margin-top:8px">'+
+            '<button class="btn btn-mini btn-green" onclick="openCrewForm(\''+esc(cr.id)+'\')">✏️ Редагувати</button>'+
+            '<button class="btn btn-mini btn-red" onclick="doCloseCrew(\''+esc(cr.id)+'\')">🔴 Завершити</button>'+
+          '</div>'
+        : '')+
+    '</div>';
+  }).join('') : '<div class="empty">Активних екіпажів немає</div>';
+  html += '</div>';
+
+  html += '<div><div class="panel-title">➕ Новий екіпаж</div><div class="panel" id="crewFormPanel"></div></div>';
+  html += '</div>';
+  c.innerHTML = html;
+  crewForm = { drones: [], trackers: [], reserves: [], editId: null };
+  renderCrewForm();
+}
+function renderCrewForm() {
+  var panel = $('crewFormPanel');
+  if (!panel) return;
+  var editing = !!crewForm.editId;
+  var cr = editing ? crewById(crewForm.editId) : null;
+
+  var busyGnst = {};
+  activeCrews().forEach(function(c2){ if (c2.gnst && c2.id !== crewForm.editId) busyGnst[c2.gnst] = (busyGnst[c2.gnst]||[]).concat(c2.id); });
+  var gnstOpts = '<option value="">— без наземки —</option>' +
+    S.items.filter(function(it){ return it.type && it.type.indexOf('GNST')===0; }).map(function(it){
+      var busy = busyGnst[it.id];
+      var selected = cr && cr.gnst === it.id ? ' selected' : '';
+      return '<option value="'+esc(it.id)+'"'+selected+'>'+esc(it.id+' — '+it.name+(busy?' 🔒 '+busy.join(', '):''))+'</option>';
+    }).join('');
+  var sysOpts = '<option value="">— не вказано —</option>' + VIDEO_SYSTEMS.map(function(s){
+    return '<option value="'+s+'"'+(cr && cr.system===s?' selected':'')+'>'+s+'</option>';
+  }).join('');
+
+  panel.innerHTML =
+    (editing?'<div class="chip chip-main" style="margin-bottom:10px">РЕДАГУВАННЯ '+esc(crewForm.editId)+'</div>':'')+
+    '<div class="f"><label>Наземна станція</label><select id="cfGnst">'+gnstOpts+'</select></div>'+
+    '<div class="f"><label>Bind фраза</label><input type="text" id="cfBind" placeholder="спільна для всіх бортів…" value="'+esc(cr?cr.bind:'')+'"></div>'+
+    '<div class="f"><label>Борти (пул)</label>'+
+      '<div class="ac-wrap"><input type="text" id="cfDroneSearch" placeholder="Пошук борту…" oninput="cfFilterDrones()" autocomplete="off"><div class="ac-list" id="cfDroneDd"></div></div>'+
+      '<div id="cfDroneList" style="margin-top:6px"></div></div>'+
+    '<div class="f"><label>Sinotrack трекери</label>'+
+      '<div class="ac-wrap"><input type="text" id="cfTrkSearch" placeholder="Пошук трекера…" oninput="cfFilterTrackers()" onfocus="cfFilterTrackers()" autocomplete="off"><div class="ac-list" id="cfTrkDd"></div></div>'+
+      '<div id="cfTrkList" style="margin-top:6px"></div>'+
+      '<div class="hint">💡 Перевірка: SMS 669000 на номер SIM → ID і координати</div></div>'+
+    '<div class="f"><label>Відеосистема</label><select id="cfSystem">'+sysOpts+'</select></div>'+
+    '<div class="f"><label>Основна частота</label><select id="cfFreq"><option value="">— не вказано —</option>'+freqOptionsHtml()+'</select></div>'+
+    '<div class="f"><label>📻 Резервні VTX (до 10)</label>'+
+      '<select id="cfReserveSel" onchange="cfAddReserve()"><option value="">+ додати резервну</option>'+freqOptionsHtml()+'</select>'+
+      '<div id="cfReserveList" style="margin-top:6px"></div></div>'+
+    (editing
+      ? '<div class="btn-row"><button class="btn btn-green" onclick="doSaveCrew()">💾 Зберегти</button>'+
+        '<button class="btn btn-sec" onclick="crewForm={drones:[],trackers:[],reserves:[],editId:null};renderView()">Скасувати</button></div>'
+      : '<button class="btn btn-green" id="cfBtn" onclick="doSaveCrew()">👥 Створити екіпаж</button>');
+
+  if (cr && cr.freq) $('cfFreq').value = cr.freq;
+  cfRenderChips();
+}
+function cfFilterDrones() {
+  var q = $('cfDroneSearch').value.toLowerCase();
+  var dd = $('cfDroneDd');
+  if (!q) { dd.style.display='none'; return; }
+  var busy = busyDrones();
+  var list = S.items.filter(function(it){
+    return (it.type.indexOf('FPV')===0 || it.type.indexOf('STNG')===0 || it.type.indexOf('WING')===0) &&
+      (it.id.toLowerCase().indexOf(q)!==-1 || it.name.toLowerCase().indexOf(q)!==-1) &&
+      crewForm.drones.indexOf(it.id) === -1;
+  }).slice(0, 10);
+  if (!list.length) { dd.style.display='none'; return; }
+  dd.innerHTML = list.map(function(it){
+    return '<div class="ac-item" onmousedown="cfAddDrone(\''+esc(it.id)+'\')">'+
+      '<div class="ac-id">'+esc(it.id)+(busy[it.id]?' ⚠ в повітрі':'')+'</div>'+
+      '<div class="ac-meta">'+esc(it.name)+' · '+esc(it.status)+'</div></div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+function cfAddDrone(id) { if (crewForm.drones.indexOf(id)===-1) crewForm.drones.push(id); $('cfDroneSearch').value=''; $('cfDroneDd').style.display='none'; cfRenderChips(); }
+function cfFilterTrackers() {
+  var q = $('cfTrkSearch').value.toLowerCase().trim();
+  var dd = $('cfTrkDd');
+  var busyTrk = {};
+  activeCrews().forEach(function(c2){
+    if (c2.tracker && c2.id !== crewForm.editId) c2.tracker.split('|').forEach(function(t){ t=t.trim(); if(t) busyTrk[t]=(busyTrk[t]||[]).concat(c2.id); });
+  });
+  var list = S.trackers.filter(function(t){
+    return crewForm.trackers.indexOf(t.id)===-1 &&
+      (!q || t.id.toLowerCase().indexOf(q)!==-1 || (t.model||'').toLowerCase().indexOf(q)!==-1 || (t.imei||'').toLowerCase().indexOf(q)!==-1);
+  }).slice(0, 10);
+  if (!list.length) { dd.style.display='none'; return; }
+  dd.innerHTML = list.map(function(t){
+    var busy = busyTrk[t.id];
+    var flag = busy ? ' 🔒 '+busy.join(',') : (t.status!=='Робочий' ? ' ⚠ '+t.status : '');
+    return '<div class="ac-item" '+(busy?'style="opacity:.5;cursor:not-allowed"':'onmousedown="cfAddTracker(\''+esc(t.id)+'\')"')+'>'+
+      '<div class="ac-id">'+esc(t.imei||t.id)+flag+'</div>'+
+      '<div class="ac-meta">'+esc(t.model)+' · '+esc(t.simContact||'без SIM')+'</div></div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+function cfAddTracker(id) {
+  var t = S.trackers.find(function(x){ return x.id===id; });
+  if (t && t.status !== 'Робочий' && !confirm('⚠ Трекер '+id+' — '+t.status+'! Додати все одно?')) return;
+  if (crewForm.trackers.indexOf(id)===-1) crewForm.trackers.push(id);
+  $('cfTrkSearch').value=''; $('cfTrkDd').style.display='none'; cfRenderChips();
+}
+function cfAddReserve() {
+  var sel = $('cfReserveSel');
+  if (!sel.value) return;
+  if (crewForm.reserves.length >= 10) { toast('⚠ Максимум 10 резервних', true); sel.value=''; return; }
+  if (crewForm.reserves.indexOf(sel.value)===-1) crewForm.reserves.push(sel.value);
+  sel.value=''; cfRenderChips();
+}
+function cfRenderChips() {
+  if ($('cfDroneList')) $('cfDroneList').innerHTML = crewForm.drones.map(function(d){
+    return '<span class="chip click" onclick="crewForm.drones=crewForm.drones.filter(function(x){return x!==\''+esc(d)+'\'});cfRenderChips()">'+esc(d)+' ✕</span>';
+  }).join('') || '<span class="hint">— порожньо —</span>';
+  if ($('cfTrkList')) $('cfTrkList').innerHTML = crewForm.trackers.map(function(t){
+    var tr = S.trackers.find(function(x){ return x.id===t; });
+    return '<span class="chip click" onclick="crewForm.trackers=crewForm.trackers.filter(function(x){return x!==\''+esc(t)+'\'});cfRenderChips()">'+esc(tr&&tr.imei?tr.imei:t)+' ✕</span>';
+  }).join('') || '<span class="hint">— порожньо —</span>';
+  if ($('cfReserveList')) $('cfReserveList').innerHTML = crewForm.reserves.map(function(r){
+    return '<span class="chip click chip-freq" onclick="crewForm.reserves=crewForm.reserves.filter(function(x){return x!==\''+esc(r)+'\'});cfRenderChips()">'+esc(r)+' ✕</span>';
+  }).join('') || '<span class="hint">— порожньо —</span>';
+}
+function openCrewForm(crewId) {
+  var cr = crewById(crewId);
+  if (!cr) return;
+  crewForm = {
+    editId: crewId,
+    drones: cr.drones ? cr.drones.split('|').filter(Boolean) : [],
+    trackers: cr.tracker ? cr.tracker.split('|').map(function(s){return s.trim();}).filter(Boolean) : [],
+    reserves: cr.reserves ? cr.reserves.split('|').filter(Boolean) : []
+  };
+  renderCrewForm();
+  $('crewFormPanel').scrollIntoView({behavior:'smooth', block:'start'});
+}
+function doSaveCrew() {
+  if (!crewForm.drones.length) { toast('⚠ Додай хоча б один борт', true); return; }
+  var data = {
+    gnst: $('cfGnst').value, bind: $('cfBind').value.trim(),
+    drones: crewForm.drones.join('|'), tracker: crewForm.trackers.join('|'),
+    system: $('cfSystem').value, freq: $('cfFreq').value, reserves: crewForm.reserves.join('|')
+  };
+  if (crewForm.editId) {
+    rpc('updateCrew', [crewForm.editId, data], function(){
+      toast('💾 '+crewForm.editId+' збережено');
+      crewForm = {drones:[],trackers:[],reserves:[],editId:null};
+      loadAll();
+    });
+  } else {
+    data.pilot = '';
+    rpc('createCrew', [data], function(newId){
+      toast('👥 Екіпаж '+newId+' створено');
+      crewForm = {drones:[],trackers:[],reserves:[],editId:null};
+      loadAll();
+    });
+  }
+}
+function doCloseCrew(crewId) {
+  var act = activeFlights().filter(function(f){ return f.crew===crewId; });
+  if (act.length) { toast('⚠ Спочатку заверши вильоти: '+act.map(function(f){return f.id;}).join(', '), true); return; }
+  if (!confirm('🔴 Завершити екіпаж '+crewId+'?')) return;
+  rpc('endFlight', [crewId, [], 'Екіпаж завершено'], function(){ toast('🔴 '+crewId+' завершено'); loadAll(); });
+}
+
+/* ═══════════ МОДАЛКИ ═══════════ */
+function openModal(title, bodyHtml, wide) {
+  $('modalBox').className = 'modal' + (wide ? ' wide' : '');
+  $('modalBox').innerHTML = '<div class="modal-title"><span>'+title+'</span>'+
+    '<button class="modal-close" onclick="closeModal()">✕</button></div>' + bodyHtml;
+  $('modalBg').classList.add('open');
+}
+function closeModal() { $('modalBg').classList.remove('open'); }
+document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeModal(); });
+
+/* ═══════════ СТАРТ ═══════════ */
+if (DEMO) $('demoBanner').style.display = 'block';
+loadAll();
+setInterval(function(){ if (!document.hidden) loadAll(); }, 90000);
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+ГОЛОВНА ТАБЛИЦЯ (адмін) — файли Apps Script
+
+СКРИПТ:
+  Code.gs — весь код головної таблиці
+
+HTML ФОРМИ:
+  FlightLogForm.html   — журнал польоту (екіпажі, вильоти)
+  FrequencyForm.html   — карта частот
+  SinotrackForm.html   — трекери + SIM
+  AppShell.html        — застосунок-лаунчер
+  AddForm / EditForm / MovementForm / ReturnForm / DeleteForm — інвентар
+  KitForm / ConsumablesForm / AddConsumableForm / WriteOffConsumableForm / DeleteConsumableForm — комплекти й витратники
+  AccessForm — керування доступом
+  SyncForm — синхронізація
+
+ВАЖЛИВО:
+  - У Code.gs заміни ADMIN_EMAIL на свій email
+  - Журнал польоту має 17 колонок (A-Q), останні: O=Відеосистема, P=Частота, Q=Резервні VTX
+  - Sinotrack має приховану колонку I (_TS timestamp), SIM — колонку F (_TS)

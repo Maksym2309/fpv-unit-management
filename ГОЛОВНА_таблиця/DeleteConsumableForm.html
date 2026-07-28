@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #383d41; font-size: 15px; border-bottom: 2px solid #aaa; padding-bottom: 7px; margin-bottom: 14px; }
+  .f { margin-bottom: 11px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+  input { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; font-family: Arial, sans-serif; }
+  input:focus { border-color: #383d41; outline: none; }
+  .info { background: #e2e3e5; border: 1px solid #aaa; border-radius: 4px; padding: 8px; font-size: 12px; margin-bottom: 10px; display: none; line-height: 1.6; }
+  .btn { width: 100%; padding: 10px; background: #383d41; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn:hover { background: #212529; }
+  .btn:disabled { background: #999; cursor: not-allowed; }
+  .btn-sec { background: #6c757d; margin-top: 5px; }
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok  { background: #d4edda; color: #155724; display: block; }
+  .err { background: #f8d7da; color: #721c24; display: block; }
+  .loading { text-align: center; color: #888; padding: 30px; }
+  .search-wrap { position: relative; }
+  .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 100; display: none; }
+  .dropdown-item { padding: 8px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .dropdown-item:hover { background: #e2e3e5; }
+  .item-id { font-weight: bold; color: #383d41; }
+  .item-meta { color: #666; font-size: 11px; }
+  .warn { background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: 7px 9px; font-size: 11px; color: #856404; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<h3>🗑️ Видалення витратника</h3>
+<div id="body" class="loading">⏳ Завантаження...</div>
+
+<script>
+var items = [];
+
+google.script.run
+  .withSuccessHandler(function(list) { items = list; renderForm(); })
+  .withFailureHandler(function(e) {
+    document.getElementById('body').innerHTML = '<div class="err" style="display:block">❌ ' + e.message + '</div>';
+  })
+  .getConsumablesList();
+
+function renderForm() {
+  document.getElementById('body').innerHTML =
+    '<div class="f"><label>Пошук витратника *</label>' +
+    '<div class="search-wrap">' +
+      '<input type="text" id="search" placeholder="Назва або ID..." oninput="filterItems()" onfocus="filterItems()" autocomplete="off">' +
+      '<div class="dropdown" id="dropdown"></div>' +
+    '</div></div>' +
+    '<div class="info" id="infoBox"></div>' +
+    '<input type="hidden" id="selectedId">' +
+    '<div id="fields" style="display:none">' +
+      '<div class="warn">⚠️ Запис буде видалено з таблиці. Це дія незворотна.</div>' +
+      '<div class="f"><label>Причина видалення</label>' +
+      '<input type="text" id="reason" placeholder="вичерпано, замінено іншим..."></div>' +
+      '<button class="btn" id="submitBtn" onclick="submit()">🗑️ Видалити витратник</button>' +
+      '<button class="btn btn-sec" onclick="reset()">← Назад</button>' +
+    '</div>' +
+    '<div id="msg" class="msg"></div>';
+}
+
+function filterItems() {
+  var q = document.getElementById('search').value.toLowerCase().trim();
+  var dd = document.getElementById('dropdown');
+  var filtered = q
+    ? items.filter(function(it) { return it.name.toLowerCase().includes(q) || it.id.toLowerCase().includes(q); })
+    : items;
+  filtered = filtered.slice(0, 12);
+  if (!filtered.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = filtered.map(function(it) {
+    return '<div class="dropdown-item" onclick="selectItem(\'' + esc(it.id) + '\')">' +
+      '<div class="item-id">' + esc(it.id) + '</div>' +
+      '<div class="item-meta">' + esc(it.name) + ' · ' + esc(it.category) + ' · ' + esc(it.status) + '</div>' +
+    '</div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function selectItem(id) {
+  var it = items.find(function(i) { return i.id === id; });
+  if (!it) return;
+  document.getElementById('search').value = it.id + ' — ' + it.name;
+  document.getElementById('selectedId').value = it.id;
+  document.getElementById('dropdown').style.display = 'none';
+  var box = document.getElementById('infoBox');
+  box.innerHTML = '<strong>' + esc(it.name) + '</strong><br>' +
+    esc(it.category) + ' · ' + esc(it.compat) + '<br>' +
+    'Тип: ' + esc(it.trackType) + ' · Статус: ' + esc(it.status);
+  box.style.display = 'block';
+  document.getElementById('fields').style.display = 'block';
+}
+
+function submit() {
+  var id     = document.getElementById('selectedId').value;
+  var reason = document.getElementById('reason').value.trim();
+  if (!id) { showMsg('❌ Оберіть витратник', 'err'); return; }
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = '⏳...';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      showMsg('✅ Видалено: "' + r.name + '"', 'ok');
+      items = items.filter(function(i) { return i.id !== id; });
+      reset();
+      btn.disabled = false; btn.textContent = '🗑️ Видалити витратник';
+    })
+    .withFailureHandler(function(e) {
+      showMsg('❌ ' + e.message, 'err');
+      btn.disabled = false; btn.textContent = '🗑️ Видалити витратник';
+    })
+    .deleteConsumableById(id, reason);
+}
+
+function reset() {
+  document.getElementById('search').value = '';
+  document.getElementById('selectedId').value = '';
+  document.getElementById('infoBox').style.display = 'none';
+  document.getElementById('fields').style.display = 'none';
+  document.getElementById('dropdown').style.display = 'none';
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showMsg(txt, cls) {
+  var el = document.getElementById('msg');
+  el.textContent = txt; el.className = 'msg ' + cls;
+  if (cls === 'ok') setTimeout(function(){ el.className = 'msg'; }, 6000);
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest || !e.target.closest('.search-wrap')) {
+    var dd = document.getElementById('dropdown'); if (dd) dd.style.display = 'none';
+  }
+});
+</script>
+</body>
+</html>

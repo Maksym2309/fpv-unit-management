@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #1a3a5c; font-size: 15px; border-bottom: 2px solid #2e6da4; padding-bottom: 7px; margin-bottom: 14px; }
+  .f { margin-bottom: 11px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+  select, input { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; font-family: Arial, sans-serif; }
+  select:focus, input:focus { border-color: #2e6da4; outline: none; }
+  .info { background: #e8f4fd; border: 1px solid #b8daff; border-radius: 4px; padding: 8px; font-size: 12px; margin-bottom: 10px; display: none; line-height: 1.6; }
+  .toggle-wrap { display: flex; border: 1px solid #ccc; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+  .toggle-btn { flex: 1; padding: 7px; text-align: center; cursor: pointer; font-size: 12px; font-weight: bold; background: #f0f0f0; color: #666; border: none; }
+  .toggle-btn.active { background: #1a3a5c; color: #fff; }
+  .hint { font-size: 10px; color: #888; margin-top: 3px; font-style: italic; }
+  .ac-wrap { position: relative; }
+  .ac-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; max-height: 160px; overflow-y: auto; z-index: 100; display: none; }
+  .ac-item { padding: 7px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .ac-item:hover { background: #e8f4fd; }
+  .btn { width: 100%; padding: 10px; background: #1a3a5c; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn:hover { background: #2e6da4; }
+  .btn:disabled { background: #999; cursor: not-allowed; }
+  .btn-sec { background: #6c757d; margin-top: 5px; }
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok  { background: #d4edda; color: #155724; display: block; }
+  .err { background: #f8d7da; color: #721c24; display: block; }
+  .loading { text-align: center; color: #888; padding: 30px; }
+  .search-wrap { position: relative; }
+  .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 100; display: none; }
+  .dropdown-item { padding: 8px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .dropdown-item:hover { background: #e8f4fd; }
+  .item-id { font-weight: bold; color: #1a3a5c; }
+  .item-meta { color: #666; font-size: 11px; }
+</style>
+</head>
+<body>
+<h3>📤 Передача / видача</h3>
+<div id="body" class="loading">⏳ Завантаження...</div>
+
+<script>
+var items        = [];
+var responsibles = [];
+var toMode       = 'person';
+var assignments  = ['Школа','На виїзд','Sting','Симулятор','Інше','Майстерня','Літак'];
+
+// Завантажуємо список предметів і відповідальних паралельно
+google.script.run
+  .withSuccessHandler(function(list) {
+    items = list;
+    if (responsibles !== null) tryRender();
+  })
+  .withFailureHandler(err)
+  .getInventoryList();
+
+google.script.run
+  .withSuccessHandler(function(list) {
+    responsibles = list;
+    if (items.length > 0) tryRender();
+  })
+  .withFailureHandler(function() { responsibles = []; tryRender(); })
+  .getResponsibleList();
+
+var rendered = false;
+function tryRender() {
+  if (!rendered && items.length >= 0 && responsibles !== null) {
+    rendered = true;
+    renderForm();
+  }
+}
+
+function err(e) {
+  document.getElementById('body').innerHTML = '<div class="err" style="display:block">❌ ' + e.message + '</div>';
+}
+
+function renderForm() {
+  var statusOpts = ['Робочий','На перевірці','Ремонт','Несправний','Резерв']
+    .map(function(s) { return '<option value="' + s + '">' + s + '</option>'; }).join('');
+  var unitOpts = assignments
+    .map(function(a) { return '<option value="' + a + '">' + a + '</option>'; }).join('');
+
+  document.getElementById('body').innerHTML =
+    // Пошук предмета
+    '<div class="f"><label>Пошук предмета *</label>' +
+    '<div class="search-wrap">' +
+      '<input type="text" id="search" placeholder="Введи ID або назву..." oninput="filterItems()" autocomplete="off">' +
+      '<div class="dropdown" id="dropdown"></div>' +
+    '</div></div>' +
+    '<div class="info" id="infoBox"></div>' +
+    '<input type="hidden" id="selectedId">' +
+
+    // Перемикач
+    '<div class="f"><label>Передати до *</label>' +
+    '<div class="toggle-wrap">' +
+      '<button class="toggle-btn active" id="btnPerson" onclick="setMode(\'person\')">👤 Особа</button>' +
+      '<button class="toggle-btn" id="btnUnit" onclick="setMode(\'unit\')">🏷️ Підрозділ</button>' +
+    '</div>' +
+
+    // Режим Особа — з autocomplete
+    '<div id="fieldPerson">' +
+      '<div class="ac-wrap">' +
+        '<input type="text" id="toPerson" placeholder="Позивний або ПІБ" oninput="filterResp(\'toPerson\',\'acPerson\')" onfocus="showAllResp(\'toPerson\',\'acPerson\')" autocomplete="off">' +
+        '<div class="ac-list" id="acPerson"></div>' +
+      '</div>' +
+      '<div class="hint">Предмет буде записаний на цю особу</div>' +
+    '</div>' +
+
+    // Режим Підрозділ — з autocomplete для відповідального
+    '<div id="fieldUnit" style="display:none">' +
+      '<select id="toUnit">' + unitOpts + '</select>' +
+      '<div class="hint" style="margin-bottom:5px">Підрозділ</div>' +
+      '<div class="ac-wrap" style="margin-top:5px">' +
+        '<input type="text" id="unitResponsible" placeholder="Відповідальний (необов\'язково)" oninput="filterResp(\'unitResponsible\',\'acUnit\')" onfocus="showAllResp(\'unitResponsible\',\'acUnit\')" autocomplete="off">' +
+        '<div class="ac-list" id="acUnit"></div>' +
+      '</div>' +
+      '<div class="hint">Конкретна особа в підрозділі</div>' +
+    '</div>' +
+    '</div>' +
+
+    '<div class="f"><label>Статус після передачі</label>' +
+    '<select id="status">' + statusOpts + '</select></div>' +
+
+    '<div class="f"><label>Коментар</label>' +
+    '<input type="text" id="comment" placeholder="мета, деталі..."></div>' +
+
+    '<button class="btn" id="submitBtn" onclick="submit()">✅ Зафіксувати передачу</button>' +
+    '<button class="btn btn-sec" onclick="resetForm()">🗑️ Очистити</button>' +
+    '<div id="msg" class="msg"></div>';
+}
+
+function setMode(mode) {
+  toMode = mode;
+  document.getElementById('btnPerson').className = 'toggle-btn' + (mode === 'person' ? ' active' : '');
+  document.getElementById('btnUnit').className   = 'toggle-btn' + (mode === 'unit'   ? ' active' : '');
+  document.getElementById('fieldPerson').style.display = mode === 'person' ? 'block' : 'none';
+  document.getElementById('fieldUnit').style.display   = mode === 'unit'   ? 'block' : 'none';
+}
+
+// Autocomplete відповідальних
+function filterResp(inputId, listId) {
+  var q    = document.getElementById(inputId).value.toLowerCase().trim();
+  var list = document.getElementById(listId);
+  var filtered = q
+    ? responsibles.filter(function(r) { return r.toLowerCase().includes(q); })
+    : responsibles;
+  renderAcResp(filtered, inputId, listId, list);
+}
+
+function showAllResp(inputId, listId) {
+  var list = document.getElementById(listId);
+  if (responsibles.length) renderAcResp(responsibles, inputId, listId, list);
+}
+
+function renderAcResp(items, inputId, listId, list) {
+  if (!items.length) { list.style.display = 'none'; return; }
+  list.innerHTML = items.map(function(r) {
+    return '<div class="ac-item" onclick="selectResp(\'' + esc(r) + '\',\'' + inputId + '\',\'' + listId + '\')">' + esc(r) + '</div>';
+  }).join('');
+  list.style.display = 'block';
+}
+
+function selectResp(val, inputId, listId) {
+  document.getElementById(inputId).value = val;
+  document.getElementById(listId).style.display = 'none';
+}
+
+// Пошук предметів
+function filterItems() {
+  var q = document.getElementById('search').value.toLowerCase().trim();
+  var dd = document.getElementById('dropdown');
+  if (!q) { dd.style.display = 'none'; return; }
+  var filtered = items.filter(function(it) {
+    return it.id.toLowerCase().includes(q) || it.name.toLowerCase().includes(q);
+  }).slice(0, 10);
+  if (!filtered.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = filtered.map(function(it) {
+    return '<div class="dropdown-item" onclick="selectItem(\'' + esc(it.id) + '\')">' +
+      '<div class="item-id">' + esc(it.id) + '</div>' +
+      '<div class="item-meta">' + esc(it.name) + ' · ' + esc(it.assignment) + ' · ' + esc(it.status) + '</div>' +
+    '</div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function selectItem(id) {
+  var it = items.find(function(i) { return i.id === id; });
+  if (!it) return;
+  document.getElementById('search').value = it.id + ' — ' + it.name;
+  document.getElementById('selectedId').value = it.id;
+  document.getElementById('dropdown').style.display = 'none';
+  var box = document.getElementById('infoBox');
+  box.innerHTML = '<strong>' + esc(it.name) + '</strong><br>' +
+    esc(it.type) + ' · ' + esc(it.assignment) + '<br>' +
+    'Статус: <strong>' + esc(it.status) + '</strong>' +
+    (it.responsible ? ' · Відп: ' + esc(it.responsible) : '');
+  box.style.display = 'block';
+}
+
+function submit() {
+  var id     = document.getElementById('selectedId').value.trim();
+  var status = document.getElementById('status').value;
+  var comment = document.getElementById('comment') ? document.getElementById('comment').value.trim() : '';
+  var to, responsible;
+
+  if (toMode === 'person') {
+    to = document.getElementById('toPerson').value.trim();
+    responsible = to;
+    if (!to) { showMsg('❌ Вкажіть особу', 'err'); return; }
+  } else {
+    to = document.getElementById('toUnit').value;
+    responsible = document.getElementById('unitResponsible').value.trim();
+    comment = (responsible ? '[' + to + ' / ' + responsible + '] ' : '[' + to + '] ') + comment;
+  }
+
+  if (!id) { showMsg('❌ Оберіть предмет зі списку', 'err'); return; }
+
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = '⏳ Зберігаємо...';
+
+  google.script.run
+    .withSuccessHandler(function(r) {
+      var dest = toMode === 'unit' && responsible ? to + ' / ' + responsible : r.to;
+      showMsg('✅ "' + r.name + '" → ' + dest, 'ok');
+      // Додати нову особу в список
+      if (responsible && responsibles.indexOf(responsible) === -1) {
+        responsibles.push(responsible);
+        responsibles.sort();
+      }
+      resetForm();
+      btn.disabled = false; btn.textContent = '✅ Зафіксувати передачу';
+    })
+    .withFailureHandler(function(e) {
+      showMsg('❌ ' + e.message, 'err');
+      btn.disabled = false; btn.textContent = '✅ Зафіксувати передачу';
+    })
+    .executeMovement({ id: id, to: to, responsible: responsible, status: status, comment: comment });
+}
+
+function resetForm() {
+  document.getElementById('search').value = '';
+  document.getElementById('selectedId').value = '';
+  ['toPerson','unitResponsible','comment'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('infoBox').style.display = 'none';
+  document.getElementById('dropdown').style.display = 'none';
+  document.getElementById('msg').className = 'msg';
+  setMode('person');
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showMsg(txt, cls) {
+  var el = document.getElementById('msg');
+  el.textContent = txt; el.className = 'msg ' + cls;
+  if (cls === 'ok') setTimeout(function(){ el.className = 'msg'; }, 6000);
+}
+
+document.addEventListener('click', function(e) {
+  var target = e.target;
+  if (!target.closest) return;
+  if (!target.closest('.search-wrap') && !target.closest('.ac-wrap')) {
+    var dd = document.getElementById('dropdown');
+    if (dd) dd.style.display = 'none';
+    ['acPerson','acUnit'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+  }
+});
+</script>
+</body>
+</html>

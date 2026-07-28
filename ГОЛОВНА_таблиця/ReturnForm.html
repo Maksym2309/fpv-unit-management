@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #14532d; font-size: 15px; border-bottom: 2px solid #14532d; padding-bottom: 7px; margin-bottom: 14px; }
+  .f { margin-bottom: 11px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+  select, input { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; font-family: Arial, sans-serif; }
+  select:focus, input:focus { border-color: #14532d; outline: none; }
+  .info { background: #dcfce7; border: 1px solid #86efac; border-radius: 4px; padding: 8px; font-size: 12px; margin-bottom: 10px; display: none; line-height: 1.6; }
+  .hint { font-size: 10px; color: #888; margin-top: 3px; font-style: italic; }
+  .ac-wrap { position: relative; }
+  .ac-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; max-height: 160px; overflow-y: auto; z-index: 100; display: none; }
+  .ac-item { padding: 7px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .ac-item:hover { background: #dcfce7; }
+  .btn { width: 100%; padding: 10px; background: #14532d; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn:hover { background: #166534; }
+  .btn:disabled { background: #999; cursor: not-allowed; }
+  .btn-sec { background: #6c757d; margin-top: 5px; }
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok  { background: #d4edda; color: #155724; display: block; }
+  .err { background: #f8d7da; color: #721c24; display: block; }
+  .loading { text-align: center; color: #888; padding: 30px; font-size: 12px; }
+  .search-wrap { position: relative; }
+  .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 100; display: none; }
+  .dropdown-item { padding: 8px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .dropdown-item:hover { background: #dcfce7; }
+  .item-id { font-weight: bold; color: #14532d; }
+  .item-meta { color: #666; font-size: 11px; }
+</style>
+</head>
+<body>
+<h3>📥 Повернення предмета</h3>
+<div id="body" class="loading">⏳ Завантаження...</div>
+
+<script>
+var items        = [];
+var responsibles = [];
+var loaded       = 0;
+
+google.script.run
+  .withSuccessHandler(function(list) { items = list; loaded++; if(loaded>=2) renderForm(); })
+  .withFailureHandler(function(e) { showErr(e.message); })
+  .getInventoryList();
+
+google.script.run
+  .withSuccessHandler(function(list) { responsibles = list; loaded++; if(loaded>=2) renderForm(); })
+  .withFailureHandler(function() { responsibles = []; loaded++; if(loaded>=2) renderForm(); })
+  .getResponsibleList();
+
+function showErr(msg) {
+  document.getElementById('body').innerHTML = '<div class="err" style="display:block">❌ ' + msg + '</div>';
+}
+
+function renderForm() {
+  var statusOpts = ['Робочий','На перевірці','Ремонт','Несправний']
+    .map(function(s) { return '<option value="' + s + '">' + s + '</option>'; }).join('');
+
+  var assigned = items.filter(function(it) { return it.responsible && it.responsible.trim() !== ''; });
+  var note = assigned.length > 0 ? '(' + assigned.length + ' зараз видано)' : '(немає виданих)';
+
+  document.getElementById('body').innerHTML =
+    '<div class="f"><label>Пошук предмета *</label>' +
+    '<div class="search-wrap">' +
+      '<input type="text" id="search" placeholder="Введи ID або назву..." oninput="filterItems()" autocomplete="off">' +
+      '<div class="dropdown" id="dropdown"></div>' +
+    '</div>' +
+    '<div class="hint">Всі предмети / видано: ' + note + '</div>' +
+    '</div>' +
+
+    '<div class="info" id="infoBox"></div>' +
+    '<input type="hidden" id="selectedId">' +
+
+    '<div class="f"><label>Від кого повертається</label>' +
+    '<div class="ac-wrap">' +
+      '<input type="text" id="fromPerson" placeholder="Хто повертає..." oninput="filterResp()" onfocus="showAllResp()" autocomplete="off">' +
+      '<div class="ac-list" id="acResp"></div>' +
+    '</div>' +
+    '<div class="hint">Підтягується автоматично якщо є відповідальний</div>' +
+    '</div>' +
+
+    '<div class="f"><label>Статус після повернення *</label>' +
+    '<select id="status">' + statusOpts + '</select></div>' +
+
+    '<button class="btn" id="submitBtn" onclick="submit()">✅ Зафіксувати повернення</button>' +
+    '<button class="btn btn-sec" onclick="resetForm()">🗑️ Очистити</button>' +
+    '<div id="msg" class="msg"></div>';
+}
+
+function filterItems() {
+  var q = document.getElementById('search').value.toLowerCase().trim();
+  var dd = document.getElementById('dropdown');
+  if (!q) { dd.style.display = 'none'; return; }
+  var filtered = items.filter(function(it) {
+    return it.id.toLowerCase().includes(q) || it.name.toLowerCase().includes(q);
+  }).slice(0, 10);
+  if (!filtered.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = filtered.map(function(it) {
+    var hasResp = it.responsible && it.responsible.trim() !== '';
+    return '<div class="dropdown-item" onclick="selectItem(\'' + esc(it.id) + '\')">' +
+      '<div class="item-id">' + esc(it.id) + (hasResp ? ' 📤' : '') + '</div>' +
+      '<div class="item-meta">' + esc(it.name) + ' · ' + esc(it.status) +
+        (hasResp ? ' · У: ' + esc(it.responsible) : '') + '</div>' +
+    '</div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function selectItem(id) {
+  var it = items.find(function(i) { return i.id === id; });
+  if (!it) return;
+  document.getElementById('search').value = it.id + ' — ' + it.name;
+  document.getElementById('selectedId').value = it.id;
+  document.getElementById('dropdown').style.display = 'none';
+
+  // Автоматично підставити відповідального
+  if (it.responsible) {
+    document.getElementById('fromPerson').value = it.responsible;
+  }
+
+  var box = document.getElementById('infoBox');
+  var respText = it.responsible ? '👤 У кого: <strong>' + esc(it.responsible) + '</strong>' : '— не видано нікому';
+  box.innerHTML = '<strong>' + esc(it.name) + '</strong><br>' +
+    esc(it.type) + ' · ' + esc(it.assignment) + '<br>' +
+    'Статус: <strong>' + esc(it.status) + '</strong><br>' + respText;
+  box.style.display = 'block';
+}
+
+// Autocomplete відповідальних
+function filterResp() {
+  var q = document.getElementById('fromPerson').value.toLowerCase().trim();
+  var list = document.getElementById('acResp');
+  var filtered = q
+    ? responsibles.filter(function(r) { return r.toLowerCase().includes(q); })
+    : responsibles;
+  if (!filtered.length) { list.style.display = 'none'; return; }
+  list.innerHTML = filtered.map(function(r) {
+    return '<div class="ac-item" onclick="selResp(\'' + esc(r) + '\')">' + esc(r) + '</div>';
+  }).join('');
+  list.style.display = 'block';
+}
+
+function showAllResp() {
+  if (responsibles.length) filterResp();
+}
+
+function selResp(v) {
+  document.getElementById('fromPerson').value = v;
+  document.getElementById('acResp').style.display = 'none';
+}
+
+function submit() {
+  var id     = document.getElementById('selectedId').value.trim();
+  var status = document.getElementById('status').value;
+  var from   = document.getElementById('fromPerson').value.trim();
+
+  if (!id) { showMsg('❌ Оберіть предмет зі списку', 'err'); return; }
+
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = '⏳ Зберігаємо...';
+
+  google.script.run
+    .withSuccessHandler(function(r) {
+      showMsg('✅ Повернено: "' + r.name + '", статус: ' + r.status, 'ok');
+      // Оновити список
+      var it = items.find(function(i) { return i.id === id; });
+      if (it) { it.responsible = ''; it.status = status; }
+      resetForm();
+      btn.disabled = false; btn.textContent = '✅ Зафіксувати повернення';
+    })
+    .withFailureHandler(function(e) {
+      showMsg('❌ ' + e.message, 'err');
+      btn.disabled = false; btn.textContent = '✅ Зафіксувати повернення';
+    })
+    .executeReturn({ id: id, status: status, from: from });
+}
+
+function resetForm() {
+  document.getElementById('search').value = '';
+  document.getElementById('selectedId').value = '';
+  document.getElementById('fromPerson').value = '';
+  document.getElementById('infoBox').style.display = 'none';
+  document.getElementById('dropdown').style.display = 'none';
+  document.getElementById('acResp').style.display = 'none';
+  document.getElementById('msg').className = 'msg';
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showMsg(txt, cls) {
+  var el = document.getElementById('msg');
+  el.textContent = txt; el.className = 'msg ' + cls;
+  if (cls === 'ok') setTimeout(function(){ el.className = 'msg'; }, 6000);
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest) return;
+  if (!e.target.closest('.search-wrap') && !e.target.closest('.ac-wrap')) {
+    var dd = document.getElementById('dropdown');
+    var ac = document.getElementById('acResp');
+    if (dd) dd.style.display = 'none';
+    if (ac) ac.style.display = 'none';
+  }
+});
+</script>
+</body>
+</html>

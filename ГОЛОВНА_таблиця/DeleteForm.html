@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #8b1a1a; font-size: 15px; border-bottom: 2px solid #c0392b; padding-bottom: 7px; margin-bottom: 14px; }
+  .f { margin-bottom: 11px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+  textarea, input { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; font-family: Arial, sans-serif; }
+  textarea { height: 72px; resize: vertical; }
+  textarea:focus, input:focus { border-color: #c0392b; outline: none; box-shadow: 0 0 0 2px rgba(192,57,43,.12); }
+
+  .hint { font-size: 10px; color: #888; margin-top: 3px; font-style: italic; }
+
+  /* Список знайдених предметів */
+  .found-list { margin: 10px 0; }
+  .item-card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .item-card.ok   { border-left: 3px solid #c0392b; }
+  .item-card.miss { border-left: 3px solid #aaa; background: #f5f5f5; color: #888; }
+  .item-id   { font-weight: bold; font-size: 13px; }
+  .item-name { color: #222; }
+  .item-meta { color: #666; font-size: 11px; }
+
+  .btn {
+    width: 100%; padding: 10px; border: none; border-radius: 4px;
+    font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px;
+  }
+  .btn-search { background: #2e6da4; color: #fff; }
+  .btn-search:hover { background: #1a3a5c; }
+  .btn-delete { background: #c0392b; color: #fff; }
+  .btn-delete:hover { background: #922b21; }
+  .btn-delete:disabled { background: #aaa; cursor: not-allowed; }
+  .btn-clear  { background: #6c757d; color: #fff; margin-top: 4px; }
+  .btn-clear:hover  { background: #5a6268; }
+
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok-msg  { background: #d4edda; color: #155724; display: block; }
+  .err-msg { background: #f8d7da; color: #721c24; display: block; }
+
+  .step { display: none; }
+  .step.active { display: block; }
+
+  .warn-box {
+    background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;
+    padding: 8px 10px; font-size: 12px; margin: 8px 0; color: #856404;
+  }
+  .count-badge {
+    display: inline-block; background: #c0392b; color: #fff;
+    border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: bold;
+  }
+</style>
+</head>
+<body>
+<h3>🗑️ Видалення предметів</h3>
+
+<!-- КРОК 1: Введення ID -->
+<div id="step1" class="step active">
+  <div class="f">
+    <label>ID предметів для видалення</label>
+    <textarea id="idsInput" placeholder="DSTK-001-20260419&#10;STNG-002-20260419&#10;TX-001-20260419&#10;&#10;Кожен ID з нового рядка або через кому"></textarea>
+    <div class="hint">Можна ввести один або кілька ID одночасно</div>
+  </div>
+  <button class="btn btn-search" onclick="searchItems()">🔍 Знайти предмети</button>
+</div>
+
+<!-- КРОК 2: Підтвердження -->
+<div id="step2" class="step">
+  <div style="margin-bottom:8px">
+    Знайдено: <span class="count-badge" id="foundCount">0</span> предметів
+  </div>
+  <div class="found-list" id="foundList"></div>
+
+  <div id="notFoundWarn" class="warn-box" style="display:none">
+    ⚠️ Не знайдено: <span id="notFoundList"></span>
+  </div>
+
+  <div class="f" style="margin-top:12px">
+    <label>Причина видалення</label>
+    <input type="text" id="reason" placeholder="втрата / знищено / передано стороні...">
+  </div>
+
+  <div class="warn-box">
+    ⚠️ Дія незворотна. Рядки будуть видалені, записи збережуться в Журналі руху.
+  </div>
+
+  <button class="btn btn-delete" id="deleteBtn" onclick="confirmDelete()">🗑️ Підтвердити видалення</button>
+  <button class="btn btn-clear" onclick="resetForm()">← Назад</button>
+</div>
+
+<div id="msg" class="msg"></div>
+
+<script>
+var foundItems = [];
+
+function getIds() {
+  var raw = document.getElementById('idsInput').value;
+  // Підтримуємо: новий рядок, кому, крапку з комою як роздільники
+  return raw.split(/[\n,;]+/)
+    .map(function(s) { return s.trim(); })
+    .filter(function(s) { return s.length > 0; });
+}
+
+function searchItems() {
+  var ids = getIds();
+  if (ids.length === 0) {
+    showMsg('Введи хоча б один ID', 'err-msg');
+    return;
+  }
+
+  document.querySelector('.btn-search').textContent = '⏳ Шукаємо...';
+  document.querySelector('.btn-search').disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(results) {
+      document.querySelector('.btn-search').textContent = '🔍 Знайти предмети';
+      document.querySelector('.btn-search').disabled = false;
+
+      renderResults(results);
+    })
+    .withFailureHandler(function(e) {
+      document.querySelector('.btn-search').textContent = '🔍 Знайти предмети';
+      document.querySelector('.btn-search').disabled = false;
+      showMsg('❌ Помилка: ' + e.message, 'err-msg');
+    })
+    .lookupItemsForDelete(ids);
+}
+
+function renderResults(results) {
+  foundItems = results.filter(function(r) { return r.found; });
+  var notFound = results.filter(function(r) { return !r.found; });
+
+  document.getElementById('foundCount').textContent = foundItems.length;
+
+  // Картки знайдених
+  var listHtml = '';
+  results.forEach(function(r) {
+    if (r.found) {
+      listHtml +=
+        '<div class="item-card ok">' +
+          '<div class="item-id">' + esc(r.id) + '</div>' +
+          '<div class="item-name">' + esc(r.name) + '</div>' +
+          '<div class="item-meta">' + esc(r.type) + ' · ' + esc(r.assign) + ' · ' + esc(r.status) + '</div>' +
+        '</div>';
+    } else {
+      listHtml +=
+        '<div class="item-card miss">' +
+          '<span class="item-id">' + esc(r.id) + '</span> — не знайдено' +
+        '</div>';
+    }
+  });
+  document.getElementById('foundList').innerHTML = listHtml;
+
+  // Попередження про ненайдені
+  if (notFound.length > 0) {
+    document.getElementById('notFoundList').textContent = notFound.map(function(r) { return r.id; }).join(', ');
+    document.getElementById('notFoundWarn').style.display = 'block';
+  } else {
+    document.getElementById('notFoundWarn').style.display = 'none';
+  }
+
+  // Кнопка видалення
+  document.getElementById('deleteBtn').disabled = foundItems.length === 0;
+
+  // Перейти на крок 2
+  document.getElementById('step1').classList.remove('active');
+  document.getElementById('step2').classList.add('active');
+  document.getElementById('msg').className = 'msg';
+}
+
+function confirmDelete() {
+  if (foundItems.length === 0) { showMsg('Немає предметів для видалення', 'err-msg'); return; }
+
+  var reason = document.getElementById('reason').value.trim() || 'не вказано';
+  var ids = foundItems.map(function(r) { return r.id; });
+
+  var btn = document.getElementById('deleteBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Видаляємо...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      var msg = '✅ Видалено ' + result.deleted.length + ' предмет(ів):\n' + result.deleted.join('\n');
+      if (result.notFound.length > 0) msg += '\n\n⚠️ Не знайдено: ' + result.notFound.join(', ');
+      showMsg(msg.replace(/\n/g, '<br>'), 'ok-msg');
+      resetForm();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.textContent = '🗑️ Підтвердити видалення';
+      showMsg('❌ Помилка: ' + e.message, 'err-msg');
+    })
+    .deleteItemsByIds(ids, reason);
+}
+
+function resetForm() {
+  document.getElementById('step2').classList.remove('active');
+  document.getElementById('step1').classList.add('active');
+  document.getElementById('idsInput').value = '';
+  document.getElementById('reason').value = '';
+  document.getElementById('foundList').innerHTML = '';
+  document.getElementById('foundCount').textContent = '0';
+  document.getElementById('notFoundWarn').style.display = 'none';
+  foundItems = [];
+  var btn = document.getElementById('deleteBtn');
+  if (btn) { btn.disabled = false; btn.textContent = '🗑️ Підтвердити видалення'; }
+}
+
+function esc(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function showMsg(html, cls) {
+  var el = document.getElementById('msg');
+  el.innerHTML = html;
+  el.className = 'msg ' + cls;
+  if (cls === 'ok-msg') setTimeout(function() { el.className = 'msg'; }, 8000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   HORNET TACTICAL OS — темна тактична тема (Wild Hornets)
+   Згенеровано за DESIGN.md: Modern-Brutalist / Tactical HUD
+   Гострі кути · Hornet Yellow #ffb800 · Archivo Narrow + JetBrains Mono
+   ═══════════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+  --bg: #131313;
+  --panel: #1c1b1b;
+  --panel-2: #201f1f;
+  --panel-3: #2a2a2a;
+  --line: #353534;
+  --line-2: #514532;
+  --text: #e5e2e1;
+  --muted: #a8a5a2;
+  --dim: #7f7c78;
+  --accent: #ffb800;
+  --accent-hi: #ffca3d;
+  --accent-soft: #ffdca1;
+  --on-accent: #1a1300;
+  --blue: #3498db;
+  --blue-deep: #2a486b;
+  --blue-soft: #abc9f2;
+  --green: #2ecc71;
+  --green-bg: #11301d;
+  --red: #e74c3c;
+  --red-soft: #ff8580;
+  --red-bg: #3a1512;
+  --orange: #f39c12;
+  --orange-bg: #33270e;
+  --yellow: #f1c40f;
+  --purple: #9b59b6;
+  --grey: #7f8c8d;
+  --font-ui: 'Archivo Narrow', Arial, sans-serif;
+  --font-data: 'JetBrains Mono', Consolas, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: var(--bg); }
+body {
+  font-family: var(--font-ui); font-size: 14px; padding: 14px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.012) 0 1px, transparent 1px 3px),
+    var(--bg);
+  color: var(--text);
+}
+h3 {
+  color: var(--accent); font-size: 16px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em;
+  border-bottom: 1px solid var(--line-2); padding-bottom: 7px; margin-bottom: 14px;
+}
+hr { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
+.req { color: var(--red); }
+.hint { font-size: 10px; color: var(--dim); margin-top: 3px; font-style: normal; }
+.loading { text-align: center; color: var(--dim); padding: 30px; font-family: var(--font-data); font-size: 12px; }
+.empty { text-align: center; color: var(--dim); padding: 14px; font-size: 12px; }
+.title { color: var(--accent); font-size: 17px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
+.subtitle { color: var(--dim); font-size: 12px; margin-bottom: 18px; }
+
+/* ── Поля вводу ── */
+label {
+  display: block; font-weight: 700; color: var(--dim); margin-bottom: 4px;
+  font-size: 10px; text-transform: uppercase; letter-spacing: .1em;
+  font-family: var(--font-data);
+}
+select, input, textarea {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 0;
+  font-size: 13px; background: #0e0e0e; color: var(--text);
+  font-family: var(--font-data);
+}
+select:focus, input:focus, textarea:focus {
+  border-color: var(--accent); outline: none;
+  box-shadow: 0 1px 0 0 var(--accent), inset 0 -1px 0 0 var(--accent);
+}
+input::placeholder, textarea::placeholder { color: #5c5955; }
+select option, select optgroup { background: #0e0e0e; color: var(--text); }
+textarea { height: 54px; resize: vertical; }
+.f { margin-bottom: 11px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--line-2); border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ── Кнопки ── */
+.btn {
+  width: 100%; padding: 10px; background: var(--accent); color: var(--on-accent);
+  border: none; border-radius: 0; font-size: 13px; font-weight: 700; cursor: pointer;
+  margin-top: 8px; font-family: var(--font-data); text-transform: uppercase; letter-spacing: .06em;
+}
+.btn:hover { background: var(--accent-hi); }
+.btn:disabled { background: var(--panel-3); color: var(--dim); cursor: not-allowed; }
+.btn-green { background: var(--green-bg); color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.btn-green:hover { background: var(--green); color: #04180c; }
+.btn-red { background: var(--red-bg); color: var(--red-soft); box-shadow: inset 0 0 0 1px var(--red); margin-top: 4px; }
+.btn-red:hover { background: var(--red); color: #1c0503; }
+.btn-sec { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-2); margin-top: 5px; }
+.btn-sec:hover { background: var(--panel-3); color: var(--text); }
+.btn-sm { width: auto; padding: 4px 10px; font-size: 11px; background: var(--panel-3); color: var(--muted); border: 1px solid var(--line-2); border-radius: 0; cursor: pointer; margin-right: 3px; font-family: var(--font-data); }
+.btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+.btn-search { background: var(--blue-deep); color: var(--blue-soft); }
+.btn-search:hover { background: var(--blue); color: #06121c; }
+.btn-delete { background: var(--red-bg); color: var(--red-soft); box-shadow: inset 0 0 0 1px var(--red); }
+.btn-delete:hover { background: var(--red); color: #1c0503; }
+.btn-delete:disabled { background: var(--panel-3); color: var(--dim); box-shadow: none; cursor: not-allowed; }
+.btn-clear { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-2); margin-top: 4px; }
+.btn-clear:hover { background: var(--panel-3); }
+.btn-x { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 14px; padding: 2px 5px; }
+.btn-x:hover { color: var(--red); }
+.btn-x:disabled { color: var(--line); cursor: not-allowed; }
+.refresh-btn {
+  width: 100%; padding: 8px; background: transparent; color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 0; font-weight: 700; cursor: pointer;
+  margin-bottom: 10px; font-family: var(--font-data); text-transform: uppercase; letter-spacing: .06em;
+}
+.refresh-btn:hover { background: var(--accent); color: var(--on-accent); }
+.fs-icon-btn { position: absolute; top: 9px; right: 12px; height: 24px; display: flex; align-items: center; background: transparent; color: var(--accent); border: none; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px; }
+.fs-icon-btn:hover { color: var(--accent-hi); }
+.qty-wrap { display: flex; align-items: center; gap: 8px; }
+.qty-wrap input { width: 80px; text-align: center; font-size: 15px; font-weight: 700; }
+.qty-btn { width: 34px; height: 34px; border: 1px solid var(--line-2); border-radius: 0; background: var(--panel-2); color: var(--text); font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; user-select: none; }
+.qty-btn:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.qty-note { font-size: 10px; color: var(--dim); }
+
+/* ── Вкладки ── */
+.tabs { display: flex; border-bottom: 1px solid var(--accent); margin-bottom: 14px; gap: 2px; }
+.tab {
+  padding: 8px 10px; cursor: pointer; font-size: 11px; font-weight: 700; color: var(--muted);
+  border-radius: 0; flex: 1; text-align: center; font-family: var(--font-data);
+  text-transform: uppercase; letter-spacing: .05em; background: var(--panel);
+  border: 1px solid var(--line); border-bottom: none;
+}
+.tab:hover { color: var(--text); background: var(--panel-3); }
+.tab.active {
+  background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+}
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.toggle-wrap { display: flex; border: 1px solid var(--line-2); border-radius: 0; overflow: hidden; margin-bottom: 8px; }
+.toggle-btn { flex: 1; padding: 8px; text-align: center; cursor: pointer; font-size: 11px; font-weight: 700; background: var(--panel); color: var(--muted); border: none; font-family: var(--font-data); text-transform: uppercase; }
+.toggle-btn.active { background: var(--accent); color: var(--on-accent); }
+
+/* ── Секції ── */
+.section, .section-title {
+  font-weight: 700; color: var(--accent); font-size: 11px; margin: 14px 0 8px;
+  font-family: var(--font-data); text-transform: uppercase; letter-spacing: .1em;
+  border-left: 3px solid var(--accent); padding-left: 8px;
+}
+.section-red { border-left-color: var(--red); color: var(--red-soft); }
+
+/* ── Картки ── */
+.card { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 0; padding: 10px; margin-bottom: 8px; }
+.card-active { border-left-color: var(--orange); background: #211b10; }
+.card-mine   { border-left-color: var(--accent); background: #211d10; }
+.card-other  { border-left-color: var(--line-2); background: var(--panel); opacity: 0.65; }
+.card-done   { border-left-color: var(--green); }
+.card-ok     { border-left-color: var(--green); }
+.card-bad    { border-left-color: var(--red); }
+.card-lost   { border-left-color: #7a2020; background: #1d0a0a; }
+.card-title  { font-weight: 700; font-size: 13px; color: var(--accent-soft); margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+.card-meta   { font-size: 12px; color: var(--muted); line-height: 1.7; }
+.card-lost .card-meta, .card-lost .card-title { color: var(--red-soft); }
+.item-card { background: var(--panel); border: 1px solid var(--line); border-radius: 0; padding: 8px 10px; margin-bottom: 6px; font-size: 12px; line-height: 1.6; }
+.item-card.ok   { border-left: 3px solid var(--red); }
+.item-card.miss { border-left: 3px solid var(--line-2); background: var(--panel-2); color: var(--dim); }
+.item-id   { font-weight: 700; color: var(--accent-soft); font-family: var(--font-data); font-size: 12px; }
+.item-name { color: var(--text); }
+.item-meta { color: var(--dim); font-size: 11px; }
+.found-list { margin: 10px 0; }
+.kit-card { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 0; padding: 10px; margin-bottom: 8px; cursor: pointer; }
+.kit-header { display: flex; justify-content: space-between; align-items: center; }
+.kit-title { font-weight: 700; color: var(--accent-soft); font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 6px; }
+.kit-count { background: var(--blue-deep); color: var(--blue-soft); border-radius: 0; padding: 2px 8px; font-size: 11px; font-weight: 700; flex-shrink: 0; font-family: var(--font-data); }
+.kit-members { margin-top: 8px; display: none; }
+.kit-members.open { display: block; }
+.kit-badge { font-size: 10px; color: var(--blue); margin-left: 4px; }
+.member-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); gap: 6px; }
+.member-main { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+.member-id { font-weight: 700; color: var(--accent-soft); font-size: 11px; white-space: nowrap; font-family: var(--font-data); }
+.member-name { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.member-right { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+/* ── Бейджі та статуси ── */
+.badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 0; margin-left: 4px; font-family: var(--font-data); font-weight: 700; }
+.badge-mine  { background: var(--accent); color: var(--on-accent); }
+.badge-other { background: var(--panel-3); color: var(--muted); }
+.badge-act   { background: var(--orange); color: #231604; }
+.badge-admin { background: var(--blue-deep); color: var(--blue-soft); }
+.badge-main  { background: var(--red-bg); color: var(--red-soft); box-shadow: inset 0 0 0 1px var(--red); }
+.badge-user  { background: var(--green-bg); color: var(--green); }
+.badge-qty   { background: var(--blue-deep); color: var(--blue-soft); }
+.badge-stat  { background: var(--orange-bg); color: var(--orange); }
+.st, .st-badge { font-size: 10px; padding: 2px 7px; border-radius: 0; white-space: nowrap; font-family: var(--font-data); font-weight: 700; }
+.st-ok   { background: var(--green-bg);  color: var(--green);    border-color: var(--green); }
+.st-fix  { background: var(--orange-bg); color: var(--orange);   border-color: var(--orange); }
+.st-bad  { background: var(--red-bg);    color: var(--red-soft); border-color: var(--red); }
+.st-lost { background: #2a0505;          color: var(--red-soft); border-color: #7a2020; }
+.count-badge { display: inline-block; background: var(--red); color: #1c0503; border-radius: 0; padding: 1px 8px; font-size: 11px; font-weight: 700; font-family: var(--font-data); }
+.tag { display: inline-block; background: var(--panel-3); color: var(--text); border: 1px solid var(--line-2); border-radius: 0; padding: 3px 8px; font-size: 11px; margin: 2px; cursor: pointer; font-family: var(--font-data); }
+.tag:hover { background: var(--red-bg); border-color: var(--red); color: var(--red-soft); }
+.tag-busy { background: var(--orange-bg); border-color: var(--orange); color: var(--orange); }
+.tag.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.sheets-grid { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.sheet-tag { background: var(--blue-deep); color: var(--blue-soft); border-radius: 0; padding: 2px 8px; font-size: 11px; font-family: var(--font-data); }
+.email-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.email-addr { flex: 1; font-size: 12px; color: var(--text); font-family: var(--font-data); }
+.status-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.dot-ok  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.dot-err { background: var(--red); box-shadow: 0 0 6px var(--red); }
+.dot-off { background: var(--dim); }
+
+/* ── Кнопки статусів ── */
+.st-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px; }
+.st-btn { padding: 8px; border: 1px solid var(--line-2); border-radius: 0; text-align: center; cursor: pointer; font-size: 11px; font-weight: 700; font-family: var(--font-data); }
+.st-btn.sel { box-shadow: 0 0 0 2px var(--accent); }
+.status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+.status-btn { padding: 10px; border: 1px solid var(--line-2); border-radius: 0; text-align: center; cursor: pointer; font-size: 12px; font-weight: 700; transition: all .15s; font-family: var(--font-data); }
+.status-btn:hover { opacity: .85; }
+.status-btn.active { box-shadow: 0 0 0 2px var(--accent); }
+.s-bagato   { background: var(--green-bg);  color: var(--green);     border-color: var(--green); }
+.s-dostatno { background: #0e2830;          color: #5dade2;          border-color: #5dade2; }
+.s-malo     { background: var(--orange-bg); color: var(--orange);    border-color: var(--orange); }
+.s-kryt     { background: var(--red-bg);    color: var(--red-soft);  border-color: var(--red); }
+.s-bagato.active   { box-shadow: 0 0 0 2px var(--green); }
+.s-dostatno.active { box-shadow: 0 0 0 2px #5dade2; }
+.s-malo.active     { box-shadow: 0 0 0 2px var(--orange); }
+.s-kryt.active     { box-shadow: 0 0 0 2px var(--red); }
+
+/* ── Повідомлення ── */
+.msg { padding: 9px; border-radius: 0; margin-top: 9px; font-size: 12px; display: none; }
+.ok,  .ok-msg  { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); display: block; }
+.err, .err-msg { background: var(--red-bg); color: var(--red-soft); border: 1px solid var(--red); display: block; }
+.warn, .warn-box { background: var(--orange-bg); border: 1px solid var(--orange); border-radius: 0; padding: 8px 10px; font-size: 12px; color: var(--orange); margin: 6px 0; }
+.danger { background: var(--red-bg); border: 1px solid var(--red); border-radius: 0; padding: 7px; font-size: 11px; color: var(--red-soft); margin: 5px 0; }
+.info, .info-box { background: #152535; border: 1px solid var(--blue-deep); border-radius: 0; padding: 8px; font-size: 12px; margin-bottom: 10px; line-height: 1.6; color: var(--blue-soft); }
+.info.qty  { background: #152535; border-color: var(--blue-deep); }
+.info.stat { background: var(--orange-bg); border-color: var(--orange); color: var(--orange); }
+.note { font-size: 10px; color: var(--orange); background: var(--orange-bg); padding: 6px 8px; border-radius: 0; border: 1px solid var(--orange); margin-bottom: 8px; }
+
+/* ── Автодоповнення / випадаючі списки ── */
+.ac-wrap, .search-wrap { position: relative; }
+.ac-list, .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: var(--panel-2); border: 1px solid var(--accent); border-top: none; border-radius: 0; max-height: 200px; overflow-y: auto; z-index: 200; display: none; box-shadow: 0 8px 20px rgba(0,0,0,.6); }
+.ac-item, .dropdown-item { padding: 8px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--line); }
+.ac-item:hover, .ac-item:focus, .dropdown-item:hover { background: var(--panel-3); box-shadow: inset 3px 0 0 var(--accent); }
+.ac-item.new { color: var(--accent); font-style: italic; }
+.ac-id { font-weight: 700; color: var(--accent-soft); font-size: 11px; font-family: var(--font-data); }
+.ac-meta { color: var(--dim); font-size: 11px; }
+.ac-busy { color: var(--orange); font-size: 10px; }
+.fields { display: none; }
+.step { display: none; }
+.step.active { display: block; }
+.step2 { display: none; }
+
+/* ── ID preview (AddForm) ── */
+.id-preview { background: var(--panel-2); color: var(--accent); border: 1px solid var(--accent); border-radius: 0; padding: 6px 10px; text-align: center; margin-bottom: 12px; display: none; font-family: var(--font-data); }
+.id-preview .lbl { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
+.id-preview .short { font-size: 20px; font-weight: 700; letter-spacing: 3px; }
+.id-preview .full  { font-size: 10px; color: var(--muted); margin-top: 1px; }
+.id-preview .range { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.result-list { font-size: 11px; margin-top: 6px; max-height: 120px; overflow-y: auto; }
+.result-item { padding: 4px 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.result-id { font-weight: 700; color: var(--accent-soft); font-size: 11px; flex: 1; font-family: var(--font-data); }
+.result-short { background: var(--accent); color: var(--on-accent); padding: 4px 8px; border-radius: 0; font-size: 13px; font-weight: 700; letter-spacing: 2px; text-align: center; white-space: nowrap; font-family: var(--font-data); }
+
+/* ── Блок «Втрачений» (EditForm) ── */
+.lost-block { background: #1d0a0a; border: 1px solid var(--red); border-radius: 0; padding: 10px; margin-bottom: 10px; display: none; }
+.lost-block label { color: var(--red-soft); }
+.lost-block input, .lost-block textarea { background: #140505; color: #ffcccc; border-color: #7a2020; }
+.lost-block input:focus, .lost-block textarea:focus { border-color: var(--red); outline: none; box-shadow: 0 1px 0 0 var(--red); }
+.lost-title { color: var(--red); font-weight: 700; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .06em; font-family: var(--font-data); }
+.lost-hint { color: var(--red-soft); font-size: 10px; margin-top: 3px; }
+
+/* ── Карта частот ── */
+.active-flight { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 0; padding: 6px 8px; margin-bottom: 5px; font-size: 12px; }
+.af-mine { border-left-color: var(--green); background: #10231a; }
+.af-unit { border-left-color: var(--blue); background: #10202e; }
+.af-ext  { border-left-color: var(--grey); background: var(--panel-3); }
+.af-crew { font-weight: 700; color: var(--text); }
+.af-sys { display: inline-block; background: var(--blue-deep); color: var(--blue-soft); border-radius: 0; padding: 0 6px; font-size: 10px; margin-left: 3px; font-family: var(--font-data); }
+.matrix-wrap { overflow: auto; max-height: 560px; margin-bottom: 10px; border: 1px solid var(--line-2); background: var(--panel-2); }
+.matrix { border-collapse: collapse; font-size: 10px; font-family: var(--font-data); }
+.matrix th { background: var(--panel-3); color: var(--accent); padding: 5px 3px; text-align: center; position: sticky; top: 0; z-index: 3; font-weight: 700; border: 1px solid var(--line); }
+.matrix th.band-label { background: #191919; color: var(--accent); text-align: left; padding: 4px 5px; position: sticky; left: 0; top: 0; z-index: 4; width: 70px; max-width: 70px; font-size: 9px; line-height: 1.2; }
+.cell-tag { font-size: 8px; line-height: 1; max-width: 42px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.matrix td { padding: 0; text-align: center; border: 1px solid #262525; }
+.cell { width: 50px; height: 36px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; font-size: 10px; line-height: 1.15; position: relative; background: var(--panel-2); color: var(--text); }
+.cell:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
+.wide-mode .cell { width: 80px; height: 44px; font-size: 12px; }
+.wide-mode .matrix-wrap { max-height: 760px; }
+.cols { display: flex; gap: 20px; align-items: flex-start; }
+.col-matrix { flex: 0 0 auto; }
+.col-side { flex: 1; min-width: 280px; max-width: 520px; }
+.cols .section:first-child, .col-matrix > .section:first-child, .col-side > .section:first-child { margin-top: 0; }
+.wide-mode .matrix th { padding: 8px 4px; font-size: 12px; }
+.wide-mode .band-row-label, .wide-mode .matrix th.band-label { width: 100px; max-width: 100px; font-size: 11px; }
+.wide-mode body, .wide-mode { font-size: 14px; }
+.wide-mode .cell-freq { font-size: 13px; }
+.cell-freq { font-weight: 700; font-size: 10px; }
+.cell-free     { background: var(--panel-2); }
+.cell-moderate { background: var(--yellow); color: #231d04; }
+.cell-warning  { background: var(--orange-bg); box-shadow: inset 0 0 0 2px var(--orange); color: var(--orange); }
+.cell-reserve  { background: var(--panel-2); box-shadow: inset 0 0 0 2px var(--purple); border-style: dashed; color: #c9a6dd; }
+.cell-serious  { background: var(--orange); color: #231604; }
+.cell-critical { background: var(--red); color: #fff; }
+.cell-mine { background: #10381f !important; box-shadow: inset 0 0 0 3px var(--green); color: var(--green); }
+.cell-unit { box-shadow: inset 0 0 0 3px var(--blue); }
+.cell-ext  { background: #2f3436 !important; box-shadow: inset 0 0 0 3px var(--grey); color: #b8c2c4; }
+.band-row-label { background: #191919 !important; color: var(--accent); padding: 4px 5px; text-align: left; font-weight: 700; position: sticky; left: 0; z-index: 2; font-size: 9px; line-height: 1.2; width: 70px; max-width: 70px; white-space: normal; overflow-wrap: break-word; box-shadow: none !important; }
+.legend { background: var(--panel); border: 1px solid var(--line); border-radius: 0; padding: 9px; font-size: 11px; line-height: 1.9; margin-top: 8px; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.lg-box { width: 16px; height: 16px; border-radius: 0; flex-shrink: 0; }
+.conflict-detail { background: var(--panel); border: 1px solid var(--line); border-radius: 0; padding: 5px 8px; margin-bottom: 3px; font-size: 11px; }
+.cd-freq { font-weight: 700; color: var(--accent-soft); font-family: var(--font-data); }
+.cd-crews { color: var(--red-soft); font-size: 10px; }
+.ext-item { display: flex; align-items: center; justify-content: space-between; background: var(--panel-3); border: 1px solid var(--line-2); border-radius: 0; padding: 5px 8px; margin-bottom: 4px; font-size: 11px; font-family: var(--font-data); }
+.ext-del { background: none; border: none; color: var(--red); cursor: pointer; font-size: 14px; }
+.vtx-box { background: var(--panel); border: 1px solid var(--blue-deep); border-radius: 0; padding: 8px; margin-bottom: 6px; }
+.vtx-crew { font-size: 12px; color: var(--blue-soft); margin-bottom: 6px; }
+.vtx-btns { display: flex; flex-wrap: wrap; gap: 5px; }
+.vtx-btn { background: var(--panel-2); border: 1px solid var(--blue); border-radius: 0; padding: 4px 10px; font-size: 11px; cursor: pointer; color: var(--blue-soft); font-weight: 700; font-family: var(--font-data); }
+.vtx-btn:hover { background: var(--blue); color: #06121c; }
+.switch-btn { background: var(--blue-deep); color: var(--blue-soft); border: 1px solid var(--blue); border-radius: 0; padding: 3px 10px; font-size: 11px; cursor: pointer; font-weight: 700; font-family: var(--font-data); }
+.switch-btn:hover { background: var(--blue); color: #06121c; }
+.switch-menu { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+
+/* ── Модалки ── */
+.modal-bg, .modal-overlay { display: none; position: fixed; inset: 0; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; backdrop-filter: blur(2px); }
+.modal-bg.open, .modal-overlay.open { display: flex; align-items: center; justify-content: center; }
+.modal { background: #1a1a1a; border: 1px solid var(--blue); border-radius: 0; padding: 16px; width: 340px; max-height: 90vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,.8); }
+.modal input { width: 100%; padding: 8px; border: 1px solid var(--line-2); border-radius: 0; margin: 8px 0; background: #0e0e0e; color: var(--text); }
+.modal button { width: 100%; padding: 8px; border: none; border-radius: 0; font-weight: 700; cursor: pointer; font-family: var(--font-data); }
+.modal-title { font-weight: 700; color: var(--accent); font-size: 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; text-transform: uppercase; letter-spacing: .06em; }
+.modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--dim); }
+.modal-close:hover { color: var(--red); }
+
+/* ═══ Мапа перекриття inline-стилів (кольори старої світлої теми) ═══
+   JS-код форм генерує inline style зі старими кольорами — перефарбовуємо. */
+[style*="background:#fff"] { background: var(--panel-2) !important; }
+[style*="color:#1a3a5c"] { color: var(--accent-soft) !important; }
+[style*="background:#1a3a5c"] { background: var(--blue-deep) !important; }
+[style*="color:#2e6da4"] { color: var(--blue-soft) !important; }
+[style*="color:#856404"] { color: var(--orange) !important; }
+[style*="background:#fff3cd"] { background: var(--orange-bg) !important; }
+[style*="border:1px solid #ffc107"], [style*="border-color:#ffc107"] { border-color: var(--orange) !important; }
+[style*="color:#721c24"] { color: var(--red-soft) !important; }
+[style*="background:#f8d7da"] { background: var(--red-bg) !important; }
+[style*="color:#155724"] { color: var(--green) !important; }
+[style*="color:#14532d"] { color: var(--green) !important; }
+[style*="background:#d4edda"] { background: var(--green-bg) !important; }
+[style*="background:#dcfce7"] { background: var(--green-bg) !important; }
+[style*="background:#c8e6c9"] { background: #10381f !important; }
+[style*="background:#e8f4fd"] { background: #152535 !important; }
+[style*="background:#fffbea"] { background: #262110 !important; }
+[style*="background:#fff0f0"] { background: #2a1212 !important; }
+[style*="background:#fff8f0"] { background: #262019 !important; }
+[style*="background:#fff3f3"] { background: #2a1212 !important; }
+[style*="background:#f5f5f5"], [style*="background:#f0f0f0"], [style*="background:#e2e3e5"] { background: var(--panel-3) !important; }
+[style*="background:#e0e0e0"] { background: #2f3436 !important; }
+[style*="background:#ccc"] { background: var(--panel-3) !important; color: var(--muted) !important; }
+[style*="background:#1565c0"] { background: var(--blue-deep) !important; }
+[style*="color:#1565c0"] { color: var(--blue) !important; }
+[style*="color:#2e7d32"] { color: var(--green) !important; }
+[style*="color:#0c5460"] { color: #5dade2 !important; }
+[style*="color:#c00"] { color: var(--red) !important; }
+[style*="color:#e67e22"] { color: var(--orange) !important; }
+[style*="color:#666"], [style*="color:#555"], [style*="color:#444"] { color: var(--muted) !important; }
+[style*="color:#888"] { color: var(--dim) !important; }
+[style*="color:#aaa"] { color: var(--dim) !important; }
+[style*="color:#333"] { color: var(--text) !important; }
+[style*="border:1px solid #ddd"] { border-color: var(--line) !important; }
+[style*="border:1px solid #f5c6cb"] { border-color: var(--red) !important; }
+[style*="border:1px solid #b8daff"], [style*="border-color:#b8daff"] { border-color: var(--blue-deep) !important; }
+[style*="border:1px solid #86efac"] { border-color: var(--green) !important; }
+[style*="border:1px solid #c8a97e"] { border-color: var(--line-2) !important; }
+[style*="border-bottom:1px solid #c3e6cb"] { border-color: #1f4430 !important; }
+[style*="border-radius:8px"], [style*="border-radius:10px"], [style*="border-radius:12px"], [style*="border-radius:6px"], [style*="border-radius:4px"] { border-radius: 0 !important; }
+</style>
+</head>
+<body>
+<h3>🗑️ Видалення предметів</h3>
+
+<!-- КРОК 1: Введення ID -->
+<div id="step1" class="step active">
+  <div class="f">
+    <label>ID предметів для видалення</label>
+    <textarea id="idsInput" placeholder="DSTK-001-20260419&#10;STNG-002-20260419&#10;TX-001-20260419&#10;&#10;Кожен ID з нового рядка або через кому"></textarea>
+    <div class="hint">Можна ввести один або кілька ID одночасно</div>
+  </div>
+  <button class="btn btn-search" onclick="searchItems()">🔍 Знайти предмети</button>
+</div>
+
+<!-- КРОК 2: Підтвердження -->
+<div id="step2" class="step">
+  <div style="margin-bottom:8px">
+    Знайдено: <span class="count-badge" id="foundCount">0</span> предметів
+  </div>
+  <div class="found-list" id="foundList"></div>
+
+  <div id="notFoundWarn" class="warn-box" style="display:none">
+    ⚠️ Не знайдено: <span id="notFoundList"></span>
+  </div>
+
+  <div class="f" style="margin-top:12px">
+    <label>Причина видалення</label>
+    <input type="text" id="reason" placeholder="втрата / знищено / передано стороні...">
+  </div>
+
+  <div class="warn-box">
+    ⚠️ Дія незворотна. Рядки будуть видалені, записи збережуться в Журналі руху.
+  </div>
+
+  <button class="btn btn-delete" id="deleteBtn" onclick="confirmDelete()">🗑️ Підтвердити видалення</button>
+  <button class="btn btn-clear" onclick="resetForm()">← Назад</button>
+</div>
+
+<div id="msg" class="msg"></div>
+
+<script>
+var foundItems = [];
+
+function getIds() {
+  var raw = document.getElementById('idsInput').value;
+  // Підтримуємо: новий рядок, кому, крапку з комою як роздільники
+  return raw.split(/[\n,;]+/)
+    .map(function(s) { return s.trim(); })
+    .filter(function(s) { return s.length > 0; });
+}
+
+function searchItems() {
+  var ids = getIds();
+  if (ids.length === 0) {
+    showMsg('Введи хоча б один ID', 'err-msg');
+    return;
+  }
+
+  document.querySelector('.btn-search').textContent = '⏳ Шукаємо...';
+  document.querySelector('.btn-search').disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(results) {
+      document.querySelector('.btn-search').textContent = '🔍 Знайти предмети';
+      document.querySelector('.btn-search').disabled = false;
+
+      renderResults(results);
+    })
+    .withFailureHandler(function(e) {
+      document.querySelector('.btn-search').textContent = '🔍 Знайти предмети';
+      document.querySelector('.btn-search').disabled = false;
+      showMsg('❌ Помилка: ' + e.message, 'err-msg');
+    })
+    .lookupItemsForDelete(ids);
+}
+
+function renderResults(results) {
+  foundItems = results.filter(function(r) { return r.found; });
+  var notFound = results.filter(function(r) { return !r.found; });
+
+  document.getElementById('foundCount').textContent = foundItems.length;
+
+  // Картки знайдених
+  var listHtml = '';
+  results.forEach(function(r) {
+    if (r.found) {
+      listHtml +=
+        '<div class="item-card ok">' +
+          '<div class="item-id">' + esc(r.id) + '</div>' +
+          '<div class="item-name">' + esc(r.name) + '</div>' +
+          '<div class="item-meta">' + esc(r.type) + ' · ' + esc(r.assign) + ' · ' + esc(r.status) + '</div>' +
+        '</div>';
+    } else {
+      listHtml +=
+        '<div class="item-card miss">' +
+          '<span class="item-id">' + esc(r.id) + '</span> — не знайдено' +
+        '</div>';
+    }
+  });
+  document.getElementById('foundList').innerHTML = listHtml;
+
+  // Попередження про ненайдені
+  if (notFound.length > 0) {
+    document.getElementById('notFoundList').textContent = notFound.map(function(r) { return r.id; }).join(', ');
+    document.getElementById('notFoundWarn').style.display = 'block';
+  } else {
+    document.getElementById('notFoundWarn').style.display = 'none';
+  }
+
+  // Кнопка видалення
+  document.getElementById('deleteBtn').disabled = foundItems.length === 0;
+
+  // Перейти на крок 2
+  document.getElementById('step1').classList.remove('active');
+  document.getElementById('step2').classList.add('active');
+  document.getElementById('msg').className = 'msg';
+}
+
+function confirmDelete() {
+  if (foundItems.length === 0) { showMsg('Немає предметів для видалення', 'err-msg'); return; }
+
+  var reason = document.getElementById('reason').value.trim() || 'не вказано';
+  var ids = foundItems.map(function(r) { return r.id; });
+
+  var btn = document.getElementById('deleteBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Видаляємо...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      var msg = '✅ Видалено ' + result.deleted.length + ' предмет(ів):\n' + result.deleted.join('\n');
+      if (result.notFound.length > 0) msg += '\n\n⚠️ Не знайдено: ' + result.notFound.join(', ');
+      showMsg(msg.replace(/\n/g, '<br>'), 'ok-msg');
+      resetForm();
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.textContent = '🗑️ Підтвердити видалення';
+      showMsg('❌ Помилка: ' + e.message, 'err-msg');
+    })
+    .deleteItemsByIds(ids, reason);
+}
+
+function resetForm() {
+  document.getElementById('step2').classList.remove('active');
+  document.getElementById('step1').classList.add('active');
+  document.getElementById('idsInput').value = '';
+  document.getElementById('reason').value = '';
+  document.getElementById('foundList').innerHTML = '';
+  document.getElementById('foundCount').textContent = '0';
+  document.getElementById('notFoundWarn').style.display = 'none';
+  foundItems = [];
+  var btn = document.getElementById('deleteBtn');
+  if (btn) { btn.disabled = false; btn.textContent = '🗑️ Підтвердити видалення'; }
+}
+
+function esc(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function showMsg(html, cls) {
+  var el = document.getElementById('msg');
+  el.innerHTML = html;
+  el.className = 'msg ' + cls;
+  if (cls === 'ok-msg') setTimeout(function() { el.className = 'msg'; }, 8000);
+}
+</script>
+</body>
+</html>

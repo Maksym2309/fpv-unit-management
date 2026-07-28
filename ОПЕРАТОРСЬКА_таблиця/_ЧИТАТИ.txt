@@ -1,0 +1,16 @@
+ОПЕРАТОРСЬКА ТАБЛИЦЯ — файли Apps Script
+
+СКРИПТ:
+  OperatorCode.gs — код операторської таблиці
+
+HTML ФОРМИ:
+  FlightLogForm.html   — журнал польоту
+  FrequencyForm.html   — карта частот
+  SinotrackForm.html   — трекери + SIM
+  AppShell.html        — застосунок-лаунчер
+
+ВАЖЛИВО:
+  - У OperatorCode.gs заміни ADMIN_EMAIL на свій email (той самий що в головній)
+  - Журнал польоту має 17 колонок (A-Q): O=Відеосистема, P=Частота, Q=Резервні VTX
+  - Sinotrack: прихована колонка I (_TS), SIM: колонка F (_TS)
+  - HTML форми ідентичні головній таблиці (той самий код)

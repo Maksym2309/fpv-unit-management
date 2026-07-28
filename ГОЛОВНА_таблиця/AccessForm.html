@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #1a3a5c; font-size: 15px; border-bottom: 2px solid #2e6da4; padding-bottom: 7px; margin-bottom: 14px; }
+  .f { margin-bottom: 10px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; }
+  input { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+  input:focus { border-color: #2e6da4; outline: none; }
+  .info-box { background: #e8f4fd; border: 1px solid #b8daff; border-radius: 4px; padding: 8px; font-size: 12px; margin-bottom: 12px; line-height: 1.7; }
+  .section { font-weight: bold; color: #1a3a5c; font-size: 12px; margin: 14px 0 7px; border-left: 3px solid #2e6da4; padding-left: 8px; }
+  .section-red { border-left-color: #721c24; color: #721c24; }
+  .email-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+  .email-addr { flex: 1; font-size: 12px; color: #333; }
+  .badge { font-size: 10px; padding: 1px 7px; border-radius: 8px; }
+  .badge-admin { background: #1a3a5c; color: #fff; }
+  .badge-main  { background: #721c24; color: #fff; }
+  .badge-user  { background: #d4edda; color: #155724; }
+  .btn-x { background: none; border: none; color: #bbb; cursor: pointer; font-size: 14px; padding: 2px 5px; }
+  .btn-x:hover { color: #c00; }
+  .btn-x:disabled { color: #eee; cursor: not-allowed; }
+  .btn { width: 100%; padding: 9px; background: #1a3a5c; color: #fff; border: none; border-radius: 4px; font-size: 13px; font-weight: bold; cursor: pointer; margin-top: 6px; }
+  .btn:hover { background: #2e6da4; }
+  .btn-red { background: #721c24; }
+  .btn-red:hover { background: #501519; }
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok  { background: #d4edda; color: #155724; display: block; }
+  .err { background: #f8d7da; color: #721c24; display: block; }
+  .empty { color: #aaa; font-size: 12px; font-style: italic; padding: 4px 0; }
+  .sheets-grid { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .sheet-tag { background: #e8f4fd; color: #1a3a5c; border-radius: 8px; padding: 2px 8px; font-size: 11px; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 12px 0; }
+</style>
+</head>
+<body>
+<h3>👥 Управління доступом</h3>
+<div id="body"><div style="text-align:center;color:#888;padding:20px">⏳ Завантаження...</div></div>
+
+<script>
+var data = {};
+
+google.script.run
+  .withSuccessHandler(function(d){ data=d; render(); })
+  .withFailureHandler(function(e){ document.getElementById('body').innerHTML='<div class="err" style="display:block">❌ '+e.message+'</div>'; })
+  .getAccessData();
+
+function render() {
+  var isSuperAdmin = data.currentUser === data.adminEmail;
+
+  document.getElementById('body').innerHTML =
+    '<div class="info-box">'+
+      '👑 Головний адмін: <strong>'+esc(data.adminEmail)+'</strong><br>'+
+      '👤 Ти: <strong>'+esc(data.currentUser)+'</strong>'+
+      (isSuperAdmin ? ' <span class="badge badge-main">Головний</span>' : '')+
+    '</div>'+
+
+    // ADMINS
+    '<div class="section section-red">👑 Адміни (повний доступ)</div>'+
+    '<div id="adminList">'+renderAdminList()+'</div>'+
+    (isSuperAdmin ?
+      '<div class="f" style="margin-top:8px">'+
+        '<input type="email" id="newAdmin" placeholder="email нового адміна..." onkeydown="if(event.key===\'Enter\')addAdmin()">'+
+      '</div>'+
+      '<button class="btn btn-red" onclick="addAdmin()">👑 Додати адміна</button>'
+    : '<div class="empty" style="font-size:11px">Тільки головний адмін може керувати адмінами</div>')+
+
+    '<hr>'+
+
+    // ALLOWED USERS
+    '<div class="section">✅ Дозволені користувачі</div>'+
+    '<div style="font-size:11px;color:#666;margin-bottom:6px">Бачать: Журнал польоту, Дашборд, Витратники, Списання, Втрачені, Школа, На виїзд, Sting, Симулятор, Інше, Майстерня, Літак</div>'+
+    '<div id="userList">'+renderUserList()+'</div>'+
+    '<div class="f" style="margin-top:8px">'+
+      '<input type="email" id="newUser" placeholder="email користувача..." onkeydown="if(event.key===\'Enter\')addUser()">'+
+    '</div>'+
+    '<button class="btn" onclick="addUser()">➕ Додати користувача</button>'+
+
+    '<div id="msg" class="msg"></div>';
+}
+
+function renderAdminList() {
+  var admins = data.adminEmails || [];
+  if (!admins.length) return '<div class="empty">Немає додаткових адмінів</div>';
+  var isSuperAdmin = data.currentUser === data.adminEmail;
+  return admins.map(function(email){
+    var isMain = email === data.adminEmail;
+    return '<div class="email-row">'+
+      '<span class="email-addr">'+esc(email)+'</span>'+
+      '<span class="badge '+(isMain?'badge-main':'badge-admin')+'">'+(isMain?'Головний':'Адмін')+'</span>'+
+      '<button class="btn-x" '+(isMain||!isSuperAdmin?'disabled':'')+' onclick="removeAdmin(\''+esc(email)+'\')">✕</button>'+
+    '</div>';
+  }).join('');
+}
+
+function renderUserList() {
+  var users = data.allowedEmails || [];
+  if (!users.length) return '<div class="empty">Немає дозволених користувачів</div>';
+  return users.map(function(email){
+    return '<div class="email-row">'+
+      '<span class="email-addr">'+esc(email)+'</span>'+
+      '<span class="badge badge-user">Користувач</span>'+
+      '<button class="btn-x" onclick="removeUser(\''+esc(email)+'\')">✕</button>'+
+    '</div>';
+  }).join('');
+}
+
+function addAdmin() {
+  var email = document.getElementById('newAdmin').value.trim().toLowerCase();
+  if (!email) return;
+  google.script.run
+    .withSuccessHandler(function(list){ data.adminEmails=list; document.getElementById('adminList').innerHTML=renderAdminList(); document.getElementById('newAdmin').value=''; showMsg('✅ '+email+' — адмін','ok'); })
+    .withFailureHandler(function(e){ showMsg('❌ '+e.message,'err'); })
+    .addAdminEmail(email);
+}
+
+function removeAdmin(email) {
+  google.script.run
+    .withSuccessHandler(function(list){ data.adminEmails=list; document.getElementById('adminList').innerHTML=renderAdminList(); showMsg('✅ '+email+' видалено з адмінів','ok'); })
+    .withFailureHandler(function(e){ showMsg('❌ '+e.message,'err'); })
+    .removeAdminEmail(email);
+}
+
+function addUser() {
+  var email = document.getElementById('newUser').value.trim().toLowerCase();
+  if (!email) return;
+  google.script.run
+    .withSuccessHandler(function(list){ data.allowedEmails=list; document.getElementById('userList').innerHTML=renderUserList(); document.getElementById('newUser').value=''; showMsg('✅ '+email+' додано','ok'); })
+    .withFailureHandler(function(e){ showMsg('❌ '+e.message,'err'); })
+    .addAllowedEmail(email);
+}
+
+function removeUser(email) {
+  google.script.run
+    .withSuccessHandler(function(list){ data.allowedEmails=list; document.getElementById('userList').innerHTML=renderUserList(); showMsg('✅ '+email+' видалено','ok'); })
+    .withFailureHandler(function(e){ showMsg('❌ '+e.message,'err'); })
+    .removeAllowedEmail(email);
+}
+
+function showMsg(txt, cls) {
+  var el = document.getElementById('msg');
+  el.textContent=txt; el.className='msg '+cls;
+  if (cls==='ok') setTimeout(function(){ el.className='msg'; }, 5000);
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>

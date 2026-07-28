@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #1a3a5c; font-size: 15px; border-bottom: 2px solid #2e6da4; padding-bottom: 7px; margin-bottom: 14px; }
+  .f { margin-bottom: 11px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; }
+  input { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; }
+  input:focus { border-color: #2e6da4; outline: none; }
+  .info { background: #e8f4fd; border: 1px solid #b8daff; border-radius: 4px; padding: 9px; font-size: 12px; margin-bottom: 12px; line-height: 1.7; }
+  .warn { background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: 9px; font-size: 12px; margin-bottom: 10px; }
+  .section { font-weight: bold; color: #1a3a5c; font-size: 12px; margin: 14px 0 8px; border-left: 3px solid #2e6da4; padding-left: 8px; }
+  .btn { width: 100%; padding: 10px; background: #1a3a5c; color: #fff; border: none; border-radius: 4px; font-size: 13px; font-weight: bold; cursor: pointer; margin-top: 6px; }
+  .btn:hover { background: #2e6da4; }
+  .btn:disabled { background: #999; cursor: not-allowed; }
+  .btn-green { background: #14532d; }
+  .btn-green:hover { background: #166534; }
+  .btn-red { background: #721c24; }
+  .btn-red:hover { background: #501519; }
+  .btn-sec { background: #6c757d; }
+  .status-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .dot-ok  { background: #155724; }
+  .dot-err { background: #721c24; }
+  .dot-off { background: #aaa; }
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok  { background: #d4edda; color: #155724; display: block; }
+  .err { background: #f8d7da; color: #721c24; display: block; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 12px 0; }
+</style>
+</head>
+<body>
+<h3>🔄 Синхронізація таблиць</h3>
+<div id="body"><div style="text-align:center;color:#888;padding:20px">⏳ Завантаження...</div></div>
+
+<script>
+var settings = {};
+
+google.script.run
+  .withSuccessHandler(function(s){ settings=s; render(); })
+  .withFailureHandler(function(e){ document.getElementById('body').innerHTML='<div class="err" style="display:block">❌ '+e.message+'</div>'; })
+  .getSyncSettings();
+
+function render() {
+  var hasOp = settings.operatorSsId && settings.operatorSsId.length > 0;
+
+  document.getElementById('body').innerHTML =
+    '<div class="info">'+
+      '📋 Основна таблиця:<br>'+
+      '<a href="'+esc(settings.currentSsUrl)+'" target="_blank" style="font-size:11px;color:#2e6da4">'+esc(settings.currentSsId)+'</a>'+
+    '</div>'+
+
+    '<div class="section">Таблиця операторів</div>'+
+
+    (!hasOp ?
+      '<div class="warn">⚠️ Таблиця операторів не налаштована</div>'+
+      '<button class="btn btn-green" onclick="doCreate()">🆕 Створити автоматично</button>'+
+      '<div style="font-size:11px;color:#666;margin-top:8px;margin-bottom:4px">або вставте ID існуючої:</div>'
+    : '')+
+
+    '<div class="f">'+
+      '<label>ID таблиці операторів</label>'+
+      '<input type="text" id="opId" value="'+esc(settings.operatorSsId || '')+'" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">'+
+    '</div>'+
+
+    (hasOp ?
+      '<div class="status-row"><div class="dot dot-ok"></div>Таблиця налаштована</div>'+
+      '<a href="https://docs.google.com/spreadsheets/d/'+esc(settings.operatorSsId)+'" target="_blank" style="font-size:11px;color:#2e6da4;display:block;margin-bottom:8px">Відкрити таблицю операторів ↗</a>'
+    : '')+
+
+    '<button class="btn" onclick="doSave()">💾 Зберегти ID</button>'+
+
+    '<hr>'+
+
+    '<div class="section">Синхронізація</div>'+
+
+    '<div style="font-size:11px;color:#555;margin-bottom:8px;line-height:1.6">'+
+      '📤 Основна → Оператори: Інвентар (борти), Sinotrack, SIM-карти, Дашборд<br>'+
+      '📥 Оператори → Основна: Журнал польоту'+
+    '</div>'+
+
+    '<button class="btn btn-green" onclick="doSync()">🔄 Синхронізувати зараз</button>'+
+    '<button class="btn" onclick="doInstallTrigger()" style="margin-top:4px">⏱ Автосинхронізація кожні 5 хв</button>'+
+    '<button class="btn btn-red" onclick="doRemoveTrigger()" style="margin-top:4px">🛑 Вимкнути автосинхронізацію</button>'+
+
+    '<div id="msg" class="msg"></div>';
+}
+
+function doCreate() {
+  showMsg('⏳ Створюємо таблицю операторів...', 'ok');
+  var btn = event.target; btn.disabled=true;
+  google.script.run
+    .withSuccessHandler(function(r){
+      settings.operatorSsId = r.id;
+      showMsg('✅ Таблицю створено! ID: '+r.id, 'ok');
+      document.getElementById('opId').value = r.id;
+      setTimeout(function(){ render(); }, 2000);
+      btn.disabled=false;
+    })
+    .withFailureHandler(function(e){ showMsg('❌ '+e.message,'err'); btn.disabled=false; })
+    .createOperatorSpreadsheet();
+}
+
+function doSave() {
+  var id = document.getElementById('opId').value.trim();
+  google.script.run
+    .withSuccessHandler(function(){ settings.operatorSsId=id; showMsg('✅ Збережено','ok'); setTimeout(render,1000); })
+    .withFailureHandler(function(e){ showMsg('❌ '+e.message,'err'); })
+    .saveSyncSettings({ operatorSsId: id });
+}
+
+function doSync() {
+  showMsg('⏳ Синхронізація...', 'ok');
+  google.script.run
+    .withSuccessHandler(function(){ showMsg('✅ Синхронізація завершена','ok'); })
+    .withFailureHandler(function(e){ showMsg('❌ '+e.message,'err'); })
+    .syncToOperators();
+}
+
+function doInstallTrigger() {
+  google.script.run
+    .withSuccessHandler(function(){ showMsg('✅ Автосинхронізація кожні 5 хв увімкнена','ok'); })
+    .withFailureHandler(function(e){ showMsg('❌ '+e.message,'err'); })
+    .installSyncTrigger();
+}
+
+function doRemoveTrigger() {
+  google.script.run
+    .withSuccessHandler(function(){ showMsg('✅ Автосинхронізація вимкнена','ok'); })
+    .withFailureHandler(function(e){ showMsg('❌ '+e.message,'err'); })
+    .removeSyncTrigger();
+}
+
+function showMsg(txt, cls) {
+  var el = document.getElementById('msg');
+  el.textContent=txt; el.className='msg '+cls;
+  if (cls==='ok') setTimeout(function(){ el.className='msg'; }, 6000);
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>

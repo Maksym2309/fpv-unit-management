@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #7d4e00; font-size: 15px; border-bottom: 2px solid #c8a97e; padding-bottom: 7px; margin-bottom: 14px; }
+  .f { margin-bottom: 11px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+  select, input { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; font-family: Arial, sans-serif; }
+  select:focus, input:focus { border-color: #7d4e00; outline: none; }
+  .info { border-radius: 4px; padding: 8px; font-size: 12px; margin-bottom: 10px; display: none; line-height: 1.6; }
+  .info.qty  { background: #e8f4fd; border: 1px solid #b8daff; }
+  .info.stat { background: #f8f5f0; border: 1px solid #c8a97e; }
+  .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+  .status-btn { padding: 10px; border: 2px solid #ddd; border-radius: 6px; text-align: center; cursor: pointer; font-size: 12px; font-weight: bold; transition: all .15s; }
+  .status-btn:hover { opacity: .8; }
+  .status-btn.active { border-width: 2px; }
+  .s-bagato    { background: #d4edda; color: #155724; border-color: #155724; }
+  .s-dostatno  { background: #d1ecf1; color: #0c5460; border-color: #0c5460; }
+  .s-malo      { background: #fff3cd; color: #856404; border-color: #856404; }
+  .s-kryt      { background: #f8d7da; color: #721c24; border-color: #721c24; }
+  .s-bagato.active    { box-shadow: 0 0 0 2px #155724; }
+  .s-dostatno.active  { box-shadow: 0 0 0 2px #0c5460; }
+  .s-malo.active      { box-shadow: 0 0 0 2px #856404; }
+  .s-kryt.active      { box-shadow: 0 0 0 2px #721c24; }
+  .qty-wrap { display: flex; align-items: center; gap: 8px; }
+  .qty-wrap input { width: 80px; text-align: center; font-size: 15px; font-weight: bold; }
+  .qty-btn { width: 34px; height: 34px; border: 1px solid #ccc; border-radius: 4px; background: #f0f0f0; font-size: 18px; cursor: pointer; flex-shrink: 0; }
+  .qty-btn:hover { background: #7d4e00; color: #fff; }
+  .btn { width: 100%; padding: 10px; background: #7d4e00; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn:hover { background: #5c3900; }
+  .btn:disabled { background: #999; cursor: not-allowed; }
+  .btn-sec { background: #6c757d; margin-top: 5px; }
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok  { background: #d4edda; color: #155724; display: block; }
+  .err { background: #f8d7da; color: #721c24; display: block; }
+  .loading { text-align: center; color: #888; padding: 30px; }
+  .search-wrap { position: relative; }
+  .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; max-height: 200px; overflow-y: auto; z-index: 100; display: none; }
+  .dropdown-item { padding: 8px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .dropdown-item:hover { background: #f8f5f0; }
+  .item-id { font-weight: bold; color: #7d4e00; }
+  .item-meta { color: #666; font-size: 11px; }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: bold; margin-left: 4px; }
+  .badge-qty  { background: #1a3a5c; color: #fff; }
+  .badge-stat { background: #7d4e00; color: #fff; }
+</style>
+</head>
+<body>
+<h3>🔧 Витратники — стан</h3>
+<div id="body" class="loading">⏳ Завантаження...</div>
+
+<script>
+var items = [];
+var selectedItem = null;
+var selectedStatus = '';
+
+google.script.run
+  .withSuccessHandler(function(list) { items = list; renderForm(); })
+  .withFailureHandler(function(e) {
+    document.getElementById('body').innerHTML = '<div class="err" style="display:block">❌ ' + e.message + '</div>';
+  })
+  .getConsumablesList();
+
+function renderForm() {
+  document.getElementById('body').innerHTML =
+    '<div class="f"><label>Пошук витратника *</label>' +
+    '<div class="search-wrap">' +
+      '<input type="text" id="search" placeholder="Введи назву або ID..." oninput="filterItems()" onfocus="filterItems()" autocomplete="off">' +
+      '<div class="dropdown" id="dropdown"></div>' +
+    '</div></div>' +
+
+    '<div class="info" id="infoBox"></div>' +
+    '<input type="hidden" id="selectedId">' +
+
+    '<div id="fields" style="display:none">' +
+      '<div id="qtyFields"></div>' +
+      '<div id="statFields"></div>' +
+      '<div class="f"><label>Примітка</label><input type="text" id="note" placeholder="необов\'язково"></div>' +
+      '<button class="btn" id="submitBtn" onclick="submit()">✅ Зберегти</button>' +
+      '<button class="btn btn-sec" onclick="resetForm()">🗑️ Очистити</button>' +
+    '</div>' +
+    '<div id="msg" class="msg"></div>';
+}
+
+function filterItems() {
+  var q = document.getElementById('search').value.toLowerCase().trim();
+  var dd = document.getElementById('dropdown');
+  var filtered = q
+    ? items.filter(function(it) { return it.name.toLowerCase().includes(q) || it.id.toLowerCase().includes(q); })
+    : items;
+  filtered = filtered.slice(0, 12);
+  if (!filtered.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = filtered.map(function(it) {
+    var badgeClass = it.trackType === 'Кількісний' ? 'badge-qty' : 'badge-stat';
+    var badgeText  = it.trackType === 'Кількісний' ? 'К-сть' : 'Статус';
+    var statusColor = getStatusColor(it.status);
+    return '<div class="dropdown-item" onclick="selectItem(\'' + esc(it.id) + '\')">' +
+      '<div class="item-id">' + esc(it.id) +
+        '<span class="badge ' + badgeClass + '">' + badgeText + '</span>' +
+        (it.status ? '<span style="margin-left:4px;font-size:10px;color:' + statusColor + '">' + esc(it.status) + '</span>' : '') +
+      '</div>' +
+      '<div class="item-meta">' + esc(it.name) + ' · ' + esc(it.compat) + '</div>' +
+    '</div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function selectItem(id) {
+  var it = items.find(function(i) { return i.id === id; });
+  if (!it) return;
+  selectedItem = it;
+  selectedStatus = it.status || '';
+
+  document.getElementById('search').value = it.id + ' — ' + it.name;
+  document.getElementById('selectedId').value = it.id;
+  document.getElementById('dropdown').style.display = 'none';
+
+  // Показати інфо
+  var box = document.getElementById('infoBox');
+  var trackLabel = it.trackType === 'Кількісний' ? 'Кількісний' : 'Статусний';
+  var trackBadge = it.trackType === 'Кількісний' ? 'badge-qty' : 'badge-stat';
+  box.className = 'info ' + (it.trackType === 'Кількісний' ? 'qty' : 'stat');
+  box.innerHTML =
+    '<strong>' + esc(it.name) + '</strong>' +
+    ' <span class="badge ' + trackBadge + '">' + trackLabel + '</span><br>' +
+    esc(it.category) + ' · ' + esc(it.compat) + '<br>' +
+    (it.trackType === 'Кількісний'
+      ? 'Кількість: <strong>' + (it.qty || 0) + '</strong> · Мінімум: ' + (it.minQty || 0)
+      : 'Статус: <strong>' + esc(it.status) + '</strong>');
+  box.style.display = 'block';
+
+  // Поля залежно від типу
+  var qtyFields = document.getElementById('qtyFields');
+  var statFields = document.getElementById('statFields');
+
+  if (it.trackType === 'Кількісний') {
+    qtyFields.innerHTML =
+      '<div class="f"><label>Кількість</label>' +
+      '<div class="qty-wrap">' +
+        '<button class="qty-btn" onclick="changeQty(-1)">−</button>' +
+        '<input type="number" id="qty" value="' + (it.qty || 0) + '" min="0">' +
+        '<button class="qty-btn" onclick="changeQty(1)">+</button>' +
+      '</div></div>' +
+      '<div class="f"><label>Мінімум (поріг)</label>' +
+      '<input type="number" id="minQty" value="' + (it.minQty || 0) + '" min="0">' +
+      '</div>';
+    statFields.innerHTML = '';
+  } else {
+    qtyFields.innerHTML = '';
+    statFields.innerHTML =
+      '<div class="f"><label>Статус *</label>' +
+      '<div class="status-grid">' +
+        '<div class="status-btn s-bagato' + (selectedStatus === 'Багато' ? ' active' : '') + '" onclick="setStatus(\'Багато\')">📦 Багато</div>' +
+        '<div class="status-btn s-dostatno' + (selectedStatus === 'Достатньо' ? ' active' : '') + '" onclick="setStatus(\'Достатньо\')">✅ Достатньо</div>' +
+        '<div class="status-btn s-malo' + (selectedStatus === 'Мало' ? ' active' : '') + '" onclick="setStatus(\'Мало\')">⚠️ Мало</div>' +
+        '<div class="status-btn s-kryt' + (selectedStatus === 'Критично' ? ' active' : '') + '" onclick="setStatus(\'Критично\')">🚨 Критично</div>' +
+      '</div></div>';
+  }
+
+  document.getElementById('note').value = it.note || '';
+  document.getElementById('fields').style.display = 'block';
+}
+
+function setStatus(val) {
+  selectedStatus = val;
+  document.querySelectorAll('.status-btn').forEach(function(btn) {
+    btn.classList.remove('active');
+  });
+  var map = { 'Багато': 's-bagato', 'Достатньо': 's-dostatno', 'Мало': 's-malo', 'Критично': 's-kryt' };
+  document.querySelectorAll('.' + map[val]).forEach(function(btn) { btn.classList.add('active'); });
+}
+
+function changeQty(delta) {
+  var el = document.getElementById('qty');
+  if (!el) return;
+  var v = Math.max(0, (parseInt(el.value, 10) || 0) + delta);
+  el.value = v;
+}
+
+function getStatusColor(s) {
+  return { 'Багато': '#155724', 'Достатньо': '#0c5460', 'Мало': '#856404', 'Критично': '#721c24' }[s] || '#444';
+}
+
+function submit() {
+  var id = document.getElementById('selectedId').value;
+  if (!id) { showMsg('❌ Оберіть витратник', 'err'); return; }
+
+  var data = { id: id, note: document.getElementById('note').value.trim() };
+
+  if (selectedItem && selectedItem.trackType === 'Кількісний') {
+    data.qty    = document.getElementById('qty').value;
+    data.minQty = document.getElementById('minQty').value;
+  } else {
+    if (!selectedStatus) { showMsg('❌ Оберіть статус', 'err'); return; }
+    data.status = selectedStatus;
+  }
+
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = '⏳ Зберігаємо...';
+
+  google.script.run
+    .withSuccessHandler(function(r) {
+      showMsg('✅ ' + r.name + ' — ' + r.status, 'ok');
+      var it = items.find(function(i) { return i.id === id; });
+      if (it) { it.status = r.status; if (data.qty !== undefined) it.qty = data.qty; }
+      resetForm();
+      btn.disabled = false; btn.textContent = '✅ Зберегти';
+    })
+    .withFailureHandler(function(e) {
+      showMsg('❌ ' + e.message, 'err');
+      btn.disabled = false; btn.textContent = '✅ Зберегти';
+    })
+    .updateConsumable(data);
+}
+
+function resetForm() {
+  document.getElementById('search').value = '';
+  document.getElementById('selectedId').value = '';
+  document.getElementById('infoBox').style.display = 'none';
+  document.getElementById('fields').style.display = 'none';
+  document.getElementById('dropdown').style.display = 'none';
+  selectedItem = null; selectedStatus = '';
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showMsg(txt, cls) {
+  var el = document.getElementById('msg');
+  el.textContent = txt; el.className = 'msg ' + cls;
+  if (cls === 'ok') setTimeout(function(){ el.className = 'msg'; }, 6000);
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest || !e.target.closest('.search-wrap')) {
+    var dd = document.getElementById('dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+});
+</script>
+</body>
+</html>

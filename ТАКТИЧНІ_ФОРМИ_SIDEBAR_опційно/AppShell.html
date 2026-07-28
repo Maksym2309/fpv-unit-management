@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<base target="_top">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+:root {
+  --bg: #131313; --panel: #1c1b1b; --panel-3: #2a2a2a;
+  --line: #353534; --line-2: #514532;
+  --text: #e5e2e1; --muted: #a8a5a2; --dim: #7f7c78;
+  --accent: #ffb800; --accent-soft: #ffdca1; --on-accent: #1a1300;
+  --green: #2ecc71;
+  --font-ui: 'Archivo Narrow', Arial, sans-serif;
+  --font-data: 'JetBrains Mono', Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-ui); padding: 14px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.012) 0 1px, transparent 1px 3px),
+    var(--bg);
+  color: var(--text);
+}
+.brand { margin-bottom: 4px; }
+.brand-name { font-size: 20px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; line-height: 1.1; }
+.brand-sub { font-family: var(--font-data); font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .18em; margin-top: 3px; }
+.status-line { display: flex; align-items: center; gap: 6px; font-family: var(--font-data); font-size: 9px; color: var(--green); text-transform: uppercase; letter-spacing: .1em; margin: 10px 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line-2); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+.tile {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line-2);
+  border-radius: 0; padding: 13px 12px; width: 100%; cursor: pointer; text-align: left;
+  margin-bottom: 8px; transition: border-color .12s, background .12s, transform .12s;
+  color: var(--text); font-family: var(--font-ui);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+}
+.tile:hover { border-color: var(--accent); border-left-color: var(--accent); background: var(--panel-3); transform: translateX(3px); }
+.tile:hover .tile-title { color: var(--accent); }
+.tile:hover .tile-arrow { color: var(--accent); }
+.tile-icon { font-size: 26px; flex-shrink: 0; }
+.tile-text { flex: 1; }
+.tile-title { font-size: 14px; font-weight: 700; color: var(--accent-soft); text-transform: uppercase; letter-spacing: .05em; }
+.tile-desc { font-family: var(--font-data); font-size: 10px; color: var(--dim); margin-top: 2px; }
+.tile-arrow { color: var(--dim); font-size: 16px; font-family: var(--font-data); }
+.hint { color: var(--dim); font-size: 10px; font-family: var(--font-data); margin-top: 14px; text-align: center; line-height: 1.6; text-transform: uppercase; letter-spacing: .05em; }
+.msg { font-size: 11px; color: #ff8580; margin-top: 8px; min-height: 14px; text-align: center; font-family: var(--font-data); }
+</style>
+</head>
+<body>
+<div class="brand">
+  <div class="brand-name">Wild Hornets</div>
+  <div class="brand-sub">Tactical OS · FPV Unit MGMT</div>
+</div>
+<div class="status-line"><span class="status-dot"></span>Оперативний стан: активний</div>
+
+<button class="tile" onclick="openSection('flight', this)">
+  <div class="tile-icon">✈️</div>
+  <div class="tile-text">
+    <div class="tile-title">Журнал польоту</div>
+    <div class="tile-desc">Екіпажі · вильоти · статуси</div>
+  </div>
+  <div class="tile-arrow">⛶</div>
+</button>
+
+<button class="tile" onclick="openSection('sinotrack', this)">
+  <div class="tile-icon">📡</div>
+  <div class="tile-text">
+    <div class="tile-title">GPS трекери</div>
+    <div class="tile-desc">Sinotrack · SIM-карти</div>
+  </div>
+  <div class="tile-arrow">⛶</div>
+</button>
+
+<button class="tile" onclick="openSection('frequency', this)">
+  <div class="tile-icon">📻</div>
+  <div class="tile-text">
+    <div class="tile-title">Карта частот</div>
+    <div class="tile-desc">Конфлікти · VTX · резервні</div>
+  </div>
+  <div class="tile-arrow">⛶</div>
+</button>
+
+<div class="msg" id="msg"></div>
+<div class="hint">💡 Розділ відкривається у великому вікні поверх таблиці</div>
+
+<script>
+function openSection(section, btn) {
+  var fn = section==='flight' ? 'openFlightLogModal'
+    : section==='sinotrack' ? 'openSinotrackModal'
+    : 'openFrequencyModal';
+  document.getElementById('msg').textContent = '⏳ Відкриваю...';
+  google.script.run
+    .withSuccessHandler(function(){ document.getElementById('msg').textContent = ''; })
+    .withFailureHandler(function(e){ document.getElementById('msg').textContent = '❌ '+e.message; })
+    [fn]();
+}
+</script>
+</body>
+</html>

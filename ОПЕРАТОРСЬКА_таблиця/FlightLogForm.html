@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 13px; padding: 14px; background: #f8f9fa; }
+  h3 { color: #1a3a5c; font-size: 15px; border-bottom: 2px solid #2e6da4; padding-bottom: 7px; margin-bottom: 14px; }
+  .fs-icon-btn { position: absolute; top: 9px; right: 12px; height: 24px; display: flex; align-items: center; background: transparent; color: #1a3a5c; border: none; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px; }
+  .fs-icon-btn:hover { color: #2e6da4; }
+  .f { margin-bottom: 11px; }
+  label { display: block; font-weight: bold; color: #444; margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+  select, input { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; font-family: Arial, sans-serif; }
+  select:focus, input:focus { border-color: #2e6da4; outline: none; }
+  .tabs { display: flex; border-bottom: 2px solid #2e6da4; margin-bottom: 14px; }
+  .tab { padding: 7px 10px; cursor: pointer; font-size: 11px; font-weight: bold; color: #666; border-radius: 4px 4px 0 0; flex: 1; text-align: center; }
+  .tab.active { background: #2e6da4; color: #fff; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 10px; margin-bottom: 8px; }
+  .card-active { border-left: 4px solid #856404; background: #fffef5; }
+  .card-mine   { border-left: 4px solid #2e6da4; background: #f0f7ff; }
+  .card-other  { border-left: 4px solid #ccc; background: #f8f8f8; opacity: 0.7; }
+  .card-done   { border-left: 4px solid #155724; }
+  .card-title  { font-weight: bold; font-size: 12px; color: #1a3a5c; margin-bottom: 4px; }
+  .card-meta   { font-size: 11px; color: #666; line-height: 1.7; }
+  .badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+  .badge-mine  { background: #2e6da4; color: #fff; }
+  .badge-other { background: #e0e0e0; color: #555; }
+  .badge-act   { background: #856404; color: #fff; }
+  .tag { display: inline-block; background: #e8f4fd; color: #1a3a5c; border: 1px solid #b8daff; border-radius: 10px; padding: 2px 8px; font-size: 11px; margin: 2px; cursor: pointer; }
+  .tag:hover { background: #f8d7da; border-color: #f5c6cb; }
+  .tag-busy { background: #fff3cd; border-color: #ffc107; color: #856404; }
+  .warn  { background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: 7px; font-size: 11px; color: #856404; margin: 5px 0; }
+  .danger { background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; padding: 7px; font-size: 11px; color: #721c24; margin: 5px 0; }
+  .info  { background: #e8f4fd; border: 1px solid #b8daff; border-radius: 4px; padding: 7px; font-size: 11px; color: #0c5460; margin: 5px 0; }
+  .ac-wrap { position: relative; }
+  .ac-list { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; max-height: 180px; overflow-y: auto; z-index: 200; display: none; }
+  .ac-item { padding: 8px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .ac-item:hover, .ac-item:focus { background: #e8f4fd; }
+  .ac-id { font-weight: bold; color: #1a3a5c; font-size: 11px; }
+  .ac-meta { color: #666; font-size: 11px; }
+  .ac-busy { color: #e67e22; font-size: 10px; }
+  .st-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px; }
+  .st-btn { padding: 7px; border: 2px solid #ddd; border-radius: 5px; text-align: center; cursor: pointer; font-size: 11px; font-weight: bold; }
+  .st-btn.sel { box-shadow: 0 0 0 2px #333; }
+  .st-ok   { background: #d4edda; color: #155724; border-color: #155724; }
+  .st-fix  { background: #fff3cd; color: #856404; border-color: #856404; }
+  .st-bad  { background: #f8d7da; color: #721c24; border-color: #721c24; }
+  .st-lost { background: #3d0000; color: #ff9999; border-color: #ff5555; }
+  .btn { width: 100%; padding: 10px; background: #1a3a5c; color: #fff; border: none; border-radius: 4px; font-size: 13px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn:hover { background: #2e6da4; }
+  .btn:disabled { background: #999; cursor: not-allowed; }
+  .btn-green { background: #14532d; }
+  .btn-green:hover { background: #166534; }
+  .btn-red { background: #721c24; margin-top: 4px; }
+  .btn-sec { background: #6c757d; margin-top: 5px; }
+  .hint { font-size: 10px; color: #888; margin-top: 3px; font-style: italic; }
+  .msg { padding: 9px; border-radius: 4px; margin-top: 9px; font-size: 12px; display: none; }
+  .ok  { background: #d4edda; color: #155724; display: block; }
+  .err { background: #f8d7da; color: #721c24; display: block; }
+  .loading { text-align: center; color: #888; padding: 30px; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 12px 0; }
+  .section { font-weight: bold; color: #1a3a5c; font-size: 12px; margin-bottom: 8px; }
+  .modal-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; }
+  .modal-overlay.open { display:flex; align-items:center; justify-content:center; }
+  .modal { background:#fff; border-radius:8px; padding:16px; width:340px; max-height:90vh; overflow-y:auto; }
+  .modal-title { font-weight:bold; color:#1a3a5c; font-size:14px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; }
+  .modal-close { background:none; border:none; font-size:18px; cursor:pointer; color:#666; }
+</style>
+</head>
+<body>
+<h3>✈️ Журнал польоту</h3>
+<button class="fs-icon-btn" id="fsBtn" onclick="goFullscreen()" title="На весь екран">⛶</button>
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('crew')">👥 Екіпаж</div>
+  <div class="tab" onclick="switchTab('fly')">🛫 Виліт</div>
+  <div class="tab" onclick="switchTab('log')">📋 Журнал</div>
+</div>
+<div id="tab-crew" class="tab-content active"><div id="crewBody" class="loading">⏳</div></div>
+<div id="tab-fly"  class="tab-content"><div id="flyBody"  class="loading">⏳</div></div>
+<div id="tab-log"  class="tab-content"><div id="logBody"  class="loading">⏳</div></div>
+
+<script>
+var allItems     = [];
+var trackers     = [];
+var flights      = [];
+var currentEmail = '';
+var adminEmail   = '';
+var loaded       = 0;
+var drones       = [];   // пул бортів нового екіпажу
+var droneStatuses = {};
+var activeCrew   = null; // вибраний екіпаж для вильоту
+
+// Глобальна сітка бендів (порядок як в основній таблиці)
+var VIDEO_SYSTEMS = ['Аналог','HDZero','DJI','Walksnail','Hornet Vision'];
+var BANDS = {
+  'A':[5865,5845,5825,5805,5785,5765,5745,5725],
+  'B':[5733,5752,5771,5790,5809,5828,5847,5866],
+  'E':[5705,5685,5665,5645,5885,5905,5925,5945],
+  'F':[5740,5760,5780,5800,5820,5840,5860,5880],
+  'R':[5658,5695,5732,5769,5806,5843,5880,5917],
+  'H':[5653,5693,5733,5773,5813,5853,5893,5933],
+  'HV-H':[5745,5765,5785,5805,5825],
+  'L':[5362,5399,5436,5473,5510,5547,5584,5621],
+  'L (Foxeer)':[5333,5373,5413,5453,5493,5533,5573,5613],
+  'HV-L':[5240,5260,5280,5300,5320],
+  'U':[5325,5348,5366,5384,5402,5420,5438,5456],
+  'O':[5474,5492,5510,5528,5546,5564,5582,5600],
+  'S':[6002,6028,6054,6080,6106,6132,6158,6184],
+  'X':[4990,5020,5050,5080,5110,5140,5170,5200],
+  '3.3G A':[3330,3350,3370,3390,3410,3430,3450,3470],
+  '3.3G B':[3170,3190,3210,3230,3250,3270,3290,3310],
+  '3.3G A (GepRC)':[3083,3114,3145,3176,3207,3238,3269,3300],
+  '3.3G B (GepRC)':[3215,3235,3255,3275,3295,3315,3335,3355],
+  '3.3G C (GepRC)':[3170,3190,3210,3230,3250,3270,3290,3310],
+  '3.3G D (GepRC)':[3320,3345,3370,3395,3420,3445,3470,3495],
+  '3.3G E (GepRC)':[3310,3330,3355,3380,3405,3430,3455,3480],
+};
+var crewReserves = []; // резервні частоти нового екіпажу
+var editReserves = []; // резервні при редагуванні
+var HV_FREQS = [5240,5260,5280,5300,5320,5745,5765,5785,5805,5825];
+var WARNING_FREQS = { 5240: 'Канал HV-L1 (5240 МГц) використовувати НЕ рекомендовано! Можливі проблеми зв\'язку. Тільки короткочасно.' };
+
+function tryLoad() { loaded++; if (loaded >= 5) renderAll(); }
+
+// Широкий режим (modal/застосунок) + кнопка fullscreen
+function isModalView() { return window.innerWidth > 700; }
+function goFullscreen() { google.script.run.openFlightLogModal(); }
+(function(){
+  var wide = isModalView() || document.body.classList.contains('in-app');
+  if (wide) {
+    var fs = document.getElementById('fsBtn');
+    if (fs) fs.style.display = 'none';
+    document.body.classList.add('wide-mode');
+  }
+})();
+
+// Якщо через 8 секунд не завантажилось — рендеримо що є
+setTimeout(function() { if (loaded < 5) { loaded = 5; renderAll(); } }, 8000);
+
+google.script.run.withSuccessHandler(function(v){ currentEmail=v||''; tryLoad(); }).withFailureHandler(function(){ tryLoad(); }).getCurrentUserEmail();
+google.script.run.withSuccessHandler(function(v){ adminEmail=v||''; tryLoad(); }).withFailureHandler(function(){ tryLoad(); }).getAdminEmail();
+google.script.run.withSuccessHandler(function(v){ allItems=v||[]; tryLoad(); }).withFailureHandler(function(e){ document.getElementById('crewBody').innerHTML='<div class="err" style="display:block">❌ '+(e?e.message:'')+'</div>'; tryLoad(); }).getInventoryList();
+google.script.run.withSuccessHandler(function(v){ trackers=v||[]; tryLoad(); }).withFailureHandler(function(){ tryLoad(); }).getSinotrackList();
+google.script.run.withSuccessHandler(function(v){ flights=v||[]; tryLoad(); }).withFailureHandler(function(){ tryLoad(); }).getFlightList();
+
+function isMine(f) {
+  if (!f.creatorEmail) return true;
+  if (currentEmail && currentEmail===adminEmail && adminEmail!=='YOUR_EMAIL@gmail.com') return true;
+  return f.creatorEmail===currentEmail;
+}
+
+function getBusyDrones() {
+  var busy = {};
+  flights.filter(function(f){ return f.status&&f.status.trim()==='Активний'&&!f.id.startsWith('CRW-'); })
+    .forEach(function(f){
+      var id = f.drones ? f.drones.split('|')[0].trim() : '';
+      if (id) busy[id] = (f.crew||'?');
+    });
+  return busy;
+}
+
+function getActiveCrews() {
+  return flights.filter(function(f){ return f.id.startsWith('CRW-') && f.status&&f.status.trim()==='Активний'; });
+}
+
+function renderAll() {
+  try { renderCrew(); } catch(e) { document.getElementById('crewBody').innerHTML='<div class="err" style="display:block">❌ Crew: '+e.message+'</div>'; }
+  try { renderFly();  } catch(e) { document.getElementById('flyBody').innerHTML='<div class="err" style="display:block">❌ Fly: '+e.message+'</div>'; }
+  try { renderLog();  } catch(e) { document.getElementById('logBody').innerHTML='<div class="err" style="display:block">❌ Log: '+e.message+'</div>'; }
+}
+
+// ══ ВКЛАДКА ЕКІПАЖ ══════════════════════════════════════
+function renderCrew() {
+  var crews = getActiveCrews();
+  var gnstItems = allItems.filter(function(it){ return it.type&&it.type.startsWith('GNST'); });
+
+  // Опції відеосистем і частот для екіпажу
+  var VS = ['Аналог','HDZero','DJI','Walksnail','Hornet Vision'];
+  var crewSystemOpts = VS.map(function(s){ return '<option value="'+s+'">'+s+'</option>'; }).join('');
+  var crewFreqOpts = '';
+  Object.keys(BANDS).forEach(function(band){
+    crewFreqOpts += '<optgroup label="Бенд '+band+'">';
+    BANDS[band].forEach(function(f, i){
+      crewFreqOpts += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
+    });
+    crewFreqOpts += '</optgroup>';
+  });
+  // Які наземки вже в активних екіпажах
+  var busyGnst = {};
+  getActiveCrews().forEach(function(c){
+    if (c.gnst) busyGnst[c.gnst] = (busyGnst[c.gnst]||[]).concat(c.id);
+  });
+  var gnstOpts = '<option value="">— без наземки —</option>' +
+    gnstItems.map(function(it){
+      var busy = busyGnst[it.id];
+      var label = it.id + ' — ' + it.name + (busy ? ' 🔒 зайнята: '+busy.join(', ') : '');
+      return '<option value="'+esc(it.id)+'"'+(busy?' style="color:#856404"':'')+'>'+esc(label)+'</option>';
+    }).join('');
+  // Які трекери вже зайняті в активних екіпажах
+  var busyTrackers = {};
+  getActiveCrews().forEach(function(c){
+    if (c.tracker) {
+      c.tracker.split('|').forEach(function(tid){
+        tid = tid.trim();
+        if (tid) busyTrackers[tid] = (busyTrackers[tid]||[]).concat(c.id);
+      });
+    }
+  });
+
+  var crewCards = crews.length
+    ? crews.map(function(c){
+        var droneList = c.drones ? c.drones.split('|').filter(Boolean) : [];
+        var mine = isMine(c);
+        return '<div class="card '+(mine?'card-mine':'card-other')+'" style="margin-bottom:8px">'+
+          '<div class="card-title">'+esc(c.id)+(mine?'<span class="badge badge-mine">Мій</span>':'')+'</div>'+
+          '<div class="card-meta">'+
+            (c.gnst?'📡 '+esc(c.gnst)+'<br>':'')+
+            (c.bind?'🔗 Bind: <strong>'+esc(c.bind)+'</strong><br>':'')+
+            (c.tracker?'📡 '+esc(c.tracker.split('|').join(', '))+'<br>':'')+
+            '🛸 '+esc(droneList.join(', '))+
+          '</div>'+
+          (mine?
+            '<div style="display:flex;gap:6px;margin-top:6px">'+
+              '<button class="btn btn-green" style="font-size:11px;flex:1" onclick="openEditCrew(\'' + esc(c.id) + '\')">✏️ Редагувати</button>'+
+              '<button class="btn btn-red" style="font-size:11px;flex:1" onclick="closeCrew(\'' + esc(c.id) + '\')">🔴 Завершити</button>'+
+            '</div>':'')+
+        '</div>';
+      }).join('')
+    : '<div style="text-align:center;color:#aaa;padding:10px;font-size:12px">Активних екіпажів немає</div>';
+
+  document.getElementById('crewBody').innerHTML =
+    '<div class="section">Активні екіпажі</div>'+
+    crewCards+
+    '<hr>'+
+    '<div class="section">Створити новий екіпаж</div>'+
+
+    '<div class="f"><label>Наземна станція</label>'+
+    '<select id="crewGnst" onchange="onGnstChange()">'+gnstOpts+'</select>'+
+    '<div id="gnstWarn"></div></div>'+
+
+    '<div class="f"><label>Bind фраза</label>'+
+    '<input type="text" id="crewBind" placeholder="спільна для всіх бортів..."></div>'+
+
+    '<div class="f"><label>Борти (пул)</label>'+
+    '<div class="ac-wrap">'+
+      '<input type="text" id="droneSearch" placeholder="Пошук борту..." oninput="filterDrones()" autocomplete="off">'+
+      '<div class="ac-list" id="ddDrones"></div>'+
+    '</div>'+
+    '<div id="droneList" style="margin-top:6px"></div></div>'+
+
+    '<div class="f"><label>Sinotrack трекери (можна кілька)</label>'+
+    '<div class="ac-wrap">'+
+      '<input type="text" id="trkSearch" placeholder="Пошук трекера..." oninput="filterTrackers()" onfocus="filterTrackers()" autocomplete="off">'+
+      '<div class="ac-list" id="ddTrk"></div>'+
+    '</div>'+
+    '<div id="selectedTrkList" style="margin-top:6px"></div>'+
+    '<div id="trkConfirmBlock" style="display:none;margin-top:4px">'+
+      '<div class="hint">💡 Перевірка: SMS <strong>669000</strong> на номер SIM → отримаєш ID і координати</div>'+
+      '<button onclick="confirmTrk()" style="margin-top:4px;padding:4px 10px;background:#14532d;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px">✅ Всі перевірено</button>'+
+      '<span id="trkOkStatus" style="font-size:11px;margin-left:6px"></span>'+
+    '</div></div>'+
+
+    '<div class="f"><label>Відеосистема</label>'+
+    '<select id="crewSystem" onchange="onCrewSystemChange()">'+
+      '<option value="">— не вказано —</option>'+
+      crewSystemOpts+
+    '</select></div>'+
+
+    '<div class="f"><label>Основна частота</label>'+
+    '<select id="crewFreq">'+
+      '<option value="">— не вказано —</option>'+
+      crewFreqOpts+
+    '</select></div>'+
+
+    '<div class="f"><label>📻 Резервні VTX Switcher (до 10)</label>'+
+    '<select id="crewReserveSel" onchange="addReserve()">'+
+      '<option value="">+ додати резервну</option>'+
+      crewFreqOpts+
+    '</select>'+
+    '<div id="reserveList" style="margin-top:6px"></div>'+
+    '<div class="hint">💡 Канали для перемикання в повітрі (VTX Switcher)</div></div>'+
+
+    '<button class="btn btn-green" id="crewBtn" onclick="doCreateCrew()">👥 Створити екіпаж</button>'+
+    '<div id="msgCrew" class="msg"></div>';
+
+  renderDroneList();
+  renderReserveList();
+  renderSelectedTrackers();
+}
+
+var trkOk = false;
+var selectedTrackers = [];
+
+function getBusyTrackers() {
+  var busyTrk = {};
+  getActiveCrews().forEach(function(c){
+    if (c.tracker) {
+      c.tracker.split('|').forEach(function(tid){
+        tid = tid.trim();
+        if (tid) busyTrk[tid] = (busyTrk[tid]||[]).concat(c.id);
+      });
+    }
+  });
+  return busyTrk;
+}
+
+function filterTrackers() {
+  var q  = document.getElementById('trkSearch').value.toLowerCase().trim();
+  var dd = document.getElementById('ddTrk');
+  var busyTrk = getBusyTrackers();
+  var list = trackers.filter(function(t){
+    return selectedTrackers.indexOf(t.id) === -1 &&
+      (!q || t.id.toLowerCase().includes(q) || t.model.toLowerCase().includes(q) ||
+       (t.simContact||'').toLowerCase().includes(q));
+  }).slice(0, 10);
+
+  if (!list.length) { dd.style.display='none'; return; }
+
+  dd.innerHTML = list.map(function(t){
+    var busy   = busyTrk[t.id];
+    var broken = t.status === 'Зламаний';
+    var lost   = t.status === 'Втрачений';
+    var rowBg  = busy ? '#fffbea' : (broken ? '#fffbea' : (lost ? '#fff0f0' : ''));
+    var idColor = busy ? '#856404' : (broken ? '#856404' : (lost ? '#721c24' : '#1a3a5c'));
+    var badge  = busy
+      ? '<span style="background:#fff3cd;color:#856404;padding:1px 5px;border-radius:8px;font-size:10px;margin-left:4px">🔒 зайнятий</span>'
+      : (broken ? '<span style="background:#fff3cd;color:#856404;padding:1px 5px;border-radius:8px;font-size:10px;margin-left:4px">⚠️ Зламаний</span>'
+      : (lost   ? '<span style="background:#f8d7da;color:#721c24;padding:1px 5px;border-radius:8px;font-size:10px;margin-left:4px">❌ Втрачений</span>'
+      : ''));
+    var subInfo = busy
+      ? esc(busy.map(function(cid){
+          var c2 = flights.find(function(f){ return f.id===cid; });
+          return cid+(c2&&c2.gnst?' · '+c2.gnst:'')+(c2&&c2.drones?' · '+c2.drones.split('|')[0]:'');
+        }).join(' | '))
+      : esc((t.simContact||'')+(t.simNumber?' · '+t.simNumber:''));
+
+    var dispId3 = t.imei || t.id;
+    return '<div class="ac-item" style="background:'+rowBg+';cursor:'+(busy?'not-allowed':'pointer')+'"'+
+      (!busy?' onmousedown="addTracker(this.dataset.id)" data-id="'+esc(t.id)+'"':'')+'>'+
+      '<div class="ac-id" style="color:'+idColor+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(dispId3)+(t.imei?'<span style="font-size:9px;color:#aaa;margin-left:3px">('+esc(t.id)+')</span>':'')+'</div>'+
+      '<div class="ac-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(t.model)+' · '+subInfo+'</div>'+
+    '</div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function addTracker(id) {
+  var t = trackers.find(function(x){ return x.id===id; });
+  if (!t) return;
+  if (t.status !== 'Робочий') {
+    if (!confirm('⚠️ Трекер '+id+' — '+t.status+'! Додати все одно?')) return;
+  }
+  if (selectedTrackers.indexOf(id)===-1) selectedTrackers.push(id);
+  document.getElementById('trkSearch').value='';
+  document.getElementById('ddTrk').style.display='none';
+  renderSelectedTrackers();
+  var ce = document.getElementById('trkConfirmBlock');
+  if (ce) ce.style.display='block';
+}
+
+function removeTracker(id) {
+  selectedTrackers = selectedTrackers.filter(function(x){ return x!==id; });
+  renderSelectedTrackers();
+  var ce = document.getElementById('trkConfirmBlock');
+  if (ce) ce.style.display = selectedTrackers.length ? 'block' : 'none';
+}
+
+function renderSelectedTrackers() {
+  var el = document.getElementById('selectedTrkList');
+  if (!el) return;
+  if (!selectedTrackers.length) { el.innerHTML=''; return; }
+  el.innerHTML = selectedTrackers.map(function(id){
+    var t = trackers.find(function(x){ return x.id===id; });
+    var broken = t&&t.status==='Зламаний', lost = t&&t.status==='Втрачений';
+    var bg  = broken?'#fff3cd':(lost?'#f8d7da':'#e8f4fd');
+    var clr = broken?'#856404':(lost?'#721c24':'#1a3a5c');
+    var bdr = broken?'#ffc107':(lost?'#f5c6cb':'#b8daff');
+    return '<span style="display:inline-block;background:'+bg+';color:'+clr+';border:1px solid '+bdr+';border-radius:10px;padding:2px 8px;font-size:11px;margin:2px;cursor:pointer" onmousedown="removeTracker(this.dataset.id)" data-id="'+esc(id)+'">'+
+      esc(t&&t.imei?t.imei:id)+(t?' — '+esc(t.model):'')+(broken?' ⚠️':(lost?' ❌':''))+' ✕</span>';
+  }).join('');
+}
+
+
+function confirmTrk() {
+  trkOk = true;
+  document.getElementById('trkOkStatus').innerHTML = '<span style="color:#155724;font-weight:bold">✅ Підтверджено</span>';
+}
+
+function filterDrones() {
+  var q = document.getElementById('droneSearch').value.toLowerCase();
+  if (!q) { document.getElementById('ddDrones').style.display='none'; return; }
+  var busy = getBusyDrones();
+  var list = allItems.filter(function(it){
+    return (it.type.startsWith('FPV')||it.type.startsWith('STNG')||it.type.startsWith('WING')) &&
+      (it.id.toLowerCase().includes(q)||it.name.toLowerCase().includes(q)) &&
+      !drones.find(function(d){ return d.id===it.id; });
+  }).slice(0,10);
+  var dd = document.getElementById('ddDrones');
+  if (!list.length) { dd.style.display='none'; return; }
+  dd.innerHTML = list.map(function(it){
+    var inFlight = busy[it.id];
+    return '<div class="ac-item" onmousedown="addDrone(\''+esc(it.id)+'\')" style="'+(inFlight?'background:#fff8f0':'')+'">'+
+      '<div class="ac-id" style="'+(inFlight?'color:#e67e22':'')+'">'+esc(it.id)+'</div>'+
+      '<div class="ac-meta">'+esc(it.name)+' · '+esc(it.status)+(inFlight?' · ✈️ Екіпаж '+esc(inFlight):'')+'</div>'+
+    '</div>';
+  }).join('');
+  dd.style.display='block';
+}
+
+function addDrone(id) {
+  if (drones.find(function(d){ return d.id===id; })) return;
+  var it = allItems.find(function(i){ return i.id===id; });
+  if (!it) return;
+  drones.push({ id:id, name:it.name });
+  document.getElementById('droneSearch').value='';
+  document.getElementById('ddDrones').style.display='none';
+  renderDroneList();
+  // Авто-визначення системи екіпажу по назві борту
+  autoDetectCrewSystem();
+}
+
+// Визначити систему екіпажу по бортах у пулі + обмежити частоти
+function autoDetectCrewSystem() {
+  var sysSel = document.getElementById('crewSystem');
+  if (!sysSel) return;
+  // Шукаємо першу розпізнану систему серед бортів пулу
+  var detected = '';
+  for (var i = 0; i < drones.length; i++) {
+    var d = detectSystemFromName(drones[i].name);
+    if (d) { detected = d; break; }
+  }
+  if (detected) {
+    sysSel.value = detected;
+    rebuildCrewFreqOptions(detected);
+  }
+}
+
+// Перебудувати опції частот екіпажу (основна + резервні) під систему
+function rebuildCrewFreqOptions(system) {
+  var freqSel = document.getElementById('crewFreq');
+  var resSel  = document.getElementById('crewReserveSel');
+  var opts = buildFreqOptionsHtml(system);
+  if (freqSel) {
+    var cur = freqSel.value;
+    var html = '<option value="">— не вказано —</option>' + opts;
+    // Якщо поточна частота не в новому списку — додати її окремо щоб не загубити
+    if (cur && html.indexOf('value="'+cur+'"') === -1) {
+      html += '<option value="'+cur+'" selected>'+cur+'</option>';
+    }
+    freqSel.innerHTML = html;
+    if (cur) freqSel.value = cur;
+  }
+  if (resSel) {
+    resSel.innerHTML = '<option value="">+ додати резервну</option>' + opts;
+  }
+}
+
+// Згенерувати <option> частот для системи (HV → тільки HV, інакше повна)
+function buildFreqOptionsHtml(system) {
+  var html = '';
+  if (system === 'Hornet Vision') {
+    html += '<optgroup label="Hornet Vision (HV-L)">';
+    [5240,5260,5280,5300,5320].forEach(function(f, i){
+      var warn = WARNING_FREQS[f] ? ' ⚠️' : '';
+      html += '<option value="HV-L'+(i+1)+' ('+f+')">HV-L'+(i+1)+' — '+f+' МГц'+warn+'</option>';
+    });
+    html += '</optgroup><optgroup label="Hornet Vision (HV-H)">';
+    [5745,5765,5785,5805,5825].forEach(function(f, i){
+      html += '<option value="HV-H'+(i+1)+' ('+f+')">HV-H'+(i+1)+' — '+f+' МГц</option>';
+    });
+    html += '</optgroup>';
+  } else {
+    Object.keys(BANDS).forEach(function(band){
+      if (band.indexOf('HV-') === 0) return;
+      html += '<optgroup label="Бенд '+band+'">';
+      BANDS[band].forEach(function(f, i){
+        html += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
+      });
+      html += '</optgroup>';
+    });
+  }
+  return html;
+}
+
+function removeDrone(id) {
+  drones = drones.filter(function(d){ return d.id!==id; });
+  renderDroneList();
+  autoDetectCrewSystem();
+}
+
+function renderDroneList() {
+  var el = document.getElementById('droneList');
+  if (!el) return;
+  if (!drones.length) { el.innerHTML='<div style="font-size:11px;color:#aaa">Борти не додано</div>'; return; }
+  el.innerHTML = drones.map(function(d){
+    return '<span class="tag" onclick="removeDrone(\''+esc(d.id)+'\')">'+esc(d.id)+' '+esc(d.name)+' ✕</span>';
+  }).join('');
+}
+
+function onGnstChange() {
+  var id = document.getElementById('crewGnst').value;
+  var warn = document.getElementById('gnstWarn');
+  if (!id || !warn) return;
+  var busyGnst = {};
+  getActiveCrews().forEach(function(c){
+    if (c.gnst) busyGnst[c.gnst] = (busyGnst[c.gnst]||[]).concat(c.id);
+  });
+  var busy = busyGnst[id];
+  warn.innerHTML = busy
+    ? '<div class="warn">⚠️ Наземка вже в екіпажі: <strong>'+esc(busy.join(', '))+'</strong></div>'
+    : '';
+}
+
+// ── Резервні VTX частоти ──
+function addReserve() {
+  var sel = document.getElementById('crewReserveSel');
+  if (!sel || !sel.value) return;
+  if (crewReserves.length >= 10) { alert('Максимум 10 резервних'); sel.value=''; return; }
+  if (crewReserves.indexOf(sel.value) === -1) {
+    crewReserves.push(sel.value);
+    renderReserveList();
+  }
+  sel.value = '';
+}
+
+function removeReserve(code) {
+  crewReserves = crewReserves.filter(function(c){ return c !== code; });
+  renderReserveList();
+}
+
+function renderReserveList() {
+  var el = document.getElementById('reserveList');
+  if (!el) return;
+  if (!crewReserves.length) { el.innerHTML = '<div style="font-size:11px;color:#aaa">Немає резервних</div>'; return; }
+  el.innerHTML = crewReserves.map(function(code){
+    return '<span style="display:inline-block;background:#e8f4fd;border:1px solid #2e6da4;border-radius:10px;padding:2px 8px;margin:2px;font-size:11px">'+
+      '📻 '+esc(code)+' <span style="cursor:pointer;color:#c00;font-weight:bold" onclick="removeReserve(\''+esc(code)+'\')">✕</span></span>';
+  }).join('');
+}
+
+function onCrewSystemChange() {
+  var sys = document.getElementById('crewSystem').value;
+  rebuildCrewFreqOptions(sys);
+}
+
+function doCreateCrew() {
+  var gnst = document.getElementById('crewGnst').value;
+  var bind = document.getElementById('crewBind').value.trim();
+  var trkStr = selectedTrackers.join('|');
+  if (!drones.length) { showMsg('msgCrew','❌ Додайте борти до пулу','err'); return; }
+  // Попередження якщо наземка зайнята
+  if (gnst) {
+    var busyGnst2 = {};
+    getActiveCrews().forEach(function(c){ if (c.gnst) busyGnst2[c.gnst]=(busyGnst2[c.gnst]||[]).concat(c.id); });
+    if (busyGnst2[gnst]) {
+      if (!confirm('⚠️ Наземка вже використовується в екіпажі: '+busyGnst2[gnst].join(', ')+'\nПродовжити?')) return;
+    }
+  }
+  if (!selectedTrackers.length) {
+    if (!confirm('⚠️ Без GPS трекера!\nУсвідомлюєте ризик втрати борту?')) return;
+  }
+  var dronesStr = drones.map(function(d){ return d.id; }).join('|');
+  var crewSystem = document.getElementById('crewSystem') ? document.getElementById('crewSystem').value : '';
+  var crewFreq   = document.getElementById('crewFreq') ? document.getElementById('crewFreq').value : '';
+  var reservesStr = crewReserves.join('|');
+  // Діагностика в консоль
+  console.log('Створення екіпажу:', { system: crewSystem, freq: crewFreq, reserves: reservesStr });
+  var btn = document.getElementById('crewBtn');
+  btn.disabled=true; btn.textContent='⏳...';
+  google.script.run
+    .withSuccessHandler(function(crewId){
+      flights.push({ id:crewId, date:new Date().toISOString().slice(0,10),
+        crew:crewId, gnst:gnst, drones:dronesStr, bind:bind,
+        tracker:trkStr, trackerOk:trkOk?'Перевірено':'Ні',
+        start:'', end:'', status:'Активний', note:'', creatorEmail:currentEmail,
+        system:crewSystem, freq:crewFreq, reserves:reservesStr });
+      showMsg('msgCrew','✅ Екіпаж '+crewId+' створено','ok');
+      drones=[]; trkOk=false; selectedTrackers=[]; crewReserves=[];
+      renderDroneList(); renderReserveList();
+      renderCrew(); renderFly();
+      btn.disabled=false; btn.textContent='👥 Створити екіпаж';
+    })
+    .withFailureHandler(function(e){ showMsg('msgCrew','❌ '+e.message,'err'); btn.disabled=false; btn.textContent='👥 Створити екіпаж'; })
+    .createCrew({ gnst:gnst, drones:dronesStr, bind:bind, pilot:'', tracker:trkStr, system:crewSystem, freq:crewFreq, reserves:reservesStr });
+}
+
+function closeCrew(crewId) {
+  // Перевірити чи є активні вильоти цього екіпажу
+  var activeFlights = flights.filter(function(f){
+    return !f.id.startsWith('CRW-') && f.crew===crewId && f.status&&f.status.trim()==='Активний';
+  });
+  if (activeFlights.length) {
+    alert('⚠️ Неможливо завершити екіпаж — є активні вильоти:\n'+
+      activeFlights.map(function(f){ return '• '+f.id+' ('+f.drones+')'; }).join('\n')+
+      '\n\nСпочатку приземли всі борти.');
+    return;
+  }
+  if (!confirm('Завершити екіпаж '+crewId+'?')) return;
+  google.script.run
+    .withSuccessHandler(function(){
+      var c = flights.find(function(f){ return f.id===crewId; });
+      if (c) c.status='Завершено';
+      renderCrew(); renderFly(); renderLog();
+    })
+    .withFailureHandler(function(e){ alert('❌ '+e.message); })
+    .endFlight(crewId, [], 'Екіпаж завершено');
+}
+
+// ══ ВКЛАДКА ВИЛІТ ════════════════════════════════════════
+function renderFly() {
+  var crews = getActiveCrews();
+  var activeFlights = flights.filter(function(f){
+    return !f.id.startsWith('CRW-') && f.status&&f.status.trim()==='Активний';
+  });
+
+  var el = document.getElementById('flyBody');
+
+  // Список активних вильотів зверху
+  var flyCards = activeFlights.length
+    ? '<div class="section" style="margin-bottom:6px">В повітрі зараз</div>'+
+      activeFlights.map(function(f){
+        var mine = isMine(f);
+        var cls = mine ? 'card card-mine' : 'card card-other';
+        var badge = mine ? '<span class="badge badge-mine">Мій</span>' : '<span class="badge badge-other">'+esc(f.crew)+'</span>';
+        var crewObj = flights.find(function(c){ return c.id===f.crew; });
+        var bindInfo = crewObj && crewObj.bind ? ' · Bind: <strong>'+esc(crewObj.bind)+'</strong>' : '';
+
+        var stHtml = mine
+          ? '<div class="st-grid" style="margin-top:6px">'+
+              '<div class="st-btn st-ok" onclick="setFltSt(\''+esc(f.id)+'\',\'Робочий\',this)">✅ Робочий</div>'+
+              '<div class="st-btn st-fix" onclick="setFltSt(\''+esc(f.id)+'\',\'Ремонт\',this)">🔧 Ремонт</div>'+
+              '<div class="st-btn st-bad" onclick="setFltSt(\''+esc(f.id)+'\',\'Несправний\',this)">❌ Несправний</div>'+
+              '<div class="st-btn st-lost" onclick="setFltSt(\''+esc(f.id)+'\',\'Втрачений\',this)">🔍 Втрачений</div>'+
+            '</div>'+
+            '<div id="lostBox-'+esc(f.id)+'" style="display:none;margin-top:6px;padding:8px;background:#fff3f3;border:1px solid #f5c6cb;border-radius:6px">'+
+              '<div style="font-size:11px;font-weight:bold;color:#721c24;margin-bottom:4px">❌ Деталі втрати</div>'+
+              '<input type="text" id="lostCoords-'+esc(f.id)+'" placeholder="📍 Координати (напр. 48.123, 35.456)" style="width:100%;font-size:12px;padding:5px;margin-bottom:4px">'+
+              '<input type="text" id="lostLink-'+esc(f.id)+'" placeholder="🗺️ Посилання з трекера" style="width:100%;font-size:12px;padding:5px;margin-bottom:4px">'+
+              '<textarea id="lostCirc-'+esc(f.id)+'" placeholder="📋 Обставини втрати..." style="width:100%;font-size:12px;padding:5px;min-height:48px"></textarea>'+
+              '<div style="font-size:10px;color:#856404;margin-top:4px">⚠️ Трекер і SIM що летіли з бортом теж стануть втраченими</div>'+
+            '</div>'+
+            '<input type="text" id="endNote-'+esc(f.id)+'" placeholder="Примітка..." style="margin-top:6px;font-size:12px;padding:5px">'+
+            '<button class="btn btn-green" style="margin-top:5px" onclick="doEnd(\''+esc(f.id)+'\')">🛬 Приземлився</button>'
+          : '<div style="font-size:11px;color:#aaa;margin-top:5px;text-align:center">🔒 Тільки пілот може завершити</div>';
+
+        return '<div class="'+cls+'" style="margin-bottom:8px">'+
+          '<div class="card-title">✈️ '+esc(f.drones)+badge+'</div>'+
+          '<div class="card-meta">🕐 '+esc(f.start)+(f.pilot?' · 👤 '+esc(f.pilot):'')+bindInfo+(f.tracker?' · 📡 '+esc(f.tracker):'')+'</div>'+
+          stHtml+
+        '</div>';
+      }).join('')+'<hr>'
+    : '';
+
+  if (!crews.length) {
+    el.innerHTML = flyCards + '<div class="info">Спочатку створи екіпаж на вкладці "Екіпаж"</div>';
+    return;
+  }
+
+  // Вибір екіпажу
+  var crewOpts = crews.map(function(c){
+    var dl = c.drones ? c.drones.split('|').filter(Boolean) : [];
+    return '<option value="'+esc(c.id)+'">'+esc(c.id)+(c.bind?' ['+esc(c.bind)+']':'')+' — '+esc(dl.join(', '))+'</option>';
+  }).join('');
+
+  // Опції відеосистем
+  var systemOpts = VIDEO_SYSTEMS.map(function(s){ return '<option value="'+s+'">'+s+'</option>'; }).join('');
+  var freqOpts = '';
+  Object.keys(BANDS).forEach(function(band){
+    freqOpts += '<optgroup label="Бенд '+band+'">';
+    BANDS[band].forEach(function(f, i){
+      freqOpts += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
+    });
+    freqOpts += '</optgroup>';
+  });
+
+  el.innerHTML = flyCards +
+    '<div class="section">Новий виліт</div>'+
+
+    '<div class="f"><label>Екіпаж *</label>'+
+    '<select id="flyCrewSel" onchange="onCrewChange()"><option value="">— оберіть —</option>'+crewOpts+'</select></div>'+
+
+    '<div id="crewInfo" style="display:none"></div>'+
+
+    '<div class="f"><label>Відповідальна особа *</label>'+
+    '<div class="ac-wrap">'+
+      '<input type="text" id="pilotInput" placeholder="Позивний або ПІБ..." oninput="filterPilot()" onfocus="showPilots()" autocomplete="off">'+
+      '<div class="ac-list" id="ddPilot"></div>'+
+    '</div></div>'+
+
+    '<div class="f" id="droneSelBlock" style="display:none"><label>Борт (який летить зараз) *</label>'+
+    '<select id="flyDroneSel" onchange="onDroneChange()"><option value="">— оберіть —</option></select></div>'+
+
+    '<div class="f" id="trkSelBlock" style="display:none"><label>Sinotrack з цим бортом</label>'+
+    '<select id="flyTrkSel"><option value="">— без трекера —</option></select>'+
+    '<div class="hint">З пулу трекерів екіпажу</div></div>'+
+
+    '<div class="f"><label>Відеосистема</label>'+
+    '<select id="flySystem" onchange="onSystemChange()">'+
+      '<option value="">— авто з борту —</option>'+
+      systemOpts+
+    '</select>'+
+    '<div id="sysHint" class="hint"></div></div>'+
+
+    '<div class="f"><label>Частота (МГц)</label>'+
+    '<select id="flyFreq" onchange="onFreqChange()">'+
+      '<option value="">— оберіть —</option>'+
+      freqOpts+
+    '</select>'+
+    '<div class="hint">📻 Перевір вкладку Частоти на конфлікти</div></div>'+
+
+    '<button class="btn btn-green" id="flyBtn" onclick="doStartFlight()">🛫 Злетів</button>'+
+    '<div id="msgFly" class="msg"></div>';
+}
+
+function onCrewChange() {
+  var id = document.getElementById('flyCrewSel').value;
+  var info = document.getElementById('crewInfo');
+  var block = document.getElementById('droneSelBlock');
+  var sel = document.getElementById('flyDroneSel');
+  if (!id) { info.style.display='none'; block.style.display='none'; return; }
+
+  var c = flights.find(function(f){ return f.id===id; });
+  if (!c) return;
+
+  var dl = c.drones ? c.drones.split('|').filter(Boolean) : [];
+  var busy = getBusyDrones();
+
+  info.innerHTML = '<div class="info">'+
+    (c.gnst?'📡 '+esc(c.gnst)+'<br>':'')+
+    (c.bind?'🔗 Bind: <strong>'+esc(c.bind)+'</strong><br>':'')+
+    (c.tracker?'📡 '+esc(c.tracker.split('|').join(', '))+(c.trackerOk==='Перевірено'?' ✅':'')+'<br>':'')+
+    (c.system?'📹 '+esc(c.system)+'<br>':'')+
+    (c.freq?'📻 Основна: <strong>'+esc(c.freq)+'</strong><br>':'')+
+    (c.reserves?'🔄 Резервні: '+esc(c.reserves.split('|').join(', '))+'<br>':'')+
+    '🛸 Пул: '+esc(dl.join(', '))+
+  '</div>';
+  info.style.display='block';
+
+  // Підставити систему екіпажу
+  var sysSel = document.getElementById('flySystem');
+  if (c.system && sysSel) sysSel.value = c.system;
+
+  // Частоти вильоту
+  var freqSel = document.getElementById('flyFreq');
+  if (freqSel) {
+    if (c.freq || c.reserves) {
+      // Екіпаж задав частоти → вибір тільки з основної + резервних (VTX switcher pool)
+      var opts = '<option value="">— оберіть —</option>';
+      if (c.freq) opts += '<option value="'+esc(c.freq)+'">⭐ Основна: '+esc(c.freq)+'</option>';
+      if (c.reserves) {
+        c.reserves.split('|').filter(Boolean).forEach(function(r){
+          opts += '<option value="'+esc(r)+'">🔄 Резерв: '+esc(r)+'</option>';
+        });
+      }
+      freqSel.innerHTML = opts;
+      if (c.freq) freqSel.value = c.freq;
+    } else {
+      // Екіпаж без частот → сітка по системі (або повна), борт перевизначить
+      rebuildFreqOptions(c.system || '');
+    }
+  }
+
+  // Рахуємо скільки бортів цього екіпажу вже в повітрі
+  var crewActiveFlights = flights.filter(function(f){
+    return !f.id.startsWith('CRW-') && f.crew===id && f.status&&f.status.trim()==='Активний';
+  });
+  var crewBusyDrones = crewActiveFlights.map(function(f){ return f.drones; });
+
+  sel.innerHTML = '<option value="">— оберіть —</option>' +
+    dl.map(function(did){
+      var it = allItems.find(function(i){ return i.id===did; });
+      var inFlight = busy[did];
+      var inCrewFlight = crewBusyDrones.indexOf(did) !== -1;
+      var style = inFlight ? 'color:#e67e22' : '';
+      return '<option value="'+esc(did)+'"'+(style?' style="'+style+'"':'')+'>'+
+        esc(did)+(it?' — '+esc(it.name):'')+
+        (inCrewFlight?' ✈️ вже в повітрі':'')+(inFlight&&!inCrewFlight?' ⚠️ інший екіпаж':'')+
+      '</option>';
+    }).join('');
+
+  if (crewActiveFlights.length) {
+    var activeDronesList = crewBusyDrones.join(', ');
+    info.innerHTML += '<div class="warn" style="margin-top:4px">✈️ Зараз в повітрі: <strong>'+esc(activeDronesList)+'</strong></div>';
+  }
+  block.style.display='block';
+
+  // Заповнити список трекерів екіпажу
+  var trkBlock = document.getElementById('trkSelBlock');
+  var trkSel   = document.getElementById('flyTrkSel');
+  if (trkSel && c.tracker) {
+    var crewTrks = c.tracker.split('|').filter(Boolean);
+    // Які трекери вже зайняті в активних вильотах
+    var busyTrkFlights = {};
+    flights.filter(function(f){
+      return !f.id.startsWith('CRW-') && f.status&&f.status.trim()==='Активний';
+    }).forEach(function(f){
+      if (f.tracker) busyTrkFlights[f.tracker.trim()] = f.id;
+    });
+
+    trkSel.innerHTML = '<option value="">— без трекера —</option>' +
+      crewTrks.map(function(tid){
+        var t = trackers.find(function(x){ return x.id===tid; });
+        var busy2 = busyTrkFlights[tid];
+        var dispId = t&&t.imei ? t.imei : tid;
+        var lbl = dispId + (t?' — '+t.model:'') + (t&&t.simContact?' ('+t.simContact+')':'') +
+          (busy2?' ✈️ вже летить':'');
+        return '<option value="'+esc(tid)+'"'+(busy2?' style="color:#e67e22"':'')+'>'+esc(lbl)+'</option>';
+      }).join('');
+    if (trkBlock) trkBlock.style.display = crewTrks.length ? 'block' : 'none';
+  } else if (trkBlock) {
+    trkBlock.style.display = 'none';
+  }
+}
+
+var pilotList = [];
+function showPilots() {
+  pilotList = [...new Set(allItems.map(function(it){ return it.responsible; }).filter(Boolean))].sort();
+  renderPilotAc('');
+}
+function filterPilot() {
+  var q = document.getElementById('pilotInput').value.toLowerCase();
+  renderPilotAc(q);
+}
+function renderPilotAc(q) {
+  var list = q ? pilotList.filter(function(r){ return r.toLowerCase().includes(q); }) : pilotList;
+  var dd = document.getElementById('ddPilot');
+  if (!list.length) { dd.style.display='none'; return; }
+  dd.innerHTML = list.map(function(r){
+    return '<div class="ac-item" onmousedown="selPilot(\''+esc(r)+'\')">'+esc(r)+'</div>';
+  }).join('');
+  dd.style.display='block';
+}
+function selPilot(v) {
+  document.getElementById('pilotInput').value=v;
+  document.getElementById('ddPilot').style.display='none';
+}
+
+// Суфікси назв → відеосистема
+var NAME_SUFFIXES = {
+  'AD':'Аналог','AT':'Аналог',
+  'HVD':'Hornet Vision','HVT':'Hornet Vision',
+  'HDD':'HDZero','HDT':'HDZero',
+  'DJD':'DJI','DJT':'DJI',
+  'WSD':'Walksnail','WST':'Walksnail',
+};
+
+function detectSystemFromName(name) {
+  if (!name) return '';
+  var upper = String(name).toUpperCase().trim();
+  var keys = Object.keys(NAME_SUFFIXES).sort(function(a,b){ return b.length - a.length; });
+  for (var i = 0; i < keys.length; i++) {
+    var suf = keys[i];
+    // Суфікс як окреме слово АБО в кінці назви (StingHVD, Sting HVD, Sting-HVD)
+    var re = new RegExp('(^|[\\s\\-_])' + suf + '($|[\\s\\-_0-9])');
+    if (re.test(upper)) return NAME_SUFFIXES[suf];
+    // Або просто закінчується на суфікс
+    if (upper.endsWith(suf)) return NAME_SUFFIXES[suf];
+  }
+  return '';
+}
+
+// Авто-визначення системи при виборі борту
+function onDroneChange() {
+  var droneId = document.getElementById('flyDroneSel').value;
+  var sysHint = document.getElementById('sysHint');
+  var sysSel  = document.getElementById('flySystem');
+  if (!droneId) { if(sysHint) sysHint.textContent=''; return; }
+
+  var it = allItems.find(function(i){ return i.id===droneId; });
+  if (!it) return;
+
+  var detected = detectSystemFromName(it.name);
+  // Якщо екіпаж вже задав частоти (основна+резервні) — НЕ перебудовуємо список,
+  // бо виліт має літати на частотах екіпажу (VTX pool)
+  var crewId2 = document.getElementById('flyCrewSel').value;
+  var crewObj2 = flights.find(function(f){ return f.id===crewId2; });
+  var crewHasFreqs = crewObj2 && (crewObj2.freq || crewObj2.reserves);
+
+  if (detected) {
+    if (sysSel) sysSel.value = detected;
+    if (sysHint) sysHint.innerHTML = '✅ Авто з назви "'+esc(it.name)+'": <strong>'+esc(detected)+'</strong>';
+    if (!crewHasFreqs) rebuildFreqOptions(detected);
+  } else {
+    if (sysHint) sysHint.innerHTML = '⚠️ "'+esc(it.name)+'" — не розпізнано, обери вручну';
+    var curSys = sysSel ? sysSel.value : '';
+    if (curSys && !crewHasFreqs) rebuildFreqOptions(curSys);
+  }
+}
+
+
+function rebuildFreqOptions(system) {
+  var sel = document.getElementById('flyFreq');
+  if (!sel) return;
+  var cur = sel.value;
+  var html = '<option value="">— оберіть —</option>';
+
+  if (system === 'Hornet Vision') {
+    // Тільки HV частоти
+    html += '<optgroup label="Hornet Vision (HV-L)">';
+    [5240,5260,5280,5300,5320].forEach(function(f, i){
+      var warn = WARNING_FREQS[f] ? ' ⚠️' : '';
+      html += '<option value="HV-L'+(i+1)+' ('+f+')">HV-L'+(i+1)+' — '+f+' МГц'+warn+'</option>';
+    });
+    html += '</optgroup><optgroup label="Hornet Vision (HV-H)">';
+    [5745,5765,5785,5805,5825].forEach(function(f, i){
+      html += '<option value="HV-H'+(i+1)+' ('+f+')">HV-H'+(i+1)+' — '+f+' МГц</option>';
+    });
+    html += '</optgroup>';
+  } else {
+    // Повна сітка
+    Object.keys(BANDS).forEach(function(band){
+      if (band.indexOf('HV-') === 0) return; // HV бенди тільки для HV
+      html += '<optgroup label="Бенд '+band+'">';
+      BANDS[band].forEach(function(f, i){
+        html += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
+      });
+      html += '</optgroup>';
+    });
+  }
+  sel.innerHTML = html;
+  // Спробувати відновити вибір
+  if (cur) sel.value = cur;
+}
+
+function onSystemChange() {
+  var sysHint = document.getElementById('sysHint');
+  var sys = document.getElementById('flySystem').value;
+  if (sys && sysHint) sysHint.innerHTML = 'Обрано: <strong>'+esc(sys)+'</strong>';
+  rebuildFreqOptions(sys);
+}
+
+// Попередження при виборі нерекомендованої частоти
+function onFreqChange() {
+  var sel = document.getElementById('flyFreq');
+  if (!sel) return;
+  var code = sel.value;
+  var m = code.match(/\((\d+)\)/);
+  if (m) {
+    var freq = Number(m[1]);
+    if (WARNING_FREQS[freq]) {
+      alert('⚠️ УВАГА!\n\n' + WARNING_FREQS[freq]);
+    }
+  }
+}
+
+function doStartFlight() {
+  var crewId  = document.getElementById('flyCrewSel').value;
+  var pilot   = document.getElementById('pilotInput').value.trim();
+  var drone   = document.getElementById('flyDroneSel') ? document.getElementById('flyDroneSel').value : '';
+  var fltTrk  = document.getElementById('flyTrkSel') ? document.getElementById('flyTrkSel').value : '';
+  var flySystem = document.getElementById('flySystem') ? document.getElementById('flySystem').value : '';
+  var flyFreq   = document.getElementById('flyFreq') ? document.getElementById('flyFreq').value : '';
+  var crewObj = flights.find(function(f){ return f.id===crewId; });
+  // Якщо частоту не вибрано — беремо основну частоту екіпажу
+  if (!flyFreq && crewObj && crewObj.freq) flyFreq = crewObj.freq;
+  // Якщо систему не вибрано — беремо систему екіпажу
+  if (!flySystem && crewObj && crewObj.system) flySystem = crewObj.system;
+  if (!crewId) { showMsg('msgFly','❌ Оберіть екіпаж','err'); return; }
+  if (!pilot)  { showMsg('msgFly','❌ Вкажіть відповідальну особу','err'); return; }
+  if (!drone)  { showMsg('msgFly','❌ Оберіть борт','err'); return; }
+
+  var busy = getBusyDrones();
+  // Перевірити чи цей борт вже летить в рамках ЦЬОГО екіпажу
+  var crewActiveFlights = flights.filter(function(f){
+    return !f.id.startsWith('CRW-') && f.crew===crewId && f.status&&f.status.trim()==='Активний';
+  });
+  var alreadyInThisCrew = crewActiveFlights.find(function(f){ return f.drones===drone; });
+  if (alreadyInThisCrew) {
+    showMsg('msgFly','❌ Борт '+drone+' вже в повітрі в цьому екіпажі ('+alreadyInThisCrew.id+')','err');
+    return;
+  }
+  // Попередження якщо борт в іншому екіпажі
+  if (busy[drone] && busy[drone]!==crewId) {
+    if (!confirm('⚠️ Борт '+drone+' вже в повітрі (Екіпаж '+busy[drone]+')!\nПродовжити?')) return;
+  }
+
+  var btn = document.getElementById('flyBtn');
+  btn.disabled=true; btn.textContent='⏳...';
+
+  google.script.run
+    .withSuccessHandler(function(r){
+      flights.push({ id:r.id, date:new Date().toISOString().slice(0,10),
+        crew:crewId, gnst:'', drones:drone, bind:'',
+        tracker:fltTrk, trackerOk:(crewObj&&crewObj.trackerOk?crewObj.trackerOk:''),
+        pilot:pilot, start:r.start, end:'', status:'Активний',
+        note:'', creatorEmail:currentEmail, system:flySystem, freq:flyFreq });
+      showMsg('msgFly','✅ '+r.id+' — '+drone+' злетів о '+r.start,'ok');
+      document.getElementById('pilotInput').value='';
+      if (document.getElementById('flyDroneSel')) document.getElementById('flyDroneSel').value='';
+      renderFly(); renderLog();
+      btn.disabled=false; btn.textContent='🛫 Злетів';
+    })
+    .withFailureHandler(function(e){ showMsg('msgFly','❌ '+e.message,'err'); btn.disabled=false; btn.textContent='🛫 Злетів'; })
+    .startFlight({ crew:crewId, gnst:'', drones:drone, bind:'', pilot:pilot, tracker:fltTrk, trackerOk:(crewObj&&crewObj.trackerOk?crewObj.trackerOk:''), note:'', system:flySystem, freq:flyFreq });
+}
+
+var fltStatuses = {};
+function setFltSt(fId, status, el) {
+  fltStatuses[fId] = status;
+  var grid = el.closest('.st-grid');
+  if (grid) grid.querySelectorAll('.st-btn').forEach(function(b){ b.classList.remove('sel'); });
+  el.classList.add('sel');
+  // Показати деталі втрати якщо обрано Втрачений
+  var lostBox = document.getElementById('lostBox-'+fId);
+  if (lostBox) lostBox.style.display = (status === 'Втрачений') ? 'block' : 'none';
+}
+
+function doEnd(fId) {
+  var noteEl = document.getElementById('endNote-'+fId);
+  var note = noteEl ? noteEl.value.trim() : '';
+  var lostData = null;
+  if (fltStatuses[fId] === 'Втрачений') {
+    var coords = document.getElementById('lostCoords-'+fId);
+    var link = document.getElementById('lostLink-'+fId);
+    var circ = document.getElementById('lostCirc-'+fId);
+    lostData = {
+      coords:     coords ? coords.value.trim() : '',
+      mapsLink:   link ? link.value.trim() : '',
+      conditions: circ ? circ.value.trim() : '',
+    };
+  }
+  var st = fltStatuses[fId] ? [{ id: flights.find(function(f){ return f.id===fId; }).drones, status: fltStatuses[fId], lostData: lostData }] : [];
+  google.script.run
+    .withSuccessHandler(function(r){
+      var f = flights.find(function(x){ return x.id===fId; });
+      if (f) { f.status='Завершено'; f.end=r.end; }
+      delete fltStatuses[fId];
+      renderFly(); renderLog();
+    })
+    .withFailureHandler(function(e){ alert('❌ '+e.message); })
+    .endFlight(fId, st, note);
+}
+
+// ══ ЖУРНАЛ ════════════════════════════════════════════════
+function renderLog() {
+  var el = document.getElementById('logBody');
+  var list = flights.filter(function(f){ return !f.id.startsWith('CRW-'); });
+  if (!list.length) { el.innerHTML='<div style="text-align:center;color:#aaa;padding:20px">Вильотів ще немає</div>'; return; }
+  el.innerHTML = list.slice().reverse().slice(0,30).map(function(f){
+    var stColor = f.status==='Активний'?'#856404':(f.status==='Завершено'?'#155724':'#721c24');
+    var crewObj = flights.find(function(c){ return c.id===f.crew; });
+    var bind = crewObj&&crewObj.bind ? ' · Bind: '+crewObj.bind : '';
+    return '<div style="border:1px solid #ddd;border-radius:4px;padding:8px;margin-bottom:6px;background:#fff">'+
+      '<div style="display:flex;justify-content:space-between">'+
+        '<strong style="font-size:12px">'+esc(f.id)+'</strong>'+
+        '<span style="color:'+stColor+';font-size:11px;font-weight:bold">'+esc(f.status)+'</span>'+
+      '</div>'+
+      '<div style="font-size:11px;color:#666">'+esc(f.date)+' · 🕐 '+esc(f.start)+(f.end?' → '+esc(f.end):'')+'</div>'+
+      '<div style="font-size:11px;color:#555">🛸 '+esc(f.drones)+(f.pilot?' · 👤 '+esc(f.pilot):'')+esc(bind)+'</div>'+
+      '<div style="font-size:10px;color:#aaa">Екіпаж: '+esc(f.crew)+'</div>'+
+    '</div>';
+  }).join('');
+}
+
+function showMsg(id, txt, cls) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.textContent=txt; el.className='msg '+cls;
+  if (cls==='ok') setTimeout(function(){ el.className='msg'; }, 7000);
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+  document.querySelectorAll('.tab-content').forEach(function(t){ t.classList.remove('active'); });
+  document.querySelector('[onclick="switchTab(\''+tab+'\')"]').classList.add('active');
+  document.getElementById('tab-'+tab).classList.add('active');
+}
+
+// ══ РЕДАГУВАННЯ ЕКІПАЖУ ══════════════════════════════════
+var editDrones = [];
+var editTrackers = [];
+
+function openEditCrew(crewId) {
+  var c = flights.find(function(f){ return f.id===crewId; });
+  if (!c) return;
+
+  document.getElementById('editCrewId').value = crewId;
+  document.getElementById('editBind').value = c.bind || '';
+
+  // Борти
+  editDrones = (c.drones ? c.drones.split('|').filter(Boolean) : []).map(function(id){
+    var it = allItems.find(function(i){ return i.id===id; });
+    return { id:id, name: it?it.name:id };
+  });
+
+  // Трекери
+  editTrackers = c.tracker ? c.tracker.split('|').filter(Boolean) : [];
+
+  // Наземки - з позначкою зайнятих (крім поточного екіпажу)
+  var busyGnst = {};
+  getActiveCrews().filter(function(cr){ return cr.id!==crewId; }).forEach(function(cr){
+    if (cr.gnst) busyGnst[cr.gnst] = (busyGnst[cr.gnst]||[]).concat(cr.id);
+  });
+  var gnstItems = allItems.filter(function(it){ return it.type&&it.type.startsWith('GNST'); });
+  var gnstSel = document.getElementById('editGnst');
+  gnstSel.innerHTML = '<option value="">— без наземки —</option>' +
+    gnstItems.map(function(it){
+      var busy = busyGnst[it.id];
+      return '<option value="'+esc(it.id)+'"'+(busy?' style="color:#856404"':'')+
+        (it.id===c.gnst?' selected':'')+'>'+
+        esc(it.id+' — '+it.name+(busy?' 🔒 '+busy.join(', '):''))+'</option>';
+    }).join('');
+
+  // Відеосистема
+  var sysSel = document.getElementById('editSystem');
+  sysSel.innerHTML = '<option value="">— не вказано —</option>' +
+    VIDEO_SYSTEMS.map(function(s){ return '<option value="'+s+'"'+(s===c.system?' selected':'')+'>'+s+'</option>'; }).join('');
+
+  // Резервні
+  editReserves = c.reserves ? c.reserves.split('|').filter(Boolean) : [];
+
+  // Частоти по системі
+  rebuildEditFreqOptions(c.system || '', c.freq || '');
+
+  renderEditDroneList();
+  renderEditTrkList();
+  renderEditReserveList();
+  document.getElementById('editModal').classList.add('open');
+}
+
+// ── Редагування частот екіпажу ──
+function rebuildEditFreqOptions(system, curFreq) {
+  var opts = buildFreqOptionsHtml(system);
+  var freqSel = document.getElementById('editFreq');
+  var resSel  = document.getElementById('editReserveSel');
+  if (freqSel) {
+    freqSel.innerHTML = '<option value="">— не вказано —</option>' + opts;
+    if (curFreq) freqSel.value = curFreq;
+  }
+  if (resSel) {
+    resSel.innerHTML = '<option value="">+ додати резервну</option>' + opts;
+  }
+}
+
+function onEditSystemChange() {
+  var sys = document.getElementById('editSystem').value;
+  var curFreq = document.getElementById('editFreq').value;
+  rebuildEditFreqOptions(sys, curFreq);
+}
+
+function addEditReserve() {
+  var sel = document.getElementById('editReserveSel');
+  if (!sel || !sel.value) return;
+  if (editReserves.length >= 10) { alert('Максимум 10'); sel.value=''; return; }
+  if (editReserves.indexOf(sel.value) === -1) {
+    editReserves.push(sel.value);
+    renderEditReserveList();
+  }
+  sel.value = '';
+}
+
+function removeEditReserve(code) {
+  editReserves = editReserves.filter(function(c){ return c !== code; });
+  renderEditReserveList();
+}
+
+function renderEditReserveList() {
+  var el = document.getElementById('editReserveList');
+  if (!el) return;
+  if (!editReserves.length) { el.innerHTML = '<div style="font-size:11px;color:#aaa">Немає резервних</div>'; return; }
+  el.innerHTML = editReserves.map(function(code){
+    return '<span style="display:inline-block;background:#e8f4fd;border:1px solid #2e6da4;border-radius:10px;padding:2px 8px;margin:2px;font-size:11px">'+
+      '📻 '+esc(code)+' <span style="cursor:pointer;color:#c00;font-weight:bold" onclick="removeEditReserve(\''+esc(code)+'\')">✕</span></span>';
+  }).join('');
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('open');
+  editDrones=[]; editTrackers=[]; editReserves=[];
+}
+
+function renderEditDroneList() {
+  var el = document.getElementById('editDroneList');
+  if (!el) return;
+  if (!editDrones.length) { el.innerHTML='<div style="font-size:11px;color:#aaa">Борти не додано</div>'; return; }
+  el.innerHTML = editDrones.map(function(d){
+    return '<span class="tag" onmousedown="removeEditDrone(this.dataset.id)" data-id="'+esc(d.id)+'">'+esc(d.id)+' '+esc(d.name)+' ✕</span>';
+  }).join('');
+}
+
+function removeEditDrone(id) {
+  editDrones = editDrones.filter(function(d){ return d.id!==id; });
+  renderEditDroneList();
+  autoDetectEditSystem();
+}
+
+function filterEditDrones() {
+  var q = document.getElementById('editDroneSearch').value.toLowerCase();
+  if (!q) { document.getElementById('ddEditDrones').style.display='none'; return; }
+  var busy = getBusyDrones();
+  var list = allItems.filter(function(it){
+    return (it.type.startsWith('FPV')||it.type.startsWith('STNG')||it.type.startsWith('WING')) &&
+      (it.id.toLowerCase().includes(q)||it.name.toLowerCase().includes(q)) &&
+      !editDrones.find(function(d){ return d.id===it.id; });
+  }).slice(0,8);
+  var dd = document.getElementById('ddEditDrones');
+  if (!list.length) { dd.style.display='none'; return; }
+  dd.innerHTML = list.map(function(it){
+    var inFlight = busy[it.id];
+    return '<div class="ac-item" onmousedown="addEditDrone(this.dataset.id)" data-id="'+esc(it.id)+'" style="'+(inFlight?'background:#fff8f0':'')+'">'+
+      '<div class="ac-id" style="'+(inFlight?'color:#e67e22':'')+'">'+esc(it.id)+'</div>'+
+      '<div class="ac-meta">'+esc(it.name)+' · '+esc(it.status)+(inFlight?' ✈️':'')+'</div>'+
+    '</div>';
+  }).join('');
+  dd.style.display='block';
+}
+
+function addEditDrone(id) {
+  var it = allItems.find(function(i){ return i.id===id; });
+  if (!it || editDrones.find(function(d){ return d.id===id; })) return;
+  editDrones.push({ id:id, name:it.name });
+  document.getElementById('editDroneSearch').value='';
+  document.getElementById('ddEditDrones').style.display='none';
+  renderEditDroneList();
+  autoDetectEditSystem();
+}
+
+// Авто-визначення системи екіпажу при редагуванні
+function autoDetectEditSystem() {
+  var sysSel = document.getElementById('editSystem');
+  var hint = document.getElementById('editSysHint');
+  if (!sysSel) return;
+  var detected = '';
+  for (var i = 0; i < editDrones.length; i++) {
+    var d = detectSystemFromName(editDrones[i].name);
+    if (d) { detected = d; break; }
+  }
+  if (detected) {
+    sysSel.value = detected;
+    if (hint) hint.innerHTML = '✅ Авто з борту: <strong>'+esc(detected)+'</strong>';
+    var curFreq = document.getElementById('editFreq').value;
+    rebuildEditFreqOptions(detected, curFreq);
+  }
+}
+
+function renderEditTrkList() {
+  var el = document.getElementById('editTrkList');
+  if (!el) return;
+  if (!editTrackers.length) { el.innerHTML=''; return; }
+  el.innerHTML = editTrackers.map(function(id){
+    var t = trackers.find(function(x){ return x.id===id; });
+    var broken=t&&t.status==='Зламаний', lost=t&&t.status==='Втрачений';
+    var bg=broken?'#fff3cd':(lost?'#f8d7da':'#e8f4fd');
+    var clr=broken?'#856404':(lost?'#721c24':'#1a3a5c');
+    var bdr=broken?'#ffc107':(lost?'#f5c6cb':'#b8daff');
+    return '<span style="display:inline-block;background:'+bg+';color:'+clr+';border:1px solid '+bdr+';border-radius:10px;padding:2px 8px;font-size:11px;margin:2px;cursor:pointer" onmousedown="removeEditTrk(this.dataset.id)" data-id="'+esc(id)+'">'+
+      esc(t&&t.imei?t.imei:id)+(t?' — '+esc(t.model):'')+(broken?' ⚠️':(lost?' ❌':''))+' ✕</span>';
+  }).join('');
+}
+
+function removeEditTrk(id) {
+  editTrackers = editTrackers.filter(function(x){ return x!==id; });
+  renderEditTrkList();
+}
+
+function filterEditTrackers() {
+  var q = document.getElementById('editTrkSearch').value.toLowerCase().trim();
+  var dd = document.getElementById('ddEditTrk');
+  var crewId = document.getElementById('editCrewId').value;
+  var busyTrk = getBusyTrackers();
+  // Не блокуємо трекери поточного екіпажу
+  var c = flights.find(function(f){ return f.id===crewId; });
+  var currentTrks = c&&c.tracker ? c.tracker.split('|').filter(Boolean) : [];
+
+  var list = trackers.filter(function(t){
+    return editTrackers.indexOf(t.id)===-1 &&
+      (!q||t.id.toLowerCase().includes(q)||t.model.toLowerCase().includes(q)||(t.simContact||'').toLowerCase().includes(q));
+  }).slice(0,10);
+
+  if (!list.length) { dd.style.display='none'; return; }
+  dd.innerHTML = list.map(function(t){
+    var busyIn = busyTrk[t.id];
+    // Не вважати зайнятим якщо це трекер поточного екіпажу
+    var busy = busyIn && currentTrks.indexOf(t.id)===-1 ? busyIn : null;
+    var broken=t.status==='Зламаний', lost=t.status==='Втрачений';
+    var rowBg=busy?'#fffbea':(broken?'#fffbea':(lost?'#fff0f0':''));
+    var idColor=busy?'#856404':(broken?'#856404':(lost?'#721c24':'#1a3a5c'));
+    var badge=busy?'<span style="background:#fff3cd;color:#856404;padding:1px 5px;border-radius:8px;font-size:10px;margin-left:4px">🔒</span>':
+      (broken?'<span style="background:#fff3cd;color:#856404;padding:1px 5px;border-radius:8px;font-size:10px;margin-left:4px">⚠️</span>':
+      (lost?'<span style="background:#f8d7da;color:#721c24;padding:1px 5px;border-radius:8px;font-size:10px;margin-left:4px">❌</span>':''));
+    var subInfo=busy?esc(busy.join(', ')):esc((t.simContact||'')+(t.simNumber?' · '+t.simNumber:''));
+    var subInfo=busy?esc(busy.join(', ')):esc((t.simContact||'')+(t.simNumber?' · '+t.simNumber:''));
+    return '<div class="ac-item" style="background:'+rowBg+';cursor:'+(busy?'not-allowed':'pointer')+'"'+
+      (!busy?' onclick="addEditTrk(this.dataset.id)" data-id="'+esc(t.id)+'"':'')+'>'+
+      '<div class="ac-id" style="color:'+idColor+'">'+(t&&t.imei?esc(t.imei):esc(t.id))+' — '+esc(t.model)+badge+(t&&t.imei?'<span style="font-size:9px;color:#aaa">('+esc(t.id)+')</span>':'')+'</div>'+
+      '<div class="ac-meta">'+subInfo+'</div>'+
+    '</div>';
+  }).join('');
+  dd.style.display='block';
+}
+
+function addEditTrk(id) {
+  var t = trackers.find(function(x){ return x.id===id; });
+  if (!t) return;
+  if (t.status!=='Робочий') {
+    if (!confirm('⚠️ Трекер '+id+' — '+t.status+'! Додати все одно?')) return;
+  }
+  if (editTrackers.indexOf(id)===-1) editTrackers.push(id);
+  document.getElementById('editTrkSearch').value='';
+  document.getElementById('ddEditTrk').style.display='none';
+  renderEditTrkList();
+}
+
+function saveEditCrew() {
+  var crewId  = document.getElementById('editCrewId').value;
+  var gnst    = document.getElementById('editGnst').value;
+  var bind    = document.getElementById('editBind').value.trim();
+  var drones  = editDrones.map(function(d){ return d.id; }).join('|');
+  var trks    = editTrackers.join('|');
+  var system  = document.getElementById('editSystem').value;
+  var freq    = document.getElementById('editFreq').value;
+  var reserves = editReserves.join('|');
+
+  if (!editDrones.length) { showMsg('msgEdit','❌ Додайте борти','err'); return; }
+
+  google.script.run
+    .withSuccessHandler(function(){
+      var c = flights.find(function(f){ return f.id===crewId; });
+      if (c) { c.gnst=gnst; c.bind=bind; c.drones=drones; c.tracker=trks; c.system=system; c.freq=freq; c.reserves=reserves; }
+      closeEditModal();
+      renderCrew(); renderFly();
+    })
+    .withFailureHandler(function(e){ showMsg('msgEdit','❌ '+e.message,'err'); })
+    .updateCrew(crewId, { gnst:gnst, bind:bind, drones:drones, tracker:trks, system:system, freq:freq, reserves:reserves });
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+document.addEventListener('click', function(e){
+  if (!e.target.closest||!e.target.closest('.ac-wrap')) {
+    ['ddDrones','ddPilot','ddTrk'].forEach(function(id){
+      var dd=document.getElementById(id); if(dd) dd.style.display='none';
+    });
+  }
+});
+</script>
+<!-- Modal редагування екіпажу -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-title">
+      <span>✏️ Редагувати екіпаж</span>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <input type="hidden" id="editCrewId">
+
+    <div class="f"><label>Наземна станція</label>
+      <select id="editGnst"></select>
+      <div id="editGnstWarn"></div>
+    </div>
+
+    <div class="f"><label>Bind фраза</label>
+      <input type="text" id="editBind" placeholder="спільна для всіх бортів...">
+    </div>
+
+    <div class="f"><label>Борти (пул)</label>
+      <div class="ac-wrap">
+        <input type="text" id="editDroneSearch" placeholder="Пошук борту..." oninput="filterEditDrones()" autocomplete="off">
+        <div class="ac-list" id="ddEditDrones"></div>
+      </div>
+      <div id="editDroneList" style="margin-top:6px"></div>
+    </div>
+
+    <div class="f"><label>Sinotrack трекери</label>
+      <div class="ac-wrap">
+        <input type="text" id="editTrkSearch" placeholder="Пошук трекера..." oninput="filterEditTrackers()" onfocus="filterEditTrackers()" autocomplete="off">
+        <div class="ac-list" id="ddEditTrk"></div>
+      </div>
+      <div id="editTrkList" style="margin-top:6px"></div>
+    </div>
+
+    <div class="f"><label>Відеосистема</label>
+      <select id="editSystem" onchange="onEditSystemChange()">
+        <option value="">— не вказано —</option>
+      </select>
+      <div id="editSysHint" class="hint"></div>
+    </div>
+
+    <div class="f"><label>Основна частота</label>
+      <select id="editFreq"><option value="">— не вказано —</option></select>
+    </div>
+
+    <div class="f"><label>📻 Резервні VTX Switcher (до 10)</label>
+      <select id="editReserveSel" onchange="addEditReserve()">
+        <option value="">+ додати резервну</option>
+      </select>
+      <div id="editReserveList" style="margin-top:6px"></div>
+    </div>
+
+    <button class="btn btn-green" onclick="saveEditCrew()" style="margin-top:4px">💾 Зберегти</button>
+    <button class="btn btn-sec" onclick="closeEditModal()" style="margin-top:4px">Скасувати</button>
+    <div id="msgEdit" class="msg"></div>
+  </div>
+</div>
+
+</body>
+</html>
