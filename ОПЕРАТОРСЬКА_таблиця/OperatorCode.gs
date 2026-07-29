@@ -547,6 +547,7 @@ function getAdminEmail() {
 }
 // Почати виліт
 function startFlight(data) {
+  return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet) throw new Error('Аркуш Журнал польоту не знайдено');
@@ -584,12 +585,14 @@ function startFlight(data) {
   const insertedRow = sheet.getLastRow();
   sheet.getRange(insertedRow, 10).setNumberFormat('@'); // початок
   sheet.getRange(insertedRow, 11).setNumberFormat('@'); // кінець
+  if (data.note) touchFlightNote(sheet, insertedRow);
   // Захист не ставимо тут — рядок ще активний (Кінець порожній)
   const row = sheet.getLastRow();
   sheet.getRange(row, 1, 1, 16)
     .setBackground(row % 2 === 0 ? COLORS.altRow : COLORS.white);
 
   return { id: newId, start: now };
+  });
 }
 // Завершити виліт
 function endFlight(flightId, droneStatuses, note) {
@@ -667,7 +670,7 @@ function endFlight(flightId, droneStatuses, note) {
   if (lostSummary) {
     finalNote = finalNote ? (lostSummary + ' | ' + finalNote) : lostSummary;
   }
-  if (finalNote) sheet.getRange(row, 13).setValue(finalNote); // col M
+  if (finalNote) { sheet.getRange(row, 13).setValue(finalNote); touchFlightNote(sheet, row); } // col M
 
   // Захистити завершений рядок від редагування
   try { protectRow(sheet, row); } catch(e) {}
@@ -721,6 +724,7 @@ function cascadeLoseTracker(trackerId, note) {
 }
 // Створити екіпаж (зберігається як рядок з порожнім start/end)
 function createCrew(data) {
+  return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet) throw new Error('Аркуш Журнал польоту не знайдено');
@@ -751,7 +755,9 @@ function createCrew(data) {
     data.freq||'',             // P:Частота
     data.reserves||'',         // Q:Резервні VTX (через |)
   ]);
+  if (data.note) touchFlightNote(sheet, sheet.getLastRow());
   return crewId;
+  });
 }
 // Оновити екіпаж
 function updateCrew(crewId, data) {
@@ -782,7 +788,7 @@ function updateSinotrackStatus(id, status, note) {
   if (idx === -1) throw new Error('Трекер не знайдено: ' + id);
   const row = idx + 3;
   sheet.getRange(row, 3).setValue(status);
-  if (note) sheet.getRange(row, 8).setValue(note);
+  if (note) { sheet.getRange(row, 8).setValue(note); touchSinotrackNote(sheet, row); }
   touchSinotrack(sheet, row);
   return { id, status };
 }
@@ -916,8 +922,25 @@ function checkSimConflict(simId, targetTrackerId) {
 function nowTS() { return new Date().toISOString(); }
 function touchSinotrack(sheet, row) { sheet.getRange(row, 9).setValue(nowTS()); }
 function touchSim(sheet, row) { sheet.getRange(row, 6).setValue(nowTS()); }
+// Мітка часу зміни примітки (окрема від рядкової — щоб синк не губив примітки)
+function touchSinotrackNote(sheet, row) { sheet.getRange(row, 10).setValue(nowTS()); }
+function touchFlightNote(sheet, row) { sheet.getRange(row, 18).setValue(nowTS()); }
+
+// Виконати fn під глобальним локом скрипта — захист від дублікатів
+// при паралельних викликах (подвійний клік, два користувачі одночасно)
+function withScriptLock(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    return fn();
+  } finally {
+    SpreadsheetApp.flush();
+    lock.releaseLock();
+  }
+}
 
 function addSinotrack(data) {
+  return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Sinotrack');
   if (!sheet) throw new Error('Аркуш Sinotrack не знайдено');
@@ -931,11 +954,14 @@ function addSinotrack(data) {
   }
   const newId = 'SNT-' + String(maxNum + 1).padStart(3, '0');
   sheet.appendRow([newId, data.model || '', data.status || 'Робочий',
-    data.simContact || '', data.simNumber || '', '', data.imei || '', data.note || '', nowTS()]);
+    data.simContact || '', data.simNumber || '', '', data.imei || '', data.note || '', nowTS(),
+    data.note ? nowTS() : '']);
   return newId;
+  });
 }
 // Додати SIM-карту
 function addSim(data) {
+  return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'SIM-карти');
   if (!sheet) throw new Error('Аркуш SIM-карти не знайдено');
@@ -950,6 +976,18 @@ function addSim(data) {
   const newId = 'SIM-' + String(maxNum + 1).padStart(3, '0');
   sheet.appendRow([newId, data.contact || '', data.number || '', data.status || 'Активна', '', nowTS()]);
   return newId;
+  });
+}
+
+// Ручне редагування приміток → мітка часу, щоб синхронізація не губила примітки
+function onEdit(e) {
+  const sheet = e.range.getSheet();
+  const sheetName = sheet.getName();
+  if (sheetName === 'Sinotrack' && e.range.getRow() >= 3 && e.range.getColumn() === 8) {
+    touchSinotrackNote(sheet, e.range.getRow());
+  } else if (sheetName === 'Журнал польоту' && e.range.getRow() >= 3 && e.range.getColumn() === 13) {
+    touchFlightNote(sheet, e.range.getRow());
+  }
 }
 // Захистити конкретний рядок в аркуші від редагування
 function protectRow(sheet, rowNum) {

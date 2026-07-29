@@ -496,14 +496,56 @@ function statusChip(st) {
 }
 function freqOptionsHtml(system) {
   var html = '';
-  Object.keys(BANDS).forEach(function(band){
-    html += '<optgroup label="Бенд '+band+'">';
-    BANDS[band].forEach(function(f, i){
-      html += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
+  if (system === 'Hornet Vision') {
+    // Тільки HV частоти
+    html += '<optgroup label="Hornet Vision (HV-L)">';
+    BANDS['HV-L'].forEach(function(f, i){
+      var warn = WARNING_FREQS[f] ? ' ⚠️' : '';
+      html += '<option value="HV-L'+(i+1)+' ('+f+')">HV-L'+(i+1)+' — '+f+' МГц'+warn+'</option>';
+    });
+    html += '</optgroup><optgroup label="Hornet Vision (HV-H)">';
+    BANDS['HV-H'].forEach(function(f, i){
+      html += '<option value="HV-H'+(i+1)+' ('+f+')">HV-H'+(i+1)+' — '+f+' МГц</option>';
     });
     html += '</optgroup>';
-  });
+  } else {
+    Object.keys(BANDS).forEach(function(band){
+      if (band.indexOf('HV-') === 0) return; // HV бенди тільки для Hornet Vision
+      html += '<optgroup label="Бенд '+band+'">';
+      BANDS[band].forEach(function(f, i){
+        html += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
+      });
+      html += '</optgroup>';
+    });
+  }
   return html;
+}
+// Суфікси назв бортів → відеосистема (як у sidebar-формах)
+var NAME_SUFFIXES = {
+  'AD':'Аналог','AT':'Аналог',
+  'HVD':'Hornet Vision','HVT':'Hornet Vision',
+  'HDD':'HDZero','HDT':'HDZero',
+  'DJD':'DJI','DJT':'DJI',
+  'WSD':'Walksnail','WST':'Walksnail'
+};
+var WARNING_FREQS = { 5240: 'Канал HV-L1 (5240 МГц) використовувати НЕ рекомендовано! Можливі проблеми зв\'язку. Тільки короткочасно.' };
+function detectSystemFromName(name) {
+  if (!name) return '';
+  var upper = String(name).toUpperCase().trim();
+  var keys = Object.keys(NAME_SUFFIXES).sort(function(a,b){ return b.length - a.length; });
+  for (var i = 0; i < keys.length; i++) {
+    var suf = keys[i];
+    // Суфікс як окреме слово АБО в кінці назви (StingHVD, Sting HVD, Sting-HVD)
+    var re = new RegExp('(^|[\\s\\-_])' + suf + '($|[\\s\\-_0-9])');
+    if (re.test(upper)) return NAME_SUFFIXES[suf];
+    if (upper.endsWith(suf)) return NAME_SUFFIXES[suf];
+  }
+  return '';
+}
+// Попередження про нерекомендовану частоту
+function freqWarn(sel) {
+  var m = String(sel.value || '').match(/\((\d+)\)/);
+  if (m && WARNING_FREQS[Number(m[1])]) toast('⚠ ' + WARNING_FREQS[Number(m[1])], true);
 }
 
 /* ═══════════ ЗАВАНТАЖЕННЯ ДАНИХ ═══════════ */
@@ -689,10 +731,11 @@ function openNewFlightModal() {
     '<div class="f"><label>Екіпаж *</label><select id="nfCrew" onchange="nfCrewChange()"><option value="">— оберіть —</option>'+crewOpts+'</select></div>'+
     '<div id="nfCrewInfo"></div>'+
     '<div class="f"><label>Відповідальна особа *</label><input type="text" id="nfPilot" placeholder="Позивний або ПІБ…"></div>'+
-    '<div class="f" id="nfDroneBlock" style="display:none"><label>Борт (який летить зараз) *</label><select id="nfDrone"></select></div>'+
+    '<div class="f" id="nfDroneBlock" style="display:none"><label>Борт (який летить зараз) *</label><select id="nfDrone" onchange="nfDroneChange()"></select></div>'+
     '<div class="f" id="nfTrkBlock" style="display:none"><label>Sinotrack з цим бортом</label><select id="nfTrk"></select></div>'+
-    '<div class="f"><label>Відеосистема</label><select id="nfSystem"><option value="">— авто з екіпажу —</option>'+sysOpts+'</select></div>'+
-    '<div class="f"><label>Частота (МГц)</label><select id="nfFreq"><option value="">— оберіть —</option>'+freqOptionsHtml()+'</select>'+
+    '<div class="f"><label>Відеосистема</label><select id="nfSystem" onchange="nfSystemChange()"><option value="">— авто з екіпажу —</option>'+sysOpts+'</select>'+
+    '<div class="hint" id="nfSysHint"></div></div>'+
+    '<div class="f"><label>Частота (МГц)</label><select id="nfFreq" onchange="freqWarn(this)"><option value="">— оберіть —</option>'+freqOptionsHtml()+'</select>'+
     '<div class="hint">📻 Перевір карту частот на конфлікти</div></div>'+
     '<button class="btn btn-green" id="nfBtn" onclick="doStartFlight()">🛫 Злетів</button>'
   );
@@ -729,7 +772,8 @@ function nfCrewChange() {
     freqSel.innerHTML = opts;
     if (c.freq) freqSel.value = c.freq;
   } else {
-    freqSel.innerHTML = '<option value="">— оберіть —</option>' + freqOptionsHtml();
+    // Екіпаж без частот → сітка по системі екіпажу (борт може перевизначити)
+    freqSel.innerHTML = '<option value="">— оберіть —</option>' + freqOptionsHtml(c.system || '');
   }
 
   $('nfDrone').innerHTML = '<option value="">— оберіть —</option>' + dl.map(function(did){
@@ -750,6 +794,42 @@ function nfCrewChange() {
     }).join('');
     trkBlock.style.display = 'block';
   } else trkBlock.style.display = 'none';
+}
+// Чи задав екіпаж фіксовані частоти (тоді список вильоту не перебудовуємо — VTX pool)
+function nfCrewHasFreqs() {
+  var c = crewById($('nfCrew').value);
+  return !!(c && (c.freq || c.reserves));
+}
+function nfRebuildFreqs(system) {
+  var fs = $('nfFreq');
+  if (!fs) return;
+  var cur = fs.value;
+  fs.innerHTML = '<option value="">— оберіть —</option>' + freqOptionsHtml(system);
+  if (cur) fs.value = cur;
+}
+function nfSystemChange() {
+  var sys = $('nfSystem').value;
+  var hint = $('nfSysHint');
+  if (hint) hint.innerHTML = sys ? 'Обрано: <b>'+esc(sys)+'</b>' : '';
+  if (!nfCrewHasFreqs()) nfRebuildFreqs(sys);
+}
+// Авто-визначення відеосистеми при виборі борту
+function nfDroneChange() {
+  var droneId = $('nfDrone').value;
+  var hint = $('nfSysHint');
+  if (!droneId) { if (hint) hint.innerHTML = ''; return; }
+  var it = S.items.find(function(i){ return i.id === droneId; });
+  if (!it) return;
+  var detected = detectSystemFromName(it.name);
+  if (detected) {
+    $('nfSystem').value = detected;
+    if (hint) hint.innerHTML = '✅ Авто з назви "'+esc(it.name)+'": <b>'+esc(detected)+'</b>';
+    if (!nfCrewHasFreqs()) nfRebuildFreqs(detected);
+  } else {
+    if (hint) hint.innerHTML = '⚠ "'+esc(it.name)+'" — система не розпізнана, обери вручну';
+    var cur = $('nfSystem').value;
+    if (cur && !nfCrewHasFreqs()) nfRebuildFreqs(cur);
+  }
 }
 function doStartFlight() {
   var crewId = $('nfCrew').value, pilot = $('nfPilot').value.trim(), drone = $('nfDrone').value;
@@ -1143,30 +1223,45 @@ function openAddTracker() {
     '<div class="f"><label>Заводський ID / IMEI</label><input type="text" id="atImei" placeholder="8641290055512"></div>'+
     '<div class="f"><label>SIM-карта</label><select id="atSim"><option value="">— без SIM —</option>'+simOpts+'</select></div>'+
     '<div class="f"><label>Примітка</label><input type="text" id="atNote"></div>'+
-    '<button class="btn" onclick="doAddTracker()">➕ Додати трекер</button>'
+    '<button class="btn" id="atBtn" onclick="doAddTracker()">➕ Додати трекер</button>'
   );
 }
 function doAddTracker() {
   var model = $('atModel').value.trim();
   if (!model) { toast('⚠ Вкажи модель', true); return; }
+  // Захист від повторного натискання поки виконується запит
+  var btn = $('atBtn');
+  if (btn) {
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = '⏳ Запис…';
+  }
+  function unlock() { if (btn) { btn.disabled = false; btn.textContent = '➕ Додати трекер'; } }
   var simId = $('atSim').value;
   rpc('addSinotrack', [{ model: model, imei: $('atImei').value.trim(), note: $('atNote').value.trim() }], function(newId){
     if (simId) {
-      rpc('bindSimToTracker', [simId, newId, false], function(){ toast('📡 '+newId+' додано + SIM'); closeModal(); loadAll(); });
+      rpc('bindSimToTracker', [simId, newId, false], function(){ toast('📡 '+newId+' додано + SIM'); closeModal(); loadAll(); },
+        function(e){ toast('📡 '+newId+' додано, але SIM не прив\'язано: ' + e.message, true); closeModal(); loadAll(); });
     } else { toast('📡 '+newId+' додано'); closeModal(); loadAll(); }
-  });
+  }, function(e){ unlock(); toast('❌ ' + e.message, true); });
 }
 function openAddSim() {
   openModal('📱 Нова SIM-карта',
     '<div class="f"><label>Назва контакту *</label><input type="text" id="asContact" placeholder="Vodafone-07"></div>'+
     '<div class="f"><label>Номер *</label><input type="text" id="asNumber" placeholder="+380671112233"></div>'+
-    '<button class="btn" onclick="doAddSim()">➕ Додати SIM</button>'
+    '<button class="btn" id="asBtn" onclick="doAddSim()">➕ Додати SIM</button>'
   );
 }
 function doAddSim() {
   var contact = $('asContact').value.trim(), number = $('asNumber').value.trim();
   if (!contact || !number) { toast('⚠ Заповни контакт і номер', true); return; }
-  rpc('addSim', [{ contact: contact, number: number }], function(newId){ toast('📱 '+newId+' додано'); closeModal(); loadAll(); });
+  // Захист від повторного натискання поки виконується запит
+  var btn = $('asBtn');
+  if (btn) {
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = '⏳ Запис…';
+  }
+  rpc('addSim', [{ contact: contact, number: number }], function(newId){ toast('📱 '+newId+' додано'); closeModal(); loadAll(); },
+    function(e){ if (btn) { btn.disabled = false; btn.textContent = '➕ Додати SIM'; } toast('❌ ' + e.message, true); });
 }
 function openBindSim(trackerId) {
   var freeSims = S.sims.filter(function(s){ return !s.binding && s.status !== 'Втрачена'; });
@@ -1175,17 +1270,25 @@ function openBindSim(trackerId) {
     '<div class="f"><label>SIM-карта</label><select id="bsSim">'+
     freeSims.map(function(s){ return '<option value="'+esc(s.id)+'">'+esc(s.id)+' — '+esc(s.contact)+' · '+esc(s.number)+'</option>'; }).join('')+
     '</select></div>'+
-    '<button class="btn" onclick="doBindSim(\''+esc(trackerId)+'\')">🔗 Прив\'язати</button>'
+    '<button class="btn" id="bsBtn" onclick="doBindSim(\''+esc(trackerId)+'\')">🔗 Прив\'язати</button>'
   );
 }
 function doBindSim(trackerId) {
   var simId = $('bsSim').value;
+  // Захист від повторного натискання поки виконується запит
+  var btn = $('bsBtn');
+  if (btn) {
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = '⏳ Запис…';
+  }
+  function unlock() { if (btn) { btn.disabled = false; btn.textContent = '🔗 Прив\'язати'; } }
   rpc('bindSimToTracker', [simId, trackerId, false], function(){
     toast('🔗 SIM прив\'язано'); closeModal(); loadAll();
   }, function(e){
     if (confirm('⚠ ' + e.message + '\n\nПрив\'язати примусово?')) {
-      rpc('bindSimToTracker', [simId, trackerId, true], function(){ toast('🔗 SIM прив\'язано (примусово)'); closeModal(); loadAll(); });
-    }
+      rpc('bindSimToTracker', [simId, trackerId, true], function(){ toast('🔗 SIM прив\'язано (примусово)'); closeModal(); loadAll(); },
+        function(e2){ unlock(); toast('❌ ' + e2.message, true); });
+    } else { unlock(); }
   });
 }
 function doUnbindSim(trackerId) {
@@ -1301,18 +1404,64 @@ function renderCrewForm() {
       '<div class="ac-wrap"><input type="text" id="cfTrkSearch" placeholder="Пошук трекера…" oninput="cfFilterTrackers()" onfocus="cfFilterTrackers()" autocomplete="off"><div class="ac-list" id="cfTrkDd"></div></div>'+
       '<div id="cfTrkList" style="margin-top:6px"></div>'+
       '<div class="hint">💡 Перевірка: SMS 669000 на номер SIM → ID і координати</div></div>'+
-    '<div class="f"><label>Відеосистема</label><select id="cfSystem">'+sysOpts+'</select></div>'+
-    '<div class="f"><label>Основна частота</label><select id="cfFreq"><option value="">— не вказано —</option>'+freqOptionsHtml()+'</select></div>'+
+    '<div class="f"><label>Відеосистема</label><select id="cfSystem" onchange="cfSystemChange()">'+sysOpts+'</select>'+
+      '<div class="hint" id="cfSysHint"></div></div>'+
+    '<div class="f"><label>Основна частота</label><select id="cfFreq" onchange="freqWarn(this)"><option value="">— не вказано —</option>'+freqOptionsHtml(cr ? cr.system : '')+'</select></div>'+
     '<div class="f"><label>📻 Резервні VTX (до 10)</label>'+
-      '<select id="cfReserveSel" onchange="cfAddReserve()"><option value="">+ додати резервну</option>'+freqOptionsHtml()+'</select>'+
+      '<select id="cfReserveSel" onchange="cfAddReserve()"><option value="">+ додати резервну</option>'+freqOptionsHtml(cr ? cr.system : '')+'</select>'+
       '<div id="cfReserveList" style="margin-top:6px"></div></div>'+
     (editing
-      ? '<div class="btn-row"><button class="btn btn-green" onclick="doSaveCrew()">💾 Зберегти</button>'+
+      ? '<div class="btn-row"><button class="btn btn-green" id="cfBtn" onclick="doSaveCrew()">💾 Зберегти</button>'+
         '<button class="btn btn-sec" onclick="crewForm={drones:[],trackers:[],reserves:[],editId:null};renderView()">Скасувати</button></div>'
       : '<button class="btn btn-green" id="cfBtn" onclick="doSaveCrew()">👥 Створити екіпаж</button>');
 
-  if (cr && cr.freq) $('cfFreq').value = cr.freq;
+  if (cr && cr.freq) cfSetFreqValue(cr.freq);
   cfRenderChips();
+}
+// Виставити частоту; якщо її немає в списку (інша система) — додати окремою опцією щоб не загубити
+function cfSetFreqValue(freq) {
+  var fs = $('cfFreq');
+  if (!fs || !freq) return;
+  fs.value = freq;
+  if (fs.value !== freq) {
+    var o = document.createElement('option');
+    o.value = freq; o.textContent = freq;
+    fs.appendChild(o);
+    fs.value = freq;
+  }
+}
+// Перебудувати списки частот (основна + резервні) під відеосистему
+function cfRebuildFreqs(system) {
+  var fs = $('cfFreq'), rs = $('cfReserveSel');
+  var opts = freqOptionsHtml(system);
+  if (fs) {
+    var cur = fs.value;
+    fs.innerHTML = '<option value="">— не вказано —</option>' + opts;
+    if (cur) cfSetFreqValue(cur);
+  }
+  if (rs) rs.innerHTML = '<option value="">+ додати резервну</option>' + opts;
+}
+function cfSystemChange() {
+  var hint = $('cfSysHint');
+  if (hint) hint.innerHTML = '';
+  cfRebuildFreqs($('cfSystem').value);
+}
+// Авто-визначення відеосистеми екіпажу по назвах бортів у пулі
+function cfAutoDetectSystem() {
+  var sel = $('cfSystem');
+  if (!sel) return;
+  var detected = '';
+  for (var i = 0; i < crewForm.drones.length; i++) {
+    var it = S.items.find(function(x){ return x.id === crewForm.drones[i]; });
+    var d = detectSystemFromName(it ? it.name : '');
+    if (d) { detected = d; break; }
+  }
+  if (detected) {
+    sel.value = detected;
+    var hint = $('cfSysHint');
+    if (hint) hint.innerHTML = '✅ Авто з борту: <b>'+esc(detected)+'</b>';
+    cfRebuildFreqs(detected);
+  }
 }
 function cfFilterDrones() {
   var q = $('cfDroneSearch').value.toLowerCase();
@@ -1332,7 +1481,8 @@ function cfFilterDrones() {
   }).join('');
   dd.style.display = 'block';
 }
-function cfAddDrone(id) { if (crewForm.drones.indexOf(id)===-1) crewForm.drones.push(id); $('cfDroneSearch').value=''; $('cfDroneDd').style.display='none'; cfRenderChips(); }
+function cfAddDrone(id) { if (crewForm.drones.indexOf(id)===-1) crewForm.drones.push(id); $('cfDroneSearch').value=''; $('cfDroneDd').style.display='none'; cfRenderChips(); cfAutoDetectSystem(); }
+function cfRemoveDrone(id) { crewForm.drones = crewForm.drones.filter(function(x){ return x !== id; }); cfRenderChips(); cfAutoDetectSystem(); }
 function cfFilterTrackers() {
   var q = $('cfTrkSearch').value.toLowerCase().trim();
   var dd = $('cfTrkDd');
@@ -1369,7 +1519,7 @@ function cfAddReserve() {
 }
 function cfRenderChips() {
   if ($('cfDroneList')) $('cfDroneList').innerHTML = crewForm.drones.map(function(d){
-    return '<span class="chip click" onclick="crewForm.drones=crewForm.drones.filter(function(x){return x!==\''+esc(d)+'\'});cfRenderChips()">'+esc(d)+' ✕</span>';
+    return '<span class="chip click" onclick="cfRemoveDrone(\''+esc(d)+'\')">'+esc(d)+' ✕</span>';
   }).join('') || '<span class="hint">— порожньо —</span>';
   if ($('cfTrkList')) $('cfTrkList').innerHTML = crewForm.trackers.map(function(t){
     var tr = S.trackers.find(function(x){ return x.id===t; });
@@ -1393,6 +1543,15 @@ function openCrewForm(crewId) {
 }
 function doSaveCrew() {
   if (!crewForm.drones.length) { toast('⚠ Додай хоча б один борт', true); return; }
+  // Захист від повторного натискання поки виконується запит
+  var btn = $('cfBtn');
+  if (btn) {
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = '⏳ Запис…';
+  }
+  function unlock() {
+    if (btn) { btn.disabled = false; btn.textContent = crewForm.editId ? '💾 Зберегти' : '👥 Створити екіпаж'; }
+  }
   var data = {
     gnst: $('cfGnst').value, bind: $('cfBind').value.trim(),
     drones: crewForm.drones.join('|'), tracker: crewForm.trackers.join('|'),
@@ -1403,14 +1562,14 @@ function doSaveCrew() {
       toast('💾 '+crewForm.editId+' збережено');
       crewForm = {drones:[],trackers:[],reserves:[],editId:null};
       loadAll();
-    });
+    }, function(e){ unlock(); toast('❌ ' + e.message, true); });
   } else {
     data.pilot = '';
     rpc('createCrew', [data], function(newId){
       toast('👥 Екіпаж '+newId+' створено');
       crewForm = {drones:[],trackers:[],reserves:[],editId:null};
       loadAll();
-    });
+    }, function(e){ unlock(); toast('❌ ' + e.message, true); });
   }
 }
 function doCloseCrew(crewId) {

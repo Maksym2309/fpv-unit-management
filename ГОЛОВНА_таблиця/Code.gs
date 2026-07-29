@@ -867,6 +867,11 @@ function getFormData() {
 // ДОДАТИ ПРЕДМЕТ — викликається з AddForm.html
 // ============================================================
 function addItemFromForm(d) {
+  return withScriptLock(function() { return addItemCore(d); });
+}
+
+// Ядро додавання предмета — викликати тільки під локом (addItemFromForm/addItemsFromForm)
+function addItemCore(d) {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Інвентар');
 
@@ -1047,7 +1052,19 @@ function updateItemStatusById(d) {
 // ============================================================
 function onEdit(e) {
   const sheet = e.range.getSheet();
-  if (sheet.getName() !== 'Інвентар') return;
+  const sheetName = sheet.getName();
+
+  // Ручне редагування приміток → мітка часу, щоб синхронізація не губила примітки
+  if (sheetName === 'Sinotrack' && e.range.getRow() >= 3 && e.range.getColumn() === 8) {
+    touchSinotrackNote(sheet, e.range.getRow());
+    return;
+  }
+  if (sheetName === 'Журнал польоту' && e.range.getRow() >= 3 && e.range.getColumn() === 13) {
+    touchFlightNote(sheet, e.range.getRow());
+    return;
+  }
+
+  if (sheetName !== 'Інвентар') return;
 
   const row      = e.range.getRow();
   const col      = e.range.getColumn();
@@ -1176,12 +1193,14 @@ function getNameSuggestions() {
 
 // Додати кілька предметів одразу (qty штук)
 function addItemsFromForm(d) {
-  const qty = Math.min(20, Math.max(1, parseInt(d.qty, 10) || 1));
-  const results = [];
-  for (let i = 0; i < qty; i++) {
-    results.push(addItemFromForm(d));
-  }
-  return results;
+  return withScriptLock(function() {
+    const qty = Math.min(20, Math.max(1, parseInt(d.qty, 10) || 1));
+    const results = [];
+    for (let i = 0; i < qty; i++) {
+      results.push(addItemCore(d));
+    }
+    return results;
+  });
 }
 
 // ============================================================
@@ -1424,6 +1443,7 @@ function updateConsumable(data) {
 
 // Додати новий витратник
 function addConsumableFromForm(data) {
+  return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Витратники');
   if (!sheet) throw new Error('Аркуш Витратники не знайдено');
@@ -1466,6 +1486,7 @@ function addConsumableFromForm(data) {
     .setBackground(insertedRow % 2 === 0 ? COLORS.altRow : COLORS.white);
 
   return newId;
+  });
 }
 
 // ============================================================
@@ -3042,11 +3063,28 @@ function getSimList() {
 // Поточний ISO timestamp
 function nowTS() { return new Date().toISOString(); }
 
+// Виконати fn під глобальним локом скрипта — захист від дублікатів
+// при паралельних викликах (подвійний клік, два користувачі одночасно)
+function withScriptLock(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    return fn();
+  } finally {
+    SpreadsheetApp.flush();
+    lock.releaseLock();
+  }
+}
+
 // Записати timestamp у вказану колонку рядка
 function touchSinotrack(sheet, row) { sheet.getRange(row, 9).setValue(nowTS()); }
 function touchSim(sheet, row) { sheet.getRange(row, 6).setValue(nowTS()); }
+// Мітка часу зміни примітки (окрема від рядкової — щоб синк не губив примітки)
+function touchSinotrackNote(sheet, row) { sheet.getRange(row, 10).setValue(nowTS()); }
+function touchFlightNote(sheet, row) { sheet.getRange(row, 18).setValue(nowTS()); }
 
 function addSinotrack(data) {
+  return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Sinotrack');
   if (!sheet) throw new Error('Аркуш Sinotrack не знайдено');
@@ -3060,12 +3098,15 @@ function addSinotrack(data) {
   }
   const newId = 'SNT-' + String(maxNum + 1).padStart(3, '0');
   sheet.appendRow([newId, data.model || '', data.status || 'Робочий',
-    data.simContact || '', data.simNumber || '', '', data.imei || '', data.note || '', nowTS()]);
+    data.simContact || '', data.simNumber || '', '', data.imei || '', data.note || '', nowTS(),
+    data.note ? nowTS() : '']);
   return newId;
+  });
 }
 
 // Додати SIM-карту
 function addSim(data) {
+  return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'SIM-карти');
   if (!sheet) throw new Error('Аркуш SIM-карти не знайдено');
@@ -3080,6 +3121,7 @@ function addSim(data) {
   const newId = 'SIM-' + String(maxNum + 1).padStart(3, '0');
   sheet.appendRow([newId, data.contact || '', data.number || '', data.status || 'Активна', '', nowTS()]);
   return newId;
+  });
 }
 
 // Прив'язати SIM до трекера
@@ -3221,7 +3263,7 @@ function updateSinotrackStatus(id, status, note) {
   if (idx === -1) throw new Error('Трекер не знайдено: ' + id);
   const row = idx + 3;
   sheet.getRange(row, 3).setValue(status);
-  if (note) sheet.getRange(row, 8).setValue(note);
+  if (note) { sheet.getRange(row, 8).setValue(note); touchSinotrackNote(sheet, row); }
   touchSinotrack(sheet, row);
   return { id, status };
 }
@@ -3258,6 +3300,7 @@ function getFlightList() {
 
 // Почати виліт
 function startFlight(data) {
+  return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet) throw new Error('Аркуш Журнал польоту не знайдено');
@@ -3295,12 +3338,14 @@ function startFlight(data) {
   const insertedRow = sheet.getLastRow();
   sheet.getRange(insertedRow, 10).setNumberFormat('@'); // початок
   sheet.getRange(insertedRow, 11).setNumberFormat('@'); // кінець
+  if (data.note) touchFlightNote(sheet, insertedRow);
   // Захист не ставимо тут — рядок ще активний (Кінець порожній)
   const row = sheet.getLastRow();
   sheet.getRange(row, 1, 1, 16)
     .setBackground(row % 2 === 0 ? COLORS.altRow : COLORS.white);
 
   return { id: newId, start: now };
+  });
 }
 
 // Отримати список екіпажів
@@ -3333,6 +3378,7 @@ function getCrewList() {
 
 // Створити екіпаж (зберігається як рядок з порожнім start/end)
 function createCrew(data) {
+  return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet) throw new Error('Аркуш Журнал польоту не знайдено');
@@ -3363,7 +3409,9 @@ function createCrew(data) {
     data.freq||'',             // P:Частота
     data.reserves||'',         // Q:Резервні VTX (через |)
   ]);
+  if (data.note) touchFlightNote(sheet, sheet.getLastRow());
   return crewId;
+  });
 }
 
 // Оновити екіпаж
@@ -3462,7 +3510,7 @@ function endFlight(flightId, droneStatuses, note) {
   if (lostSummary) {
     finalNote = finalNote ? (lostSummary + ' | ' + finalNote) : lostSummary;
   }
-  if (finalNote) sheet.getRange(row, 13).setValue(finalNote); // col M
+  if (finalNote) { sheet.getRange(row, 13).setValue(finalNote); touchFlightNote(sheet, row); } // col M
 
   // Захистити завершений рядок від редагування
   try { protectRow(sheet, row); } catch(e) {}
@@ -3520,15 +3568,15 @@ function cascadeLoseTracker(trackerId, note) {
 // ============================================================
 function createSinotrackSheet(ss) {
   const sheet = ss.insertSheet('Sinotrack');
-  const headers = ['ID','Модель','Статус','SIM-контакт','SIM-номер','Прив\'язка до борту','IMEI','Примітка','_TS'];
-  const widths  = [90, 160, 100, 140, 130, 170, 150, 200, 10];
+  const headers = ['ID','Модель','Статус','SIM-контакт','SIM-номер','Прив\'язка до борту','IMEI','Примітка','_TS','_TS_NOTE'];
+  const widths  = [90, 160, 100, 140, 130, 170, 150, 200, 10, 10];
 
   sheet.getRange('A1:H1').merge()
     .setValue('📡 SINOTRACK — GPS ТРЕКЕРИ')
     .setBackground('#1a3a5c').setFontColor('#fff')
     .setFontSize(13).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.setRowHeight(1, 38);
-  sheet.getRange(2, 1, 1, 9).setValues([headers])
+  sheet.getRange(2, 1, 1, 10).setValues([headers])
     .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
   sheet.setRowHeight(2, 28);
   widths.forEach((w, i) => sheet.setColumnWidth(i + 1, w));
@@ -3551,6 +3599,7 @@ function createSinotrackSheet(ss) {
   sheet.setConditionalFormatRules(statusRules);
   applyAltRows(sheet, 3, 100, 8);
   sheet.hideColumns(9); // _TS timestamp
+  sheet.hideColumns(10); // _TS_NOTE timestamp примітки
 }
 
 function createSimSheet(ss) {
@@ -3582,19 +3631,20 @@ function createFlightLogSheet(ss) {
   const sheet = ss.insertSheet('Журнал польоту');
   const headers = ['ID вильоту','Дата','Екіпаж','Наземна станція','Борти','Bind фраза',
     'Відповідальна особа','Sinotrack','Трекер ОК','Початок','Кінець','Статус','Примітка','Автор',
-    'Відеосистема','Частота','Резервні VTX'];
-  const widths  = [100,100,120,160,180,130,140,120,90,80,80,100,200,180,130,90,180];
+    'Відеосистема','Частота','Резервні VTX','_TS_NOTE'];
+  const widths  = [100,100,120,160,180,130,140,120,90,80,80,100,200,180,130,90,180,10];
 
   sheet.getRange('A1:Q1').merge()
     .setValue('✈️ ЖУРНАЛ ПОЛЬОТУ')
     .setBackground('#1a3a5c').setFontColor('#fff')
     .setFontSize(13).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.setRowHeight(1, 38);
-  sheet.getRange(2, 1, 1, 17).setValues([headers])
+  sheet.getRange(2, 1, 1, 18).setValues([headers])
     .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
   sheet.setRowHeight(2, 28);
   widths.forEach((w, i) => sheet.setColumnWidth(i + 1, w));
   sheet.setFrozenRows(2);
+  sheet.hideColumns(18); // _TS_NOTE timestamp примітки
 
   // Форматуємо колонки часу як текст
   sheet.getRange('J3:K500').setNumberFormat('@STRING@');
@@ -3741,7 +3791,8 @@ function rebuildOperatorFlightLog() {
   createFlightLogSheet(opSs);
   // Синхронізувати дані
   const mainSs = SpreadsheetApp.getActiveSpreadsheet();
-  pushSheet(mainSs, opSs, 'Журнал польоту', 17);
+  ensureNoteTsColumns(mainSs);
+  pushSheet(mainSs, opSs, 'Журнал польоту', 18);
   SpreadsheetApp.getUi().alert('✅ Журнал польоту в операторській таблиці перестворено!');
 }
 
@@ -3752,6 +3803,10 @@ function syncToOperators() {
   try {
     const mainSs = SpreadsheetApp.getActiveSpreadsheet();
     const opSs   = SpreadsheetApp.openById(opId);
+
+    // 0. Міграція: колонки міток часу приміток (_TS_NOTE)
+    ensureNoteTsColumns(mainSs);
+    ensureNoteTsColumns(opSs);
 
     // 1. Журнал польоту — merge в обидва боки по ID
     mergeFlightLog(mainSs, opSs);
@@ -3782,16 +3837,17 @@ function mergeFlightLog(mainSs, opSs) {
   const opSheet   = getSheet(opSs,   'Журнал польоту');
   if (!mainSheet || !opSheet) return;
 
-  // Зібрати існуючі ID з основної
+  // Зібрати існуючі рядки основної (18 колонок: включно з _TS_NOTE, col R)
   const mainIds = new Set();
+  let mainRows = [];
   if (mainSheet.getLastRow() >= 3) {
-    mainSheet.getRange(3, 1, mainSheet.getLastRow() - 2, 1)
-      .getValues().flat().forEach(id => mainIds.add(String(id).trim()));
+    mainRows = mainSheet.getRange(3, 1, mainSheet.getLastRow() - 2, 18).getDisplayValues();
+    mainRows.forEach(r => { const id = String(r[0]).trim(); if (id) mainIds.add(id); });
   }
 
   // Знайти нові рядки в операторській
   if (opSheet.getLastRow() >= 3) {
-    const opData = opSheet.getRange(3, 1, opSheet.getLastRow() - 2, 17).getDisplayValues();
+    const opData = opSheet.getRange(3, 1, opSheet.getLastRow() - 2, 18).getDisplayValues();
     opData.forEach(row => {
       const id = String(row[0]).trim();
       if (id && !mainIds.has(id)) {
@@ -3799,11 +3855,10 @@ function mergeFlightLog(mainSs, opSs) {
         mainIds.add(id);
       } else if (id && mainIds.has(id)) {
         // Оновити статус і час завершення якщо змінились
-        const mainRows = mainSheet.getRange(3, 1, mainSheet.getLastRow() - 2, 17).getValues();
         const idx = mainRows.findIndex(r => String(r[0]).trim() === id);
         if (idx !== -1) {
           const mainRow = mainRows[idx];
-          // Колонки: Кінець=K(11,idx10), Статус=L(12,idx11), Примітка=M(13,idx12)
+          // Колонки: Кінець=K(11,idx10), Статус=L(12,idx11), Примітка=M(13,idx12), _TS_NOTE=R(18,idx17)
           // Оновлюємо кінець якщо в основній порожній
           if (String(row[10]) && !String(mainRow[10])) {
             mainSheet.getRange(3 + idx, 11).setValue(row[10]);
@@ -3812,19 +3867,50 @@ function mergeFlightLog(mainSs, opSs) {
           if (String(row[11]) && String(row[11]) !== 'Активний' && String(mainRow[11]) === 'Активний') {
             mainSheet.getRange(3 + idx, 12).setValue(row[11]);
           }
+          // Примітка: новіша (за _TS_NOTE) перемагає, щоб push не стирав операторську
+          const opNote    = String(row[12] || '');
+          const opNoteTs  = String(row[17] || '').trim();
+          const mnNote    = String(mainRow[12] || '');
+          const mnNoteTs  = String(mainRow[17] || '').trim();
+          if (opNote !== mnNote) {
+            const opNewer = opNoteTs && (!mnNoteTs || opNoteTs > mnNoteTs);
+            // Без жодної мітки часу не губимо єдину наявну примітку
+            const fillEmpty = !mnNote && opNote && !mnNoteTs && !opNoteTs;
+            if (opNewer || fillEmpty) {
+              mainSheet.getRange(3 + idx, 13).setValue(opNote);
+              mainSheet.getRange(3 + idx, 18).setValue(opNoteTs || nowTS());
+            }
+          }
         }
       }
     });
   }
 
   // Push оновленого журналу назад в операторську
-  pushSheet(mainSs, opSs, 'Журнал польоту', 17);
+  pushSheet(mainSs, opSs, 'Журнал польоту', 18);
+}
+
+// Міграція: додати приховані колонки міток часу приміток, якщо їх ще немає
+function ensureNoteTsColumns(ss) {
+  const fl = getSheet(ss, 'Журнал польоту');
+  if (fl && String(fl.getRange(2, 18).getValue()) !== '_TS_NOTE') {
+    if (fl.getMaxColumns() < 18) fl.insertColumnsAfter(fl.getMaxColumns(), 18 - fl.getMaxColumns());
+    fl.getRange(2, 18).setValue('_TS_NOTE');
+    try { fl.hideColumns(18); } catch(e) {}
+  }
+  const snt = getSheet(ss, 'Sinotrack');
+  if (snt && String(snt.getRange(2, 10).getValue()) !== '_TS_NOTE') {
+    if (snt.getMaxColumns() < 10) snt.insertColumnsAfter(snt.getMaxColumns(), 10 - snt.getMaxColumns());
+    snt.getRange(2, 10).setValue('_TS_NOTE');
+    try { snt.hideColumns(10); } catch(e) {}
+  }
 }
 
 // Двосторонній merge по ID + timestamp (новіша версія перемагає).
 // numCols — кількість колонок даних, tsCol — номер колонки timestamp (1-based).
-// lostProtect — назва статусу що незворотній (для Sinotrack 'Втрачений').
-function mergeByTimestamp(mainSs, opSs, sheetName, numCols, tsCol, idGen) {
+// noteCol/noteTsCol (опційно) — примітка зливається окремо за власною міткою часу,
+// щоб зміна примітки на одній таблиці не губилась через новіший рядок на іншій.
+function mergeByTimestamp(mainSs, opSs, sheetName, numCols, tsCol, noteCol, noteTsCol) {
   const mainSheet = getSheet(mainSs, sheetName);
   const opSheet   = getSheet(opSs,   sheetName);
   if (!mainSheet || !opSheet) return;
@@ -3860,6 +3946,23 @@ function mergeByTimestamp(mainSs, opSs, sheetName, numCols, tsCol, idGen) {
     const oTs = String(o.row[tsCol - 1] || '');
     // Незворотній "Втрачений" для Sinotrack (статус col 3) / SIM (col 4)
     const winner = (oTs > mTs) ? o.row.slice() : m.row.slice();
+    // Примітка зливається окремо — за власною міткою часу
+    if (noteCol && noteTsCol) {
+      const loser    = (oTs > mTs) ? m.row : o.row;
+      const wNote    = String(winner[noteCol - 1] || '');
+      const wNoteTs  = String(winner[noteTsCol - 1] || '').trim();
+      const lNote    = String(loser[noteCol - 1] || '');
+      const lNoteTs  = String(loser[noteTsCol - 1] || '').trim();
+      if (lNote !== wNote) {
+        if (lNoteTs && (!wNoteTs || lNoteTs > wNoteTs)) {
+          winner[noteCol - 1]   = loser[noteCol - 1];
+          winner[noteTsCol - 1] = loser[noteTsCol - 1];
+        } else if (!wNote && lNote && !wNoteTs && !lNoteTs) {
+          // Без жодної мітки часу — не губимо єдину наявну примітку
+          winner[noteCol - 1] = loser[noteCol - 1];
+        }
+      }
+    }
     merged.push(winner);
   });
 
@@ -3880,9 +3983,9 @@ function mergeByTimestamp(mainSs, opSs, sheetName, numCols, tsCol, idGen) {
   protectSheetExceptHeaders(opSheet, sheetName + ' — редагуй через меню');
 }
 
-// Merge Sinotrack — двосторонній по timestamp (col 9)
+// Merge Sinotrack — двосторонній по timestamp (col 9), примітка окремо (col 8 / _TS_NOTE col 10)
 function mergeSinotrack(mainSs, opSs) {
-  mergeByTimestamp(mainSs, opSs, 'Sinotrack', 9, 9);
+  mergeByTimestamp(mainSs, opSs, 'Sinotrack', 10, 9, 8, 10);
 }
 
 // Merge SIM-карти — двосторонній по timestamp (col 6)
