@@ -1011,6 +1011,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('✈️ Польоти')
     .addItem('🚀 Відкрити застосунок', 'openApp')
+    .addItem('🌐 Веб-застосунок', 'openWebApp')
     .addSeparator()
     .addItem('✈️ Журнал польоту', 'openFlightLogForm')
     .addItem('📡 Sinotrack', 'openSinotrackForm')

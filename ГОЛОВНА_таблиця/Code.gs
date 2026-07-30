@@ -758,6 +758,7 @@ function onOpen() {
   // Меню Польоти — для всіх
   ui.createMenu('✈️ Польоти')
     .addItem('🚀 Відкрити застосунок', 'openApp')
+    .addItem('🌐 Веб-застосунок', 'openWebApp')
     .addSeparator()
     .addItem('✈️ Журнал польоту', 'openFlightLogForm')
     .addItem('📡 Sinotrack', 'openSinotrackForm')
@@ -815,14 +816,6 @@ function onOpen() {
       .addItem('🔒 Захистити Sinotrack та SIM-карти', 'protectSinotrackSheets'))
     .addToUi();
   } // end if userIsAdmin
-
-  ui.createMenu('✈️ Польоти')
-    .addItem('🚀 Відкрити застосунок', 'openApp')
-    .addSeparator()
-    .addItem('✈️ Журнал польоту', 'openFlightLogForm')
-    .addItem('📡 Sinotrack', 'openSinotrackForm')
-    .addItem('📻 Частоти', 'openFrequencyForm')
-    .addToUi();
 }
 
 // ============================================================
