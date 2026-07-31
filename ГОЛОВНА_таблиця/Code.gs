@@ -1294,7 +1294,7 @@ function getInventoryList() {
   const ss  = SpreadsheetApp.getActiveSpreadsheet();
   const inv = getSheet(ss, 'Інвентар');
   if (!inv || inv.getLastRow() < 3) return [];
-  return inv.getRange(3, 1, inv.getLastRow() - 2, COLS.KIT).getValues()
+  return inv.getRange(3, 1, inv.getLastRow() - 2, COLS.NOTE).getDisplayValues()
     .filter(row => String(row[0]).trim() !== '')
     .map(row => ({
       id:          String(row[0]),
@@ -1303,8 +1303,25 @@ function getInventoryList() {
       assignment:  String(row[3]),
       status:      String(row[4]),
       responsible: String(row[5]),
+      date:        String(row[COLS.DATE - 1] || ''),
       kit:         String(row[COLS.KIT - 1] || ''),
+      note:        String(row[COLS.NOTE - 1] || ''),
     }));
+}
+
+// Права поточного користувача на сторінці Інвентар веб-застосунку
+function getInventoryCaps() {
+  const email = Session.getActiveUser().getEmail() || '';
+  let admin = false;
+  try { admin = isAdmin(email); } catch(e) { admin = !!email && email === ADMIN_EMAIL; }
+  return { mode: 'full', admin: admin, email: email, statuses: STATUS_LIST };
+}
+
+// Видалити предмет з обліку через веб-застосунок — тільки адмін
+function webDeleteInventoryItem(id, reason) {
+  const email = Session.getActiveUser().getEmail() || '';
+  if (!isAdmin(email)) throw new Error('Видаляти предмети може тільки адміністратор');
+  return deleteItemsByIds([id], reason || 'Видалено через веб-застосунок');
 }
 
 // Виконати передачу

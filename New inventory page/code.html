@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="uk" style=""><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:ital,wght@0,400..700;1,400..700&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{try{
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "outline-variant": "#514532",
+                        "on-tertiary-fixed": "#1b0063",
+                        "secondary-fixed-dim": "#abc9f2",
+                        "on-tertiary-container": "#512bd4",
+                        "background": "#131313",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#5e4200",
+                        "surface-container-low": "#1c1b1b",
+                        "tertiary": "#e3dcff",
+                        "primary": "#ffdca1",
+                        "surface-dim": "#131313",
+                        "surface-container-highest": "#353534",
+                        "surface-container-high": "#2a2a2a",
+                        "on-primary": "#412d00",
+                        "inverse-surface": "#e5e2e1",
+                        "primary-container": "#ffb800",
+                        "tertiary-fixed": "#e6deff",
+                        "surface-container": "#201f1f",
+                        "error-container": "#93000a",
+                        "tertiary-container": "#c7bcff",
+                        "surface-bright": "#3a3939",
+                        "secondary-fixed": "#d2e4ff",
+                        "on-tertiary": "#30009b",
+                        "secondary": "#abc9f2",
+                        "inverse-on-surface": "#313030",
+                        "primary-fixed-dim": "#ffba20",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary": "#103253",
+                        "on-error": "#690005",
+                        "surface-container-lowest": "#0e0e0e",
+                        "surface-variant": "#353534",
+                        "surface": "#131313",
+                        "tertiary-fixed-dim": "#c9beff",
+                        "on-secondary-fixed-variant": "#2a486b",
+                        "inverse-primary": "#7c5800",
+                        "surface-tint": "#ffba20",
+                        "secondary-container": "#2a486b",
+                        "on-background": "#e5e2e1",
+                        "on-secondary-container": "#9ab7e0",
+                        "outline": "#9e8f78",
+                        "on-secondary-fixed": "#001c37",
+                        "on-tertiary-fixed-variant": "#4619ca",
+                        "on-primary-container": "#6b4c00",
+                        "on-surface-variant": "#d5c4ab",
+                        "on-primary-fixed": "#271900",
+                        "primary-fixed": "#ffdea8"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-desktop": "24px",
+                        "margin-mobile": "12px",
+                        "unit": "4px",
+                        "gutter": "16px",
+                        "panel-padding": "12px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Archivo Narrow"],
+                        "body-md": ["Archivo Narrow"],
+                        "data-mono": ["JetBrains Mono"],
+                        "display-lg": ["Archivo Narrow"],
+                        "label-caps": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "display-lg": ["48px", { "lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.1em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    }catch(_e){}}catch(_e){}</script></head><body class="font-body-md antialiased overflow-hidden flex h-screen"><header class="hidden md:flex fixed top-0 w-full z-50 items-center px-margin-desktop h-16 bg-background dark:bg-background border-b border-outline-variant flat no">
+<div class="font-headline-md text-headline-md font-bold text-primary tracking-tighter uppercase mr-auto">WILD HORNETS</div>
+<div class="flex items-center gap-4">
+<div class="hud-glow border-b border-outline-variant bg-surface px-3 py-1 flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-on-surface font-data-mono text-data-mono placeholder:text-outline-variant w-48" placeholder="ПОШУК..." type="text"/>
+</div>
+<div class="flex items-center gap-4 text-primary"><span class="material-symbols-outlined p-1 hover:bg-surface-container-highest transition-colors active:scale-95 duration-75 cursor-pointer rounded-full">home</span><span class="material-symbols-outlined p-1 hover:bg-surface-container-highest transition-colors active:scale-95 duration-75 cursor-pointer rounded-full">settings</span><span class="material-symbols-outlined p-1 hover:bg-surface-container-highest transition-colors active:scale-95 duration-75 cursor-pointer rounded-full">signal_cellular_alt</span></div>
+</div>
+</header>
+<!-- SideNavBar (Desktop) -->
+<nav class="hidden md:flex flex-col h-full w-[280px] bg-surface-container-lowest dark:bg-surface-container-lowest border-r border-outline-variant pt-20 pb-panel-padding px-panel-padding fixed left-0 top-0 z-40"><button class="absolute -right-3 top-24 w-6 h-6 bg-surface-container border border-outline-variant rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors z-50 active:scale-95">
+<span class="material-symbols-outlined text-[16px]">chevron_left</span>
+</button>
+<div class="mb-8 flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 bg-surface-container border border-outline-variant flex items-center justify-center relative overflow-hidden clip-t-r">
+<img alt="Unit Operator Avatar" class="absolute inset-0 w-full h-full object-cover opacity-50" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAu-2jizGmw9BdYWMzTL4n4ZQruwphooGdmj5AufkFPJB7jYWANtSO8QI_0uVKMOcYZtYvkH8CHdCI9cb8WO4ZBUaCOWVz-ub3Mvj4Pz9v-LTQ2e2TKNKw16ltRKLq4Lfbis-kqqPHdjyiW3oQkHxqht1z3ZJDRbZQOABBqCuEE_-0xqPXF36Pl53CQvBWo78Uiln2d39yZhTM-8MtzqAoAsYx8zeHz1KLUTzBPVUtNwDe0chD_nQgbDUSjxlWLSFqERU4s4R8-88R0"/>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-primary uppercase">СЕКТОР-7</h2>
+<div class="font-label-caps text-label-caps text-on-surface-variant flex items-center gap-1">
+<span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>
+                        ОПЕРАТИВНИЙ СТАН: АКТИВНИЙ
+                    </div>
+</div>
+</div>
+</div>
+<button class="w-full bg-primary-container text-on-primary-container font-bold py-2 px-4 mb-6 uppercase font-label-caps text-label-caps tracking-widest active:translate-x-1 duration-150 hover:bg-primary-fixed transition-colors border border-primary-container clip-t-r flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                НОВИЙ ВИЛІТ
+            </button>
+<div class="flex-1 flex flex-col gap-unit">
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface hover:text-primary hover:bg-surface-container-high transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">description</span>
+                Журнал польоту
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface hover:text-primary hover:bg-surface-container-high transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">settings_input_antenna</span>
+                Карта частот
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface hover:text-primary hover:bg-surface-container-high transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">location_on</span>
+                GPS Трекери
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 bg-primary-container text-on-primary-container font-bold font-label-caps text-label-caps uppercase active:scale-95 duration-75 transition-transform shadow-lg" href="#" style="clip-path: polygon(0px 0px, 100% 0px, 95% 100%, 0% 100%);">
+<span class="material-symbols-outlined text-[18px]" style='font-variation-settings: "FILL" 1;'>inventory_2</span>
+                Інвентар
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface hover:text-primary hover:bg-surface-container-high transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">group</span>
+                Екіпаж
+            </a>
+</div>
+<div class="mt-auto border-t border-outline-variant pt-4 flex flex-col gap-unit">
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface hover:text-primary hover:bg-surface-container-high transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">settings</span>
+                Налаштування
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-error hover:bg-error/10 transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">logout</span>
+                Вихід
+            </a>
+</div>
+</nav>
+<!-- TopAppBar (Mobile) -->
+<header class="md:hidden fixed top-0 w-full z-50 flex items-center px-margin-mobile h-16 bg-background border-b border-outline-variant"><div class="font-headline-md text-headline-md font-bold text-primary tracking-tighter mr-auto px-2">WILD HORNETS</div><div class="flex items-center gap-4 text-primary px-2"><span class="material-symbols-outlined cursor-pointer hover:text-on-surface transition-colors">home</span><span class="material-symbols-outlined cursor-pointer hover:text-on-surface transition-colors">settings</span><span class="material-symbols-outlined cursor-pointer hover:text-on-surface transition-colors">signal_cellular_alt</span><span class="material-symbols-outlined cursor-pointer hover:text-on-surface transition-colors">battery_charging_full</span></div></header>
+<!-- Main Content Area -->
+<main class="flex-1 md:ml-[280px] h-full overflow-y-auto bg-background pt-16 md:pt-0 p-margin-mobile md:p-margin-desktop md:pt-16">
+<!-- Header & Actions -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-2">
+<div>
+<h2 class="font-display-lg text-display-lg text-on-surface uppercase mb-2">УПРАВЛІННЯ ІНВЕНТАРЕМ</h2>
+<div class="flex gap-2 text-on-surface-variant font-data-mono text-data-mono">
+<span class="">СИСТЕМА: АКТИВНА</span>
+<span class="text-outline-variant">|</span>
+<span class="">СИНХРОНІЗАЦІЯ: 0.04s</span>
+</div>
+</div>
+<div class="flex gap-3 mb-2">
+<div class="hud-glow border-b border-outline-variant bg-surface px-3 py-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-on-surface font-data-mono text-data-mono placeholder:text-outline-variant w-48" placeholder="ПОШУК ID/СЕРІЙНИЙ..." type="text"/>
+</div>
+<button class="border border-outline-variant text-on-surface px-4 py-2 font-label-caps text-label-caps hover:bg-surface-container-high transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">filter_list</span>
+                    ФІЛЬТРИ
+                </button>
+</div>
+</div>
+<!-- Tabs Navigation -->
+<div class="flex border-b border-outline-variant/50 mb-4 font-label-caps text-label-caps overflow-x-auto"><button class="px-6 py-3 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors whitespace-nowrap">ЗАГАЛЬНИЙ ІНВЕНТАР</button><button class="px-6 py-3 text-primary border-b-2 border-primary bg-primary/5 whitespace-nowrap">ІНВЕНТАР ЕКІПАЖУ</button></div>
+<!-- TAB 1: General Inventory (Visible) -->
+<div class="block">
+<!-- Filter Chips -->
+<div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 bg-surface-container-low/30 p-3 border border-outline-variant/20"><div class="flex items-center gap-4"><span class="font-label-caps text-[10px] text-on-surface-variant">ВИБІР ПІДРОЗДІЛУ:</span><div class="relative group"><button class="flex items-center gap-3 px-4 py-1.5 bg-surface-container border border-primary text-primary font-label-caps text-[11px] hover:bg-primary/10 transition-colors"><span class="">ЕКІПАЖ АЛЬФА</span><span class="material-symbols-outlined text-[14px]">expand_more</span></button><div class="absolute top-full left-0 mt-1 w-48 bg-surface-container-highest border border-outline-variant shadow-lg hidden group-hover:block z-50"><div class="px-3 py-2 hover:bg-primary/10 hover:text-primary cursor-pointer border-b border-outline-variant/30 font-label-caps text-[10px] text-primary flex justify-between items-center"><span class="">Екіпаж Альфа</span><span class="text-[8px] opacity-70">(МІЙ)</span></div><div class="px-3 py-2 hover:bg-primary/10 hover:text-primary cursor-pointer border-b border-outline-variant/30 font-label-caps text-[10px] text-on-surface-variant flex justify-between items-center"><span class="">Екіпаж Браво</span><span class="text-[8px] opacity-50">(ПЕРЕГЛЯД)</span></div><div class="px-3 py-2 hover:bg-primary/10 hover:text-primary cursor-pointer font-label-caps text-[10px] text-on-surface-variant flex justify-between items-center"><span class="">Екіпаж Чарлі</span><span class="text-[8px] opacity-50">(ПЕРЕГЛЯД)</span></div></div></div></div><div class="flex items-center gap-2"><div class="flex items-center bg-surface-container border border-outline-variant p-1 rounded-l border-r-0"><button class="px-3 py-1 font-label-caps text-[10px] text-on-surface-variant hover:text-primary transition-colors">ПЕРЕГЛЯД</button><button class="px-3 py-1 font-label-caps text-[10px] bg-primary text-on-primary transition-colors">РЕДАГУВАННЯ</button></div><button class="bg-primary text-on-primary w-10 h-[30px] flex items-center justify-center hover:bg-primary-fixed transition-colors shadow-lg active:scale-95 rounded-r border-l border-primary" title="Додати одиницю"><span class="material-symbols-outlined text-[24px]">add</span></button></div></div>
+<!-- Inventory Table (Read Only) -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 overflow-hidden flex flex-col">
+<!-- Table Header -->
+<div class="grid grid-cols-12 gap-2 px-4 py-2 bg-surface-container-low border-b border-outline-variant/30 font-label-caps text-[10px] text-on-surface-variant">
+<div class="col-span-1">ID</div>
+<div class="col-span-2">НАЗВА</div>
+<div class="col-span-1">ТИП</div>
+<div class="col-span-2">ЗАКРІПЛЕННЯ</div>
+<div class="col-span-1">СТАТУС</div>
+<div class="col-span-2">ВІДПОВІДАЛЬНИЙ</div>
+<div class="col-span-1">ДАТА</div>
+<div class="col-span-1">КОМПЛ.</div>
+<div class="col-span-1">ПРИМІТКА</div>
+<div class="col-span-1 text-right">ДІЇ</div></div>
+<!-- Table Body -->
+<div class="flex-1 overflow-y-auto">
+<!-- Row 1 -->
+<div class="grid grid-cols-12 gap-2 px-4 py-3 items-center zebra-row font-data-mono text-[12px] text-on-surface border-b border-outline-variant/10"><div class="col-span-1 text-primary">D-001</div>
+<div class="col-span-2">Хорт-7</div>
+<div class="col-span-1 text-on-surface-variant">Камікадзе 7"</div>
+<div class="col-span-2">Екіпаж Альфа</div>
+<div class="col-span-1">
+<select class="bg-surface border border-outline-variant text-[9px] text-emerald-400 font-label-caps py-0 px-1 focus:ring-0 cursor-pointer">
+<option selected="">СПРАВНИЙ</option>
+<option>В РЕМОНТІ</option>
+<option>ВТРАЧЕНО</option>
+</select>
+</div>
+<div class="col-span-2">Сержант К.</div>
+<div class="col-span-1 text-on-surface-variant text-[10px]">2023-10-21</div>
+<div class="col-span-1">БАТ-2, VTX</div>
+<div class="col-span-1 text-on-surface-variant text-[10px] truncate">-</div>
+<div class="col-span-1 flex justify-end gap-1 transition-opacity">
+<button class="text-emerald-400 hover:bg-emerald-500/10 p-1 rounded" title="Прийняти"><span class="material-symbols-outlined text-[16px]">check_circle</span></button>
+<button class="text-primary hover:bg-primary/10 p-1 rounded" title="Списати"><span class="material-symbols-outlined text-[16px]">cancel</span></button>
+<button class="text-error hover:bg-error/10 p-1 rounded" title="Видалити"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+</div></div>
+<!-- Row 2 -->
+<div class="grid grid-cols-12 gap-2 px-4 py-3 items-center zebra-row font-data-mono text-[12px] text-on-surface border-b border-outline-variant/10"><div class="col-span-1 text-primary">T-112</div>
+<div class="col-span-2">A9G Модуль</div>
+<div class="col-span-1 text-on-surface-variant">GPS Трекер</div>
+<div class="col-span-2">Екіпаж Альфа (Борт D-001)</div>
+<div class="col-span-1">
+<select class="bg-surface border border-outline-variant text-[9px] text-emerald-400 font-label-caps py-0 px-1 focus:ring-0 cursor-pointer">
+<option selected="">АКТИВНИЙ</option>
+<option>ОФЛАЙН</option>
+<option>ПОМИЛКА</option>
+</select>
+</div>
+<div class="col-span-2">Сержант К.</div>
+<div class="col-span-1 text-on-surface-variant text-[10px]">2023-10-22</div>
+<div class="col-span-1">SIM-1</div>
+<div class="col-span-1 text-on-surface-variant text-[10px] truncate">Заряд 80%</div>
+<div class="col-span-1 flex justify-end gap-1 transition-opacity">
+<button class="text-emerald-400 hover:bg-emerald-500/10 p-1 rounded" title="Прийняти"><span class="material-symbols-outlined text-[16px]">check_circle</span></button>
+<button class="text-primary hover:bg-primary/10 p-1 rounded" title="Списати"><span class="material-symbols-outlined text-[16px]">cancel</span></button>
+<button class="text-error hover:bg-error/10 p-1 rounded" title="Видалити"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+</div></div>
+<!-- Row 3 -->
+<div class="grid grid-cols-12 gap-2 px-4 py-3 items-center zebra-row font-data-mono text-[12px] text-on-surface border-b border-outline-variant/10"><div class="col-span-1 text-primary">D-045</div>
+<div class="col-span-2">Грім-10</div>
+<div class="col-span-1 text-on-surface-variant">Бомбер 10"</div>
+<div class="col-span-2 text-on-surface-variant">Резерв Бази</div>
+<div class="col-span-1">
+<select class="bg-surface border border-outline-variant text-[9px] text-primary-container font-label-caps py-0 px-1 focus:ring-0 cursor-pointer">
+<option>СПРАВНИЙ</option>
+<option selected="">В РЕМОНТІ</option>
+<option>ВТРАЧЕНО</option>
+</select>
+</div>
+<div class="col-span-2">Рем. Батальйон</div>
+<div class="col-span-1 text-on-surface-variant text-[10px]">2023-10-15</div>
+<div class="col-span-1">-</div>
+<div class="col-span-1 text-on-surface-variant text-[10px] truncate">Заміна моторів</div>
+<div class="col-span-1 flex justify-end gap-1 transition-opacity">
+<button class="text-emerald-400 hover:bg-emerald-500/10 p-1 rounded" title="Прийняти"><span class="material-symbols-outlined text-[16px]">check_circle</span></button>
+<button class="text-primary hover:bg-primary/10 p-1 rounded" title="Списати"><span class="material-symbols-outlined text-[16px]">cancel</span></button>
+<button class="text-error hover:bg-error/10 p-1 rounded" title="Видалити"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+</div></div>
+</div>
+</div>
+</div>
+<!-- TAB 2: Crew Inventory (Hidden by default, included for structure) -->
+<div class="hidden">
+<!-- Crew Admin Header -->
+<div class="flex flex-col md:flex-row justify-between items-center bg-surface-container-low border border-outline-variant/50 p-4 mb-4">
+<div class="flex items-center gap-4 mb-4 md:mb-0">
+<span class="font-label-caps text-on-surface-variant">ПОТОЧНИЙ ЕКІПАЖ:</span>
+<select class="bg-surface border border-outline-variant text-on-surface font-headline-md text-headline-md px-3 py-1 focus:border-primary focus:ring-0">
+<option>АЛЬФА</option>
+<option>БРАВО</option>
+<option>ЧАРЛІ</option>
+</select>
+</div>
+<div class="flex gap-2"><button class="bg-surface-container-highest border border-primary text-primary font-label-caps text-label-caps px-4 py-2 hover:bg-primary/10 transition-colors flex items-center gap-2 active:scale-95"><span class="material-symbols-outlined text-[18px]">admin_panel_settings</span> РЕЖИМ РЕДАГУВАННЯ: АКТИВНИЙ</button>
+<button class="bg-surface-container-high border border-outline-variant text-on-surface font-label-caps text-label-caps px-4 py-2 hover:bg-surface-bright transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">link</span> ПРИВ'ЯЗАТИ ТРЕКЕР
+                    </button>
+<button class="bg-primary-container text-on-primary font-label-caps text-label-caps px-4 py-2 hover:bg-primary transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]" style='font-variation-settings: "FILL" 1;'>add</span> ДОДАТИ БОРТ
+                    </button>
+<button class="bg-primary text-on-primary font-label-caps text-label-caps px-4 py-2 hover:bg-primary-fixed transition-colors flex items-center gap-2 shadow-lg"><span class="material-symbols-outlined text-[18px]">add_box</span> ДОДАТИ ОДИНИЦЮ</button></div>
+</div>
+<!-- Crew Inventory Table -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 overflow-hidden flex flex-col">
+<!-- Table Header -->
+<div class="grid grid-cols-12 gap-4 px-4 py-2 bg-surface-container-low border-b border-outline-variant/30 font-label-caps text-[10px] text-on-surface-variant">
+<div class="col-span-2">ID ОДИНИЦІ</div>
+<div class="col-span-3">ТИП / МОДЕЛЬ</div>
+<div class="col-span-2">СТАТУС</div>
+<div class="col-span-3">ПРИВ'ЯЗКА</div>
+<div class="col-span-2 text-right">ДІЇ</div>
+</div>
+<!-- Table Body (Editable) -->
+<div class="flex-1 overflow-y-auto">
+<!-- Row 1: Drone -->
+<div class="grid grid-cols-12 gap-4 px-4 py-3 items-center zebra-row font-data-mono text-data-mono text-on-surface">
+<div class="col-span-2 text-primary">DRN-7X-001</div>
+<div class="col-span-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">flight</span>
+<span class="">Камікадзе FPV 7"</span>
+</div>
+</div>
+<div class="col-span-2">
+<div class="inline-flex items-center border border-outline-variant bg-surface pl-1 pr-2 py-[2px]">
+<div class="w-1 h-3 bg-emerald-500 mr-2"></div>
+<span class="text-[10px] text-emerald-400">СПРАВНИЙ</span>
+</div>
+</div>
+<div class="col-span-3 text-[12px] text-on-surface-variant flex flex-col">
+<span class="">ТРЕКЕР: <span class="text-on-surface">TRK-A9-112</span></span>
+</div>
+<div class="col-span-2 flex justify-end gap-2 transition-opacity">
+<button class="p-1 hover:text-primary transition-colors"><span class="material-symbols-outlined text-[18px]">edit</span></button>
+<button class="p-1 hover:text-error transition-colors"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors" title="Списати"><span class="material-symbols-outlined text-[18px]">cancel</span></button><button class="p-1 text-error hover:bg-error/10 rounded transition-colors" title="Видалити"><span class="material-symbols-outlined text-[18px]">delete_forever</span></button></div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- -->
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const viewBtn = document.querySelector('button:contains("ПЕРЕГЛЯД")') || document.querySelectorAll('.flex.items-center.bg-surface-container button')[0];
+    const editBtn = document.querySelector('button:contains("РЕДАГУВАННЯ")') || document.querySelectorAll('.flex.items-center.bg-surface-container button')[1];
+    const addBtn = document.querySelector('button.bg-primary.text-on-primary.w-10');
+    const actionColumns = document.querySelectorAll('.grid-cols-12 > div:last-child');
+    const statusSelects = document.querySelectorAll('.grid-cols-12 select');
+
+    function setMode(isEdit) {
+      if (isEdit) {
+        editBtn.classList.add('bg-primary', 'text-on-primary');
+        editBtn.classList.remove('text-on-surface-variant');
+        viewBtn.classList.remove('bg-primary', 'text-on-primary');
+        viewBtn.classList.add('text-on-surface-variant');
+        addBtn.style.display = 'flex';
+        statusSelects.forEach(s => s.disabled = false);
+        actionColumns.forEach(col => col.style.opacity = '1');
+      } else {
+        viewBtn.classList.add('bg-primary', 'text-on-primary');
+        viewBtn.classList.remove('text-on-surface-variant');
+        editBtn.classList.remove('bg-primary', 'text-on-primary');
+        editBtn.classList.add('text-on-surface-variant');
+        addBtn.style.display = 'none';
+        statusSelects.forEach(s => s.disabled = true);
+        actionColumns.forEach(col => col.style.opacity = '0');
+      }
+    }
+
+    viewBtn.addEventListener('click', () => setMode(false));
+    editBtn.addEventListener('click', () => setMode(true));
+
+    // Initialize in Edit mode as per current HTML state
+    setMode(true);
+  });
+</script></body></html>

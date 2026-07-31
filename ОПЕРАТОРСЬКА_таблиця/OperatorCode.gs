@@ -434,7 +434,7 @@ function getInventoryList() {
   const ss  = SpreadsheetApp.getActiveSpreadsheet();
   const inv = getSheet(ss, 'Інвентар');
   if (!inv || inv.getLastRow() < 3) return [];
-  return inv.getRange(3, 1, inv.getLastRow() - 2, COLS.KIT).getValues()
+  return inv.getRange(3, 1, inv.getLastRow() - 2, COLS.NOTE).getDisplayValues()
     .filter(row => String(row[0]).trim() !== '')
     .map(row => ({
       id:          String(row[0]),
@@ -443,8 +443,38 @@ function getInventoryList() {
       assignment:  String(row[3]),
       status:      String(row[4]),
       responsible: String(row[5]),
+      date:        String(row[COLS.DATE - 1] || ''),
       kit:         String(row[COLS.KIT - 1] || ''),
+      note:        String(row[COLS.NOTE - 1] || ''),
     }));
+}
+
+// Права на сторінці Інвентар веб-застосунку — в операторській таблиці
+// можна лише міняти статуси (синк переносить їх в основну по STATUS_TS)
+function getInventoryCaps() {
+  const email = Session.getActiveUser().getEmail() || '';
+  return { mode: 'status-only', admin: false, email: email,
+    statuses: ['Робочий', 'Ремонт', 'На перевірці', 'Несправний', 'Втрачений', 'Списаний', 'Резерв'] };
+}
+
+// Змінити статус предмета через веб-застосунок.
+// Пише статус + STATUS_TS в локальний Інвентар; синхронізація перенесе в основну таблицю.
+function updateItemStatusById(d) {
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const inv = getSheet(ss, 'Інвентар');
+  if (!inv || inv.getLastRow() < 3) throw new Error('Інвентар не знайдено');
+  const ids = inv.getRange(3, COLS.ID, inv.getLastRow() - 2, 1).getValues().flat().map(String);
+  const idx = ids.indexOf(String(d.id));
+  if (idx === -1) throw new Error('ID не знайдено: ' + d.id);
+  const row = idx + 3;
+  try {
+    setItemStatus(inv, row, d.status);
+  } catch(e) {
+    // Аркуш захищений «тільки читання» — знімаємо захист і повторюємо
+    try { inv.getProtections(SpreadsheetApp.ProtectionType.SHEET).forEach(p => p.remove()); } catch(e2) {}
+    setItemStatus(inv, row, d.status);
+  }
+  return 'Статус ' + d.id + ' → ' + d.status + ' (синхронізується з основною таблицею)';
 }
 // Отримати список трекерів
 function getSinotrackList() {
