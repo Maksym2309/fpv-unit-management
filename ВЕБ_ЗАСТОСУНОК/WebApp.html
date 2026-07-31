@@ -1384,7 +1384,7 @@ function renderInventory(c) {
       return '<option value="'+esc(cr.id)+'"'+(cr.id===invCrewSel?' selected':'')+'>'+esc(cr.id)+(cr.bind?' ['+esc(cr.bind)+']':'')+'</option>';
     }).join('');
     var addDroneBtn = (invMode==='edit' && canEdit && S.invCaps.mode!=='status-only' && invIsAdmin() && invCrewSel)
-      ? '<button class="btn btn-mini btn-green" onclick="invAddDroneToCrewModal()">➕ Додати борт</button>' : '';
+      ? '<button class="btn btn-mini btn-green" onclick="invAddDroneToCrewModal()">➕ Додати</button>' : '';
     crewBar = '<div class="inv-crew-bar">'+
       '<label>Вибір підрозділу:</label>'+
       (crews.length
@@ -1416,12 +1416,6 @@ function renderInventory(c) {
 function invSetMode(m) { invMode = m; renderView(); }
 function invSetTab(t) { invTab = t; renderView(); }
 
-// Чи можна предмет додати до екіпажу (борти)
-function invIsDrone(it) {
-  var t = String(it.type||'');
-  return t.indexOf('FPV')===0 || t.indexOf('STNG')===0 || t.indexOf('WING')===0;
-}
-
 function invStatusSelectHtml(it) {
   var cur = String(it.status||'').trim();
   var sts = invStatuses();
@@ -1435,11 +1429,20 @@ function invStatusSelectHtml(it) {
   return '<select class="inv-status-sel" data-id="'+esc(it.id)+'" onchange="invChangeStatus(this)"'+busy+'>'+opts.join('')+'</select>';
 }
 
-// В якому активному екіпажі зараз предмет (по пулу бортів)
+// Слот предмета в екіпажі: борт / наземка / спорядження
+function invSlotOf(it) {
+  var t = String(it.type||'');
+  if (t.indexOf('FPV')===0 || t.indexOf('STNG')===0 || t.indexOf('WING')===0) return 'drone';
+  if (t.indexOf('GNST')===0) return 'gnst';
+  return 'equip';
+}
+
+// В якому активному екіпажі зараз предмет (борти, наземка або спорядження)
 function invItemCrew(id) {
   return activeCrews().find(function(c){
     var dl = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }) : [];
-    return dl.indexOf(id) !== -1;
+    var eq = c.equip  ? c.equip.split('|').map(function(s){ return s.trim(); })  : [];
+    return dl.indexOf(id) !== -1 || eq.indexOf(id) !== -1 || String(c.gnst||'').trim() === id;
   }) || null;
 }
 
@@ -1450,13 +1453,11 @@ function invActionsHtml(it) {
   var h = '<div class="inv-acts">';
   h += '<button class="inv-act inv-act--ok" title="Прийняти обладнання (стати відповідальним)" onclick="invAcceptItem(this.dataset.id)" data-id="'+esc(it.id)+'">✓</button>';
   if (invIsAdmin()) {
-    if (invIsDrone(it)) {
-      // Одна кнопка-перемикач: в екіпажі → прибрати (✕), поза екіпажем → додати (+)
-      var inCrew = invItemCrew(it.id);
-      h += inCrew
-        ? '<button class="inv-act inv-act--crew" title="Прибрати з екіпажу '+esc(inCrew.id)+'" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">✕</button>'
-        : '<button class="inv-act inv-act--crew" title="Додати до екіпажу" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">+</button>';
-    }
+    // Одна кнопка-перемикач: в екіпажі → прибрати (✕), поза екіпажем → додати (+)
+    var inCrew = invItemCrew(it.id);
+    h += inCrew
+      ? '<button class="inv-act inv-act--crew" title="Прибрати з екіпажу '+esc(inCrew.id)+'" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">✕</button>'
+      : '<button class="inv-act inv-act--crew" title="Додати до екіпажу" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">+</button>';
     h += '<button class="inv-act inv-act--del" title="Видалити з обліку" onclick="invDelete(this.dataset.id)" data-id="'+esc(it.id)+'">🗑</button>';
   }
   return h + '</div>';
@@ -1472,26 +1473,56 @@ function invCrewToggle(id) {
 function invRemoveFromCrew(id, crewId) {
   var c = crewById(crewId);
   if (!c) return;
+  // Визначаємо, в якому слоті екіпажу цей предмет
   var dl = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
-  var rest = dl.filter(function(x){ return x !== id; });
-  var warn = rest.length ? '' : '\n⚠ Це останній борт у пулі — екіпаж лишиться без бортів.';
-  if (!confirm('✕ Прибрати '+id+' з пулу екіпажу '+crewId+'?'+warn)) return;
+  var eq = c.equip  ? c.equip.split('|').map(function(s){ return s.trim(); }).filter(Boolean)  : [];
+  var patch = null, warn = '';
+  if (dl.indexOf(id) !== -1) {
+    var rest = dl.filter(function(x){ return x !== id; });
+    if (!rest.length) warn = '\n⚠ Це останній борт у пулі — екіпаж лишиться без бортів.';
+    patch = { drones: rest.join('|') };
+  } else if (String(c.gnst||'').trim() === id) {
+    patch = { gnst: '' };
+  } else if (eq.indexOf(id) !== -1) {
+    patch = { equip: eq.filter(function(x){ return x !== id; }).join('|') };
+  }
+  if (!patch) return;
+  if (!confirm('✕ Прибрати '+id+' з екіпажу '+crewId+'?'+warn)) return;
   if (invBusy[id]) return;
   invBusy[id] = true; renderInvTable();
-  rpc('updateCrew', [crewId, { drones: rest.join('|') }], function(){
-    c.drones = rest.join('|');
+  rpc('updateCrew', [crewId, patch], function(){
+    if (patch.drones !== undefined) c.drones = patch.drones;
+    if (patch.gnst   !== undefined) c.gnst   = patch.gnst;
+    if (patch.equip  !== undefined) c.equip  = patch.equip;
     delete invBusy[id];
     toast('✕ '+id+' прибрано з '+crewId);
     renderView();
   }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
 }
 
-// Предмети інвентарю вибраного екіпажу (борти пулу + наземка)
+// Патч додавання предмета у відповідний слот екіпажу (null → потрібне підтвердження заміни наземки)
+function invBuildAddPatch(it, c) {
+  var slot = invSlotOf(it);
+  if (slot === 'drone') {
+    var dl = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+    return { drones: dl.concat([it.id]).join('|') };
+  }
+  if (slot === 'gnst') {
+    var cur = String(c.gnst||'').trim();
+    if (cur && cur !== it.id && !confirm('📡 В екіпажі вже наземка '+cur+'. Замінити на '+it.id+'?')) return null;
+    return { gnst: it.id };
+  }
+  var eq = c.equip ? c.equip.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+  return { equip: eq.concat([it.id]).join('|') };
+}
+
+// Предмети інвентарю вибраного екіпажу (борти пулу + наземка + спорядження)
 function invCrewItems() {
   var c = crewById(invCrewSel);
   if (!c) return [];
   var ids = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
   if (c.gnst) ids.push(c.gnst.trim());
+  if (c.equip) ids = ids.concat(c.equip.split('|').map(function(s){ return s.trim(); }).filter(Boolean));
   return S.items.filter(function(it){ return ids.indexOf(it.id) !== -1; });
 }
 
@@ -1660,54 +1691,84 @@ function invDelete(id) {
   }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
 }
 
-// ── Додати борт до екіпажу (адмін) ──
+// ── Додати предмет до екіпажу (адмін): вибір екіпажу ──
 function invAddToCrew(id) {
   var crews = activeCrews();
   if (!crews.length) { toast('⚠ Немає активних екіпажів', true); return; }
+  var cur = invItemCrew(id);
   var opts = crews.map(function(c){
     var dl = c.drones ? c.drones.split('|').filter(Boolean) : [];
-    var inCrew = dl.indexOf(id) !== -1;
+    var inCrew = cur && cur.id === c.id;
     return '<option value="'+esc(c.id)+'"'+(inCrew?' disabled':'')+'>'+esc(c.id)+(c.bind?' ['+esc(c.bind)+']':'')+' — '+dl.length+' борт.'+(inCrew?' (вже там)':'')+'</option>';
   }).join('');
   openModal('👥 '+esc(id)+' → екіпаж',
     '<div class="f"><label>Екіпаж</label><select id="acCrew">'+opts+'</select></div>'+
-    '<button class="btn btn-green" id="acBtn" onclick="doAddToCrew(\''+esc(id)+'\')">➕ Додати в пул екіпажу</button>'
+    '<button class="btn btn-green" id="acBtn" onclick="doAddToCrew(\''+esc(id)+'\')">➕ Додати в екіпаж</button>'
   );
+}
+
+// Патч прибирання предмета з відповідного слоту екіпажу
+function invBuildRemovePatch(id, c) {
+  var dl = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+  var eq = c.equip  ? c.equip.split('|').map(function(s){ return s.trim(); }).filter(Boolean)  : [];
+  if (dl.indexOf(id) !== -1) return { drones: dl.filter(function(x){ return x !== id; }).join('|') };
+  if (String(c.gnst||'').trim() === id) return { gnst: '' };
+  if (eq.indexOf(id) !== -1) return { equip: eq.filter(function(x){ return x !== id; }).join('|') };
+  return null;
+}
+
+function invApplyCrewPatch(c, patch) {
+  if (patch.drones !== undefined) c.drones = patch.drones;
+  if (patch.gnst   !== undefined) c.gnst   = patch.gnst;
+  if (patch.equip  !== undefined) c.equip  = patch.equip;
+  if (patch.tracker!== undefined) c.tracker= patch.tracker;
 }
 function doAddToCrew(id) {
   var crewId = $('acCrew').value;
   var c = crewById(crewId);
   if (!c) { toast('❌ Екіпаж не знайдено', true); return; }
-  var dl = c.drones ? c.drones.split('|').filter(Boolean) : [];
-  if (dl.indexOf(id) !== -1) { toast('⚠ '+id+' вже в пулі '+crewId, true); return; }
+  var it = S.items.find(function(x){ return x.id === id; });
+  if (!it) return;
+  if (invItemCrew(id) && invItemCrew(id).id === crewId) { toast('⚠ '+id+' вже в '+crewId, true); return; }
+  var patch = invBuildAddPatch(it, c);
+  if (!patch) return;
   var btn = $('acBtn');
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Запис…'; }
-  var drones = dl.concat([id]).join('|');
-  rpc('updateCrew', [crewId, { drones: drones }], function(){
-    c.drones = drones;
+  rpc('updateCrew', [crewId, patch], function(){
+    if (patch.drones !== undefined) c.drones = patch.drones;
+    if (patch.gnst   !== undefined) c.gnst   = patch.gnst;
+    if (patch.equip  !== undefined) c.equip  = patch.equip;
     toast('✅ '+id+' додано до '+crewId);
     closeModal(); renderView();
   }, function(e){
-    if (btn) { btn.disabled = false; btn.textContent = '➕ Додати в пул екіпажу'; }
+    if (btn) { btn.disabled = false; btn.textContent = '➕ Додати в екіпаж'; }
     toast('❌ '+e.message, true);
   });
 }
 
-// ── Додати борт до вибраного екіпажу (кнопка на вкладці екіпажу) ──
-// Пошук за ID/назвою; борт з іншого екіпажу позначений 🔒 і переводиться з підтвердженням
+// ── Додати до вибраного екіпажу (кнопка на вкладці екіпажу) ──
+// Пошук по всьому інвентарю (борти, наземки, щогли, екрани…) + Sinotrack трекери.
+// Предмет з іншого екіпажу позначений 🔒 і переводиться з підтвердженням.
 function invAddDroneToCrewModal() {
   var c = crewById(invCrewSel);
   if (!c) { toast('⚠ Обери екіпаж', true); return; }
-  openModal('➕ Борт → '+esc(invCrewSel),
-    '<div class="f"><label>Пошук борту (ID або назва)</label>'+
+  openModal('➕ Додати → '+esc(invCrewSel),
+    '<div class="f"><label>Пошук (ID або назва)</label>'+
       '<div class="ac-wrap">'+
-        '<input type="text" id="adSearch" placeholder="напр. FPV-101 або Hornet…" oninput="invAdFilter()" onfocus="invAdFilter()" autocomplete="off">'+
+        '<input type="text" id="adSearch" placeholder="борт, наземка, трекер, щогла, екран…" oninput="invAdFilter()" onfocus="invAdFilter()" autocomplete="off">'+
         '<div class="ac-list" id="adDd"></div>'+
       '</div>'+
     '</div>'+
-    '<div class="hint">🔒 борт з іншого екіпажу — вибір запропонує перевести його сюди</div>'
+    '<div class="hint">🔒 предмет з іншого екіпажу — вибір запропонує перевести його сюди</div>'
   );
   setTimeout(function(){ var i = $('adSearch'); if (i) { i.focus(); invAdFilter(); } }, 60);
+}
+
+// В якому активному екіпажі зараз трекер
+function invTrackerCrew(id) {
+  return activeCrews().find(function(c){
+    return (c.tracker||'').split('|').map(function(s){ return s.trim(); }).indexOf(id) !== -1;
+  }) || null;
 }
 
 function invAdFilter() {
@@ -1715,15 +1776,27 @@ function invAdFilter() {
   if (!dd) return;
   var q = $('adSearch').value.toLowerCase().trim();
   var c = crewById(invCrewSel);
-  var inThis = c && c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
-  var list = S.items.filter(function(it){
-    return invIsDrone(it) && inThis.indexOf(it.id) === -1 &&
+  if (!c) return;
+  var inThis = (c.drones||'').split('|').concat((c.equip||'').split('|'), [c.gnst||''])
+    .map(function(s){ return s.trim(); }).filter(Boolean);
+  var thisTrks = (c.tracker||'').split('|').map(function(s){ return s.trim(); }).filter(Boolean);
+
+  // Інвентар: усі типи, крім тих що вже в цьому екіпажі
+  var items = S.items.filter(function(it){
+    return inThis.indexOf(it.id) === -1 &&
       (!q || it.id.toLowerCase().indexOf(q) !== -1 || it.name.toLowerCase().indexOf(q) !== -1);
-  }).slice(0, 10);
-  if (!list.length) { dd.style.display = 'none'; return; }
-  dd.innerHTML = list.map(function(it){
+  }).slice(0, 9);
+  // Sinotrack трекери, крім тих що вже в цьому екіпажі
+  var trks = S.trackers.filter(function(t){
+    return thisTrks.indexOf(t.id) === -1 &&
+      (!q || t.id.toLowerCase().indexOf(q) !== -1 || (t.imei||'').toLowerCase().indexOf(q) !== -1 ||
+       (t.model||'').toLowerCase().indexOf(q) !== -1);
+  }).slice(0, 5);
+
+  if (!items.length && !trks.length) { dd.style.display = 'none'; return; }
+  var html = items.map(function(it){
     var other = invItemCrew(it.id);
-    return '<div class="ac-item" onmousedown="invAdPick(this.dataset.id)" data-id="'+esc(it.id)+'">'+
+    return '<div class="ac-item" onmousedown="invAdPick(this.dataset.id, \'item\')" data-id="'+esc(it.id)+'">'+
       '<div class="ac-id">'+esc(it.id)+' — '+esc(it.name)+
         (other ? ' <span style="color:var(--accent)">🔒 '+esc(other.id)+'</span>' : '')+
       '</div>'+
@@ -1733,40 +1806,85 @@ function invAdFilter() {
       '</div>'+
     '</div>';
   }).join('');
+  html += trks.map(function(t){
+    var other = invTrackerCrew(t.id);
+    return '<div class="ac-item" onmousedown="invAdPick(this.dataset.id, \'trk\')" data-id="'+esc(t.id)+'">'+
+      '<div class="ac-id">📡 '+esc(t.imei||t.id)+' — '+esc(t.model||'')+
+        (other ? ' <span style="color:var(--accent)">🔒 '+esc(other.id)+'</span>' : '')+
+      '</div>'+
+      '<div class="ac-meta">'+esc(t.status)+
+        (t.simContact ? ' · '+esc(t.simContact) : ' · без SIM')+
+        (t.binding ? ' · борт '+esc(t.binding) : '')+
+      '</div>'+
+    '</div>';
+  }).join('');
+  dd.innerHTML = html;
   dd.style.display = 'block';
 }
 
-function invAdPick(id) {
+function invAdPick(id, kind) {
   var target = crewById(invCrewSel);
-  if (!target) return;
-  var tl = target.drones ? target.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
-  if (tl.indexOf(id) !== -1) { toast('⚠ '+id+' вже в пулі '+target.id, true); return; }
-  var other = invItemCrew(id);
-  if (invBusy[id]) return;
+  if (!target || invBusy[id]) return;
 
-  function addToTarget() {
-    var drones = tl.concat([id]).join('|');
-    rpc('updateCrew', [target.id, { drones: drones }], function(){
-      target.drones = drones;
+  if (kind === 'trk') {
+    // ── Sinotrack трекер → пул трекерів екіпажу ──
+    var tl = (target.tracker||'').split('|').map(function(s){ return s.trim(); }).filter(Boolean);
+    if (tl.indexOf(id) !== -1) { toast('⚠ '+id+' вже в '+target.id, true); return; }
+    var otherC = invTrackerCrew(id);
+    function addTrk() {
+      var patch = { tracker: tl.concat([id]).join('|') };
+      rpc('updateCrew', [target.id, patch], function(){
+        invApplyCrewPatch(target, patch);
+        delete invBusy[id];
+        toast('📡 '+id+' додано до '+target.id);
+        closeModal(); renderView();
+      }, function(e){ delete invBusy[id]; toast('❌ '+e.message, true); });
+    }
+    if (otherC) {
+      if (!confirm('🔒 Трекер '+id+' зараз в екіпажі '+otherC.id+'.\nПеревести в '+target.id+'?')) return;
+      invBusy[id] = true;
+      var rest = (otherC.tracker||'').split('|').map(function(s){ return s.trim(); }).filter(Boolean)
+        .filter(function(x){ return x !== id; }).join('|');
+      rpc('updateCrew', [otherC.id, { tracker: rest }], function(){
+        otherC.tracker = rest;
+        addTrk();
+      }, function(e){ delete invBusy[id]; toast('❌ '+e.message, true); });
+    } else {
+      invBusy[id] = true;
+      addTrk();
+    }
+    return;
+  }
+
+  // ── Предмет інвентарю → відповідний слот (борт / наземка / спорядження) ──
+  var it = S.items.find(function(x){ return x.id === id; });
+  if (!it) return;
+  var cur = invItemCrew(id);
+  if (cur && cur.id === target.id) { toast('⚠ '+id+' вже в '+target.id, true); return; }
+
+  function addItem() {
+    var patch = invBuildAddPatch(it, target);
+    if (!patch) { delete invBusy[id]; return; }
+    rpc('updateCrew', [target.id, patch], function(){
+      invApplyCrewPatch(target, patch);
       delete invBusy[id];
       toast('✅ '+id+' додано до '+target.id);
       closeModal(); renderView();
     }, function(e){ delete invBusy[id]; toast('❌ '+e.message, true); });
   }
 
-  if (other) {
-    // Переведення між екіпажами: спитати, прибрати зі старого, додати сюди
-    if (!confirm('🔒 '+id+' зараз в екіпажі '+other.id+'.\nПеревести в '+target.id+'?')) return;
+  if (cur) {
+    if (!confirm('🔒 '+id+' зараз в екіпажі '+cur.id+'.\nПеревести в '+target.id+'?')) return;
+    var rm = invBuildRemovePatch(id, cur);
+    if (!rm) return;
     invBusy[id] = true;
-    var rest = other.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean)
-      .filter(function(x){ return x !== id; }).join('|');
-    rpc('updateCrew', [other.id, { drones: rest }], function(){
-      other.drones = rest;
-      addToTarget();
+    rpc('updateCrew', [cur.id, rm], function(){
+      invApplyCrewPatch(cur, rm);
+      addItem();
     }, function(e){ delete invBusy[id]; toast('❌ '+e.message, true); });
   } else {
     invBusy[id] = true;
-    addToTarget();
+    addItem();
   }
 }
 

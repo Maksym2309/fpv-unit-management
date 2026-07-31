@@ -3285,7 +3285,7 @@ function getFlightList() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) return [];
-  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 17).getValues()
+  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 19).getValues()
     .filter(row => String(row[0]).trim() !== '')
     .map(row => ({
       id:           String(row[0]),
@@ -3305,6 +3305,7 @@ function getFlightList() {
       system:       String(row[14] || ''),
       freq:         String(row[15] || ''),
       reserves:     String(row[16] || ''),
+      equip:        String(row[18] || ''), // col S — Спорядження екіпажу (щогли, екрани…)
     }));
 }
 
@@ -3363,7 +3364,7 @@ function getCrewList() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) return [];
-  const rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 17).getValues();
+  const rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 19).getValues();
   // Унікальні екіпажі по полю crew (col 3) — беремо тільки рядки де це "crew definition"
   // Crew definition: рядки де col 9 (start) порожнє — це заголовки екіпажу
   const crews = {};
@@ -3380,6 +3381,7 @@ function getCrewList() {
         system:  String(r[14] || ''),  // col O — Відеосистема
         freq:    String(r[15] || ''),  // col P — Частота
         reserves: String(r[16] || ''), // col Q — Резервні VTX
+        equip:   String(r[18] || ''),  // col S — Спорядження
       };
     }
   });
@@ -3419,7 +3421,9 @@ function createCrew(data) {
     data.freq||'',             // P:Частота
     data.reserves||'',         // Q:Резервні VTX (через |)
   ]);
-  if (data.note) touchFlightNote(sheet, sheet.getLastRow());
+  const newRow = sheet.getLastRow();
+  if (data.note) touchFlightNote(sheet, newRow);
+  if (data.equip) sheet.getRange(newRow, 19).setValue(data.equip); // col S — Спорядження
   return crewId;
   });
 }
@@ -3441,6 +3445,7 @@ function updateCrew(crewId, data) {
   if (data.system  !== undefined) sheet.getRange(row, 15).setValue(data.system); // col O
   if (data.freq    !== undefined) sheet.getRange(row, 16).setValue(data.freq);   // col P
   if (data.reserves!== undefined) sheet.getRange(row, 17).setValue(data.reserves); // col Q
+  if (data.equip   !== undefined) sheet.getRange(row, 19).setValue(data.equip);  // col S — Спорядження
   return { id: crewId };
 }
 
@@ -3641,15 +3646,15 @@ function createFlightLogSheet(ss) {
   const sheet = ss.insertSheet('Журнал польоту');
   const headers = ['ID вильоту','Дата','Екіпаж','Наземна станція','Борти','Bind фраза',
     'Відповідальна особа','Sinotrack','Трекер ОК','Початок','Кінець','Статус','Примітка','Автор',
-    'Відеосистема','Частота','Резервні VTX','_TS_NOTE'];
-  const widths  = [100,100,120,160,180,130,140,120,90,80,80,100,200,180,130,90,180,10];
+    'Відеосистема','Частота','Резервні VTX','_TS_NOTE','Спорядження'];
+  const widths  = [100,100,120,160,180,130,140,120,90,80,80,100,200,180,130,90,180,10,160];
 
   sheet.getRange('A1:Q1').merge()
     .setValue('✈️ ЖУРНАЛ ПОЛЬОТУ')
     .setBackground('#1a3a5c').setFontColor('#fff')
     .setFontSize(13).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.setRowHeight(1, 38);
-  sheet.getRange(2, 1, 1, 18).setValues([headers])
+  sheet.getRange(2, 1, 1, 19).setValues([headers])
     .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
   sheet.setRowHeight(2, 28);
   widths.forEach((w, i) => sheet.setColumnWidth(i + 1, w));
@@ -3802,7 +3807,7 @@ function rebuildOperatorFlightLog() {
   // Синхронізувати дані
   const mainSs = SpreadsheetApp.getActiveSpreadsheet();
   ensureNoteTsColumns(mainSs);
-  pushSheet(mainSs, opSs, 'Журнал польоту', 18);
+  pushSheet(mainSs, opSs, 'Журнал польоту', 19);
   SpreadsheetApp.getUi().alert('✅ Журнал польоту в операторській таблиці перестворено!');
 }
 
@@ -3847,17 +3852,17 @@ function mergeFlightLog(mainSs, opSs) {
   const opSheet   = getSheet(opSs,   'Журнал польоту');
   if (!mainSheet || !opSheet) return;
 
-  // Зібрати існуючі рядки основної (18 колонок: включно з _TS_NOTE, col R)
+  // Зібрати існуючі рядки основної (19 колонок: _TS_NOTE col R + Спорядження col S)
   const mainIds = new Set();
   let mainRows = [];
   if (mainSheet.getLastRow() >= 3) {
-    mainRows = mainSheet.getRange(3, 1, mainSheet.getLastRow() - 2, 18).getDisplayValues();
+    mainRows = mainSheet.getRange(3, 1, mainSheet.getLastRow() - 2, 19).getDisplayValues();
     mainRows.forEach(r => { const id = String(r[0]).trim(); if (id) mainIds.add(id); });
   }
 
   // Знайти нові рядки в операторській
   if (opSheet.getLastRow() >= 3) {
-    const opData = opSheet.getRange(3, 1, opSheet.getLastRow() - 2, 18).getDisplayValues();
+    const opData = opSheet.getRange(3, 1, opSheet.getLastRow() - 2, 19).getDisplayValues();
     opData.forEach(row => {
       const id = String(row[0]).trim();
       if (id && !mainIds.has(id)) {
@@ -3897,16 +3902,21 @@ function mergeFlightLog(mainSs, opSs) {
   }
 
   // Push оновленого журналу назад в операторську
-  pushSheet(mainSs, opSs, 'Журнал польоту', 18);
+  pushSheet(mainSs, opSs, 'Журнал польоту', 19);
 }
 
-// Міграція: додати приховані колонки міток часу приміток, якщо їх ще немає
+// Міграція: додати колонки, яких ще немає (мітки часу приміток + спорядження)
 function ensureNoteTsColumns(ss) {
   const fl = getSheet(ss, 'Журнал польоту');
   if (fl && String(fl.getRange(2, 18).getValue()) !== '_TS_NOTE') {
     if (fl.getMaxColumns() < 18) fl.insertColumnsAfter(fl.getMaxColumns(), 18 - fl.getMaxColumns());
     fl.getRange(2, 18).setValue('_TS_NOTE');
     try { fl.hideColumns(18); } catch(e) {}
+  }
+  if (fl && String(fl.getRange(2, 19).getValue()) !== 'Спорядження') {
+    if (fl.getMaxColumns() < 19) fl.insertColumnsAfter(fl.getMaxColumns(), 19 - fl.getMaxColumns());
+    fl.getRange(2, 19).setValue('Спорядження')
+      .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
   }
   const snt = getSheet(ss, 'Sinotrack');
   if (snt && String(snt.getRange(2, 10).getValue()) !== '_TS_NOTE') {

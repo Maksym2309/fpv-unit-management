@@ -516,7 +516,7 @@ function getFlightList() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) return [];
-  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 17).getValues()
+  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 19).getValues()
     .filter(row => String(row[0]).trim() !== '')
     .map(row => ({
       id:           String(row[0]),
@@ -536,6 +536,7 @@ function getFlightList() {
       system:       String(row[14] || ''),
       freq:         String(row[15] || ''),
       reserves:     String(row[16] || ''),
+      equip:        String(row[18] || ''), // col S — Спорядження екіпажу (щогли, екрани…)
     }));
 }
 // Отримати список екіпажів
@@ -543,7 +544,7 @@ function getCrewList() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) return [];
-  const rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 17).getValues();
+  const rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 19).getValues();
   // Унікальні екіпажі по полю crew (col 3) — беремо тільки рядки де це "crew definition"
   // Crew definition: рядки де col 9 (start) порожнє — це заголовки екіпажу
   const crews = {};
@@ -560,6 +561,7 @@ function getCrewList() {
         system:  String(r[14] || ''),  // col O — Відеосистема
         freq:    String(r[15] || ''),  // col P — Частота
         reserves: String(r[16] || ''), // col Q — Резервні VTX
+        equip:   String(r[18] || ''),  // col S — Спорядження
       };
     }
   });
@@ -785,7 +787,9 @@ function createCrew(data) {
     data.freq||'',             // P:Частота
     data.reserves||'',         // Q:Резервні VTX (через |)
   ]);
-  if (data.note) touchFlightNote(sheet, sheet.getLastRow());
+  const newRow = sheet.getLastRow();
+  if (data.note) touchFlightNote(sheet, newRow);
+  if (data.equip) sheet.getRange(newRow, 19).setValue(data.equip); // col S — Спорядження
   return crewId;
   });
 }
@@ -806,6 +810,7 @@ function updateCrew(crewId, data) {
   if (data.system  !== undefined) sheet.getRange(row, 15).setValue(data.system); // col O
   if (data.freq    !== undefined) sheet.getRange(row, 16).setValue(data.freq);   // col P
   if (data.reserves!== undefined) sheet.getRange(row, 17).setValue(data.reserves); // col Q
+  if (data.equip   !== undefined) sheet.getRange(row, 19).setValue(data.equip);  // col S — Спорядження
   return { id: crewId };
 }
 // Оновити статус трекера
