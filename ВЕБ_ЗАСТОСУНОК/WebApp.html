@@ -211,16 +211,16 @@ textarea { height: 54px; resize: vertical; }
 .inv-mode-btn.active { background: var(--accent); color: var(--on-accent); }
 .inv-status-sel { width: 100%; min-width: 110px; background: var(--panel-3); border: 1px solid var(--line-2); color: var(--text); font-family: var(--font-data); font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 3px 4px; cursor: pointer; }
 .inv-status-sel:disabled { opacity: .5; cursor: wait; }
-.inv-act { background: transparent; border: 1px solid var(--line-2); border-radius: 50%; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; color: var(--muted); }
+.inv-act { background: transparent; border: 1px solid var(--line-2); border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; line-height: 1; padding: 0; color: var(--muted); flex-shrink: 0; }
 .inv-act:hover { background: var(--panel-3); }
 .inv-act:disabled { opacity: .4; cursor: wait; }
 .inv-act--ok { color: var(--green); border-color: var(--green); }
 .inv-act--ok:hover { background: var(--green-bg); }
-.inv-act--crew { color: var(--blue); border-color: var(--blue); }
-.inv-act--crew:hover { background: rgba(52,152,219,.15); }
+.inv-act--crew { color: var(--accent); border-color: var(--accent); }
+.inv-act--crew:hover { background: rgba(255,184,0,.12); }
 .inv-act--del { color: var(--red); border-color: var(--red); }
 .inv-act--del:hover { background: var(--red-bg); }
-.inv-acts { display: flex; gap: 4px; justify-content: flex-end; white-space: nowrap; }
+.inv-acts { display: flex; gap: 5px; margin-top: 6px; white-space: nowrap; }
 .inv-tabs { display: flex; border-bottom: 1px solid var(--line-2); margin-bottom: 12px; font-family: var(--font-data); }
 .inv-tab { padding: 8px 18px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; }
 .inv-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(255,184,0,.05); }
@@ -1435,19 +1435,55 @@ function invStatusSelectHtml(it) {
   return '<select class="inv-status-sel" data-id="'+esc(it.id)+'" onchange="invChangeStatus(this)"'+busy+'>'+opts.join('')+'</select>';
 }
 
+// В якому активному екіпажі зараз предмет (по пулу бортів)
+function invItemCrew(id) {
+  return activeCrews().find(function(c){
+    var dl = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }) : [];
+    return dl.indexOf(id) !== -1;
+  }) || null;
+}
+
 function invActionsHtml(it) {
   if (S.invCaps.mode === 'status-only') return '';
-  if (invBusy[it.id]) return '<span class="hint">⏳</span>';
-  // Дії однакові на обох вкладках. Списання — через статус «Списаний» у списку.
+  if (invBusy[it.id]) return '<div class="inv-acts"><span class="hint">⏳</span></div>';
+  // Дії під ID, однакові на обох вкладках. Списання — через статус «Списаний».
   var h = '<div class="inv-acts">';
   h += '<button class="inv-act inv-act--ok" title="Прийняти обладнання (стати відповідальним)" onclick="invAcceptItem(this.dataset.id)" data-id="'+esc(it.id)+'">✓</button>';
   if (invIsAdmin()) {
     if (invIsDrone(it)) {
-      h += '<button class="inv-act inv-act--crew" title="Додати до екіпажу" onclick="invAddToCrew(this.dataset.id)" data-id="'+esc(it.id)+'">👥</button>';
+      // Одна кнопка-перемикач: в екіпажі → прибрати (✕), поза екіпажем → додати (+)
+      var inCrew = invItemCrew(it.id);
+      h += inCrew
+        ? '<button class="inv-act inv-act--crew" title="Прибрати з екіпажу '+esc(inCrew.id)+'" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">✕</button>'
+        : '<button class="inv-act inv-act--crew" title="Додати до екіпажу" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">+</button>';
     }
     h += '<button class="inv-act inv-act--del" title="Видалити з обліку" onclick="invDelete(this.dataset.id)" data-id="'+esc(it.id)+'">🗑</button>';
   }
   return h + '</div>';
+}
+
+// Перемикач екіпажу: в екіпажі → прибрати з пулу, інакше → вибір екіпажу
+function invCrewToggle(id) {
+  var c = invItemCrew(id);
+  if (c) invRemoveFromCrew(id, c.id);
+  else invAddToCrew(id);
+}
+
+function invRemoveFromCrew(id, crewId) {
+  var c = crewById(crewId);
+  if (!c) return;
+  var dl = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+  var rest = dl.filter(function(x){ return x !== id; });
+  var warn = rest.length ? '' : '\n⚠ Це останній борт у пулі — екіпаж лишиться без бортів.';
+  if (!confirm('✕ Прибрати '+id+' з пулу екіпажу '+crewId+'?'+warn)) return;
+  if (invBusy[id]) return;
+  invBusy[id] = true; renderInvTable();
+  rpc('updateCrew', [crewId, { drones: rest.join('|') }], function(){
+    c.drones = rest.join('|');
+    delete invBusy[id];
+    toast('✕ '+id+' прибрано з '+crewId);
+    renderView();
+  }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
 }
 
 // Предмети інвентарю вибраного екіпажу (борти пулу + наземка)
@@ -1507,19 +1543,18 @@ function renderInvTable() {
   var edit = invMode === 'edit' && !!S.invCaps;
   var showActs = edit && S.invCaps.mode !== 'status-only';
 
-  var head = '<thead><tr><th>ID</th><th>Назва</th><th>Тип</th><th>Закріплення</th><th>Статус</th><th>Відповідальний</th><th>Дата</th><th>Компл.</th><th>Примітка</th>'+
-    (showActs ? '<th style="text-align:right">Дії</th>' : '')+'</tr></thead>';
-  var cols = showActs ? 10 : 9;
+  var head = '<thead><tr><th>ID'+(showActs?' / дії':'')+'</th><th>Назва</th><th>Тип</th><th>Закріплення</th><th>Статус</th><th>Відповідальний</th><th>Дата</th><th>Компл.</th><th>Примітка</th></tr></thead>';
+  var cols = 9;
 
   var rows = list.map(function(it){
-    return '<tr><td class="mono accent">'+esc(it.id)+'</td><td>'+esc(it.name)+'</td><td class="mono">'+esc(it.type)+'</td>'+
+    return '<tr><td class="mono accent">'+esc(it.id)+(showActs ? invActionsHtml(it) : '')+'</td>'+
+      '<td>'+esc(it.name)+'</td><td class="mono">'+esc(it.type)+'</td>'+
       '<td>'+esc(it.assignment)+'</td>'+
       '<td>'+(edit ? invStatusSelectHtml(it) : statusChip(it.status))+'</td>'+
       '<td>'+esc(it.responsible)+'</td>'+
       '<td class="mono">'+esc(it.date||'')+'</td>'+
       '<td class="mono">'+esc(it.kit)+'</td>'+
       '<td class="mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(it.note||'')+'">'+esc(it.note||'')+'</td>'+
-      (showActs ? '<td>'+invActionsHtml(it)+'</td>' : '')+
     '</tr>';
   }).join('');
 
@@ -1539,7 +1574,6 @@ function renderInvTable() {
         '<td class="mono"></td>'+
         '<td class="mono">'+esc(t.simContact||'')+'</td>'+
         '<td class="mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(t.note||'')+'">'+esc(t.note||'')+'</td>'+
-        (showActs ? '<td></td>' : '')+
       '</tr>';
     }).join('');
   }
