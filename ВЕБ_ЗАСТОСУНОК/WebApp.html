@@ -211,10 +211,22 @@ textarea { height: 54px; resize: vertical; }
 .inv-mode-btn.active { background: var(--accent); color: var(--on-accent); }
 .inv-status-sel { width: 100%; min-width: 110px; background: var(--panel-3); border: 1px solid var(--line-2); color: var(--text); font-family: var(--font-data); font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 3px 4px; cursor: pointer; }
 .inv-status-sel:disabled { opacity: .5; cursor: wait; }
-.inv-act { background: transparent; border: 1px solid transparent; cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 5px; }
-.inv-act:hover { border-color: var(--line-2); background: var(--panel-3); }
+.inv-act { background: transparent; border: 1px solid var(--line-2); border-radius: 50%; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; color: var(--muted); }
+.inv-act:hover { background: var(--panel-3); }
 .inv-act:disabled { opacity: .4; cursor: wait; }
-.inv-acts { display: flex; gap: 2px; justify-content: flex-end; white-space: nowrap; }
+.inv-act--ok { color: var(--green); border-color: var(--green); }
+.inv-act--ok:hover { background: var(--green-bg); }
+.inv-act--crew { color: var(--blue); border-color: var(--blue); }
+.inv-act--crew:hover { background: rgba(52,152,219,.15); }
+.inv-act--del { color: var(--red); border-color: var(--red); }
+.inv-act--del:hover { background: var(--red-bg); }
+.inv-acts { display: flex; gap: 4px; justify-content: flex-end; white-space: nowrap; }
+.inv-tabs { display: flex; border-bottom: 1px solid var(--line-2); margin-bottom: 12px; font-family: var(--font-data); }
+.inv-tab { padding: 8px 18px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; }
+.inv-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(255,184,0,.05); }
+.inv-crew-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; margin-bottom: 12px; }
+.inv-crew-bar label { font-family: var(--font-data); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.inv-crew-bar select { width: auto; min-width: 170px; }
 
 /* ── Карта частот ── */
 .freq-topbar { background: var(--panel); border: 1px solid var(--line); padding: 10px 14px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; margin-bottom: 12px; }
@@ -1315,9 +1327,12 @@ function doUnbindSim(trackerId) {
 /* ═══════════ ВИД: ІНВЕНТАР ═══════════ */
 var invFilter = { q:'', type:'all', status:'all' };
 var invMode = 'view';   // 'view' | 'edit'
+var invTab = 'all';     // 'all' — загальний | 'crew' — інвентар екіпажу
+var invCrewSel = '';    // вибраний екіпаж на вкладці екіпажу
 var invBusy = {};       // id → true поки виконується запит по рядку
 var myCallsign = '';    // запам'ятований позивний для «Прийняти»
 var INV_STATUSES = ['Робочий','Ремонт','На перевірці','Несправний','Втрачений','Списаний','Резерв'];
+var TRK_STATUSES = ['Робочий','Зламаний','Втрачений'];
 
 function invIsAdmin() { return !!(S.invCaps && S.invCaps.admin); }
 function invStatuses() { return (S.invCaps && S.invCaps.statuses && S.invCaps.statuses.length) ? S.invCaps.statuses : INV_STATUSES; }
@@ -1340,7 +1355,7 @@ function renderInventory(c) {
   } else if (S.invCaps.mode === 'status-only') {
     sub = S.items.length+' одиниць · редагування: статуси (синк переносить в основну таблицю)';
   } else if (invIsAdmin()) {
-    sub = S.items.length+' одиниць · редагування: статуси · прийняти · до екіпажу · списати · видалити';
+    sub = S.items.length+' одиниць · редагування: статуси (списання — через статус) · прийняти · до екіпажу · видалити';
   } else {
     sub = S.items.length+' одиниць · редагування: статуси · прийняти обладнання';
   }
@@ -1352,6 +1367,33 @@ function renderInventory(c) {
       '</div>'
     : '';
 
+  // Вкладки: загальний інвентар / інвентар екіпажу
+  var tabs = '<div class="inv-tabs">'+
+    '<button class="inv-tab'+(invTab==='all'?' active':'')+'" onclick="invSetTab(\'all\')">Загальний інвентар</button>'+
+    '<button class="inv-tab'+(invTab==='crew'?' active':'')+'" onclick="invSetTab(\'crew\')">Інвентар екіпажу</button>'+
+  '</div>';
+
+  // Панель вибору екіпажу (вкладка екіпажу)
+  var crewBar = '';
+  if (invTab === 'crew') {
+    var crews = activeCrews();
+    if (!invCrewSel || !crews.find(function(cr){ return cr.id === invCrewSel; })) {
+      invCrewSel = crews.length ? crews[0].id : '';
+    }
+    var crewOpts = crews.map(function(cr){
+      return '<option value="'+esc(cr.id)+'"'+(cr.id===invCrewSel?' selected':'')+'>'+esc(cr.id)+(cr.bind?' ['+esc(cr.bind)+']':'')+'</option>';
+    }).join('');
+    var addDroneBtn = (invMode==='edit' && canEdit && S.invCaps.mode!=='status-only' && invIsAdmin() && invCrewSel)
+      ? '<button class="btn btn-mini btn-green" onclick="invAddDroneToCrewModal()">➕ Додати борт</button>' : '';
+    crewBar = '<div class="inv-crew-bar">'+
+      '<label>Вибір підрозділу:</label>'+
+      (crews.length
+        ? '<select onchange="invCrewSel=this.value;renderView()">'+crewOpts+'</select>'
+        : '<span class="hint">Немає активних екіпажів</span>')+
+      addDroneBtn+
+    '</div>';
+  }
+
   c.innerHTML = '<div class="view-title">Інвентар <span class="accent">підрозділу</span></div>'+
     '<div class="view-sub">'+sub+'</div>'+
     '<div class="stat-row">'+
@@ -1360,9 +1402,11 @@ function renderInventory(c) {
       '<div class="stat-tile red"><div class="stat-num">'+((stats['Несправний']||0)+(stats['Втрачений']||0))+'</div><div class="stat-lbl">Несправні + втрачені</div></div>'+
       '<div class="stat-tile blue"><div class="stat-num">'+(stats['Резерв']||0)+'</div><div class="stat-lbl">Резерв</div></div>'+
     '</div>'+
+    tabs+
+    crewBar+
     '<div class="filter-row">'+
       '<input type="text" id="invSearch" placeholder="Пошук: ID, назва, відповідальний…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderInvTable()">'+
-      typeChips+
+      (invTab==='all' ? typeChips : '')+
       modeToggle+
     '</div>'+
     '<div class="table-wrap"><table class="data-table" id="invTable"></table></div>';
@@ -1370,6 +1414,7 @@ function renderInventory(c) {
 }
 
 function invSetMode(m) { invMode = m; renderView(); }
+function invSetTab(t) { invTab = t; renderView(); }
 
 // Чи можна предмет додати до екіпажу (борти)
 function invIsDrone(it) {
@@ -1393,22 +1438,69 @@ function invStatusSelectHtml(it) {
 function invActionsHtml(it) {
   if (S.invCaps.mode === 'status-only') return '';
   if (invBusy[it.id]) return '<span class="hint">⏳</span>';
+  // Дії однакові на обох вкладках. Списання — через статус «Списаний» у списку.
   var h = '<div class="inv-acts">';
-  h += '<button class="inv-act" title="Прийняти обладнання (стати відповідальним)" onclick="invAcceptItem(this.dataset.id)" data-id="'+esc(it.id)+'">✅</button>';
+  h += '<button class="inv-act inv-act--ok" title="Прийняти обладнання (стати відповідальним)" onclick="invAcceptItem(this.dataset.id)" data-id="'+esc(it.id)+'">✓</button>';
   if (invIsAdmin()) {
     if (invIsDrone(it)) {
-      h += '<button class="inv-act" title="Додати до екіпажу" onclick="invAddToCrew(this.dataset.id)" data-id="'+esc(it.id)+'">👥</button>';
+      h += '<button class="inv-act inv-act--crew" title="Додати до екіпажу" onclick="invAddToCrew(this.dataset.id)" data-id="'+esc(it.id)+'">👥</button>';
     }
-    h += '<button class="inv-act" title="Списати" onclick="invWriteOff(this.dataset.id)" data-id="'+esc(it.id)+'">📉</button>';
-    h += '<button class="inv-act" title="Видалити з обліку" onclick="invDelete(this.dataset.id)" data-id="'+esc(it.id)+'">🗑</button>';
+    h += '<button class="inv-act inv-act--del" title="Видалити з обліку" onclick="invDelete(this.dataset.id)" data-id="'+esc(it.id)+'">🗑</button>';
   }
   return h + '</div>';
 }
 
+// Предмети інвентарю вибраного екіпажу (борти пулу + наземка)
+function invCrewItems() {
+  var c = crewById(invCrewSel);
+  if (!c) return [];
+  var ids = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+  if (c.gnst) ids.push(c.gnst.trim());
+  return S.items.filter(function(it){ return ids.indexOf(it.id) !== -1; });
+}
+
+// Трекери вибраного екіпажу — рядки з власним списком статусів
+function invCrewTrackers() {
+  var c = crewById(invCrewSel);
+  if (!c || !c.tracker) return [];
+  var ids = c.tracker.split('|').map(function(s){ return s.trim(); }).filter(Boolean);
+  return S.trackers.filter(function(t){ return ids.indexOf(t.id) !== -1; });
+}
+
+function invTrkStatusSelectHtml(t) {
+  var cur = String(t.status||'').trim();
+  var opts = TRK_STATUSES.map(function(s){
+    return '<option value="'+esc(s)+'"'+(s===cur?' selected':'')+'>'+esc(s)+'</option>';
+  });
+  if (cur && TRK_STATUSES.indexOf(cur) === -1) {
+    opts.unshift('<option value="'+esc(cur)+'" selected>'+esc(cur)+'</option>');
+  }
+  var busy = invBusy[t.id] ? ' disabled' : '';
+  return '<select class="inv-status-sel" data-id="'+esc(t.id)+'" onchange="invTrkChangeStatus(this)"'+busy+'>'+opts.join('')+'</select>';
+}
+
+function invTrkChangeStatus(sel) {
+  var id = sel.dataset.id;
+  var t = S.trackers.find(function(x){ return x.id === id; });
+  if (!t) return;
+  var newSt = sel.value;
+  var oldSt = String(t.status||'').trim();
+  if (newSt === oldSt) return;
+  if (newSt === 'Втрачений' && !confirm('❗ Трекер '+id+' — ВТРАЧЕНИЙ? Це незворотньо, SIM теж стане втраченою.')) { sel.value = oldSt; return; }
+  invBusy[id] = true; renderInvTable();
+  rpc('updateSinotrackStatus', [id, newSt, ''], function(){
+    t.status = newSt;
+    delete invBusy[id];
+    toast('📡 '+id+': '+oldSt+' → '+newSt);
+    renderInvTable();
+  }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
+}
+
 function renderInvTable() {
   var q = invFilter.q.toLowerCase();
-  var list = S.items.filter(function(it){
-    if (invFilter.type !== 'all' && String(it.type||'').split('-')[0] !== invFilter.type) return false;
+  var source = invTab === 'crew' ? invCrewItems() : S.items;
+  var list = source.filter(function(it){
+    if (invTab === 'all' && invFilter.type !== 'all' && String(it.type||'').split('-')[0] !== invFilter.type) return false;
     if (q && (it.id+' '+it.name+' '+it.type+' '+it.responsible+' '+it.assignment).toLowerCase().indexOf(q) === -1) return false;
     return true;
   });
@@ -1430,6 +1522,28 @@ function renderInvTable() {
       (showActs ? '<td>'+invActionsHtml(it)+'</td>' : '')+
     '</tr>';
   }).join('');
+
+  // Вкладка екіпажу: додаємо рядки GPS трекерів екіпажу (свій список статусів)
+  if (invTab === 'crew') {
+    var trks = invCrewTrackers().filter(function(t){
+      if (q && ((t.imei||'')+' '+t.id+' '+(t.model||'')).toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+    rows += trks.map(function(t){
+      var c = crewById(invCrewSel);
+      var bind = t.binding ? 'Борт '+t.binding : (c ? c.id : '');
+      return '<tr><td class="mono accent">'+esc(t.imei||t.id)+'</td><td>'+esc(t.model||'')+'</td><td class="mono">GPS Трекер</td>'+
+        '<td>'+esc(bind)+'</td>'+
+        '<td>'+(edit ? invTrkStatusSelectHtml(t) : statusChip(t.status))+'</td>'+
+        '<td></td>'+
+        '<td class="mono"></td>'+
+        '<td class="mono">'+esc(t.simContact||'')+'</td>'+
+        '<td class="mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(t.note||'')+'">'+esc(t.note||'')+'</td>'+
+        (showActs ? '<td></td>' : '')+
+      '</tr>';
+    }).join('');
+  }
+
   $('invTable').innerHTML = head+
     '<tbody>'+(rows || '<tr><td colspan="'+cols+'" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
 }
@@ -1498,20 +1612,6 @@ function invAcceptItem(id) {
   }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
 }
 
-// ── Списання (адмін) ──
-function invWriteOff(id) {
-  if (!confirm('📉 Списати '+id+'? Статус стане «Списаний», відповідальний очиститься.')) return;
-  if (invBusy[id]) return;
-  invBusy[id] = true; renderInvTable();
-  rpc('updateItemStatusById', [{ id:id, status:'Списаний', comment:'Списано через веб-застосунок' }], function(){
-    var it = S.items.find(function(x){ return x.id === id; });
-    if (it) { it.status = 'Списаний'; it.responsible = ''; }
-    delete invBusy[id];
-    toast('📉 '+id+' списано');
-    renderView();
-  }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
-}
-
 // ── Видалення з обліку (адмін) ──
 function invDelete(id) {
   var reason = prompt('🗑 Видалити '+id+' з обліку БЕЗПОВОРОТНО?\nВкажи причину:', '');
@@ -1555,6 +1655,40 @@ function doAddToCrew(id) {
     closeModal(); renderView();
   }, function(e){
     if (btn) { btn.disabled = false; btn.textContent = '➕ Додати в пул екіпажу'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+// ── Додати борт до вибраного екіпажу (кнопка на вкладці екіпажу) ──
+function invAddDroneToCrewModal() {
+  var c = crewById(invCrewSel);
+  if (!c) { toast('⚠ Обери екіпаж', true); return; }
+  var inCrew = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+  var free = S.items.filter(function(it){ return invIsDrone(it) && inCrew.indexOf(it.id) === -1; });
+  if (!free.length) { toast('⚠ Немає вільних бортів', true); return; }
+  var opts = free.map(function(it){
+    return '<option value="'+esc(it.id)+'">'+esc(it.id)+' — '+esc(it.name)+' ('+esc(it.status)+')</option>';
+  }).join('');
+  openModal('➕ Борт → '+esc(invCrewSel),
+    '<div class="f"><label>Борт</label><select id="adDrone">'+opts+'</select></div>'+
+    '<button class="btn btn-green" id="adBtn" onclick="doAddDroneToCrew()">➕ Додати в пул '+esc(invCrewSel)+'</button>'
+  );
+}
+function doAddDroneToCrew() {
+  var id = $('adDrone').value;
+  var c = crewById(invCrewSel);
+  if (!c || !id) return;
+  var dl = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+  if (dl.indexOf(id) !== -1) { toast('⚠ '+id+' вже в пулі', true); return; }
+  var btn = $('adBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Запис…'; }
+  var drones = dl.concat([id]).join('|');
+  rpc('updateCrew', [c.id, { drones: drones }], function(){
+    c.drones = drones;
+    toast('✅ '+id+' додано до '+c.id);
+    closeModal(); renderView();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '➕ Додати в пул '+invCrewSel; }
     toast('❌ '+e.message, true);
   });
 }
