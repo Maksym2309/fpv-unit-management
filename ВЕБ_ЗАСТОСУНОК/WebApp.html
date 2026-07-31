@@ -1599,6 +1599,25 @@ function invTrkStatusSelectHtml(t) {
   return '<select class="inv-status-sel" data-id="'+esc(t.id)+'" onchange="invTrkChangeStatus(this)"'+busy+'>'+opts.join('')+'</select>';
 }
 
+// ✕ Прибрати трекер з пулу вибраного екіпажу
+function invRemoveTrkFromCrew(id) {
+  var c = crewById(invCrewSel);
+  if (!c) return;
+  var tl = (c.tracker||'').split('|').map(function(s){ return s.trim(); }).filter(Boolean);
+  if (tl.indexOf(id) === -1) return;
+  var t = S.trackers.find(function(x){ return x.id === id; });
+  if (!confirm('✕ Прибрати трекер '+((t&&t.imei)||id)+' з екіпажу '+c.id+'?')) return;
+  if (invBusy[id]) return;
+  invBusy[id] = true; renderInvTable();
+  var patch = { tracker: tl.filter(function(x){ return x !== id; }).join('|') };
+  rpc('updateCrew', [c.id, patch], function(){
+    invApplyCrewPatch(c, patch);
+    delete invBusy[id];
+    toast('✕ Трекер прибрано з '+c.id);
+    renderView();
+  }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
+}
+
 function invTrkChangeStatus(sel) {
   var id = sel.dataset.id;
   var t = S.trackers.find(function(x){ return x.id === id; });
@@ -1657,7 +1676,14 @@ function renderInvTable() {
     rows += trks.map(function(t){
       var c = crewById(invCrewSel);
       var bind = t.binding ? 'Борт '+t.binding : (c ? c.id : '');
-      return '<tr><td class="mono accent">'+esc(t.imei||t.id)+'</td><td>'+esc(t.model||'')+'</td><td class="mono">GPS Трекер</td>'+
+      // Дії трекера: ✕ прибрати з екіпажу (адмін) — та сама логіка, що й у предметів
+      var trkActs = '';
+      if (showActs && invIsAdmin()) {
+        trkActs = invBusy[t.id]
+          ? '<span class="hint">⏳</span>'
+          : '<div class="inv-acts"><button class="inv-act inv-act--crew" title="Прибрати трекер з екіпажу" onclick="invRemoveTrkFromCrew(this.dataset.id)" data-id="'+esc(t.id)+'">✕</button></div>';
+      }
+      return '<tr><td class="mono accent">'+esc(t.imei||t.id)+trkActs+'</td><td>'+esc(t.model||'')+'</td><td class="mono">GPS Трекер</td>'+
         '<td>'+esc(bind)+'</td>'+
         '<td>'+(edit ? invTrkStatusSelectHtml(t) : statusChip(t.status))+'</td>'+
         '<td></td>'+
