@@ -1694,37 +1694,80 @@ function doAddToCrew(id) {
 }
 
 // ── Додати борт до вибраного екіпажу (кнопка на вкладці екіпажу) ──
+// Пошук за ID/назвою; борт з іншого екіпажу позначений 🔒 і переводиться з підтвердженням
 function invAddDroneToCrewModal() {
   var c = crewById(invCrewSel);
   if (!c) { toast('⚠ Обери екіпаж', true); return; }
-  var inCrew = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
-  var free = S.items.filter(function(it){ return invIsDrone(it) && inCrew.indexOf(it.id) === -1; });
-  if (!free.length) { toast('⚠ Немає вільних бортів', true); return; }
-  var opts = free.map(function(it){
-    return '<option value="'+esc(it.id)+'">'+esc(it.id)+' — '+esc(it.name)+' ('+esc(it.status)+')</option>';
-  }).join('');
   openModal('➕ Борт → '+esc(invCrewSel),
-    '<div class="f"><label>Борт</label><select id="adDrone">'+opts+'</select></div>'+
-    '<button class="btn btn-green" id="adBtn" onclick="doAddDroneToCrew()">➕ Додати в пул '+esc(invCrewSel)+'</button>'
+    '<div class="f"><label>Пошук борту (ID або назва)</label>'+
+      '<div class="ac-wrap">'+
+        '<input type="text" id="adSearch" placeholder="напр. FPV-101 або Hornet…" oninput="invAdFilter()" onfocus="invAdFilter()" autocomplete="off">'+
+        '<div class="ac-list" id="adDd"></div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="hint">🔒 борт з іншого екіпажу — вибір запропонує перевести його сюди</div>'
   );
+  setTimeout(function(){ var i = $('adSearch'); if (i) { i.focus(); invAdFilter(); } }, 60);
 }
-function doAddDroneToCrew() {
-  var id = $('adDrone').value;
+
+function invAdFilter() {
+  var dd = $('adDd');
+  if (!dd) return;
+  var q = $('adSearch').value.toLowerCase().trim();
   var c = crewById(invCrewSel);
-  if (!c || !id) return;
-  var dl = c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
-  if (dl.indexOf(id) !== -1) { toast('⚠ '+id+' вже в пулі', true); return; }
-  var btn = $('adBtn');
-  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Запис…'; }
-  var drones = dl.concat([id]).join('|');
-  rpc('updateCrew', [c.id, { drones: drones }], function(){
-    c.drones = drones;
-    toast('✅ '+id+' додано до '+c.id);
-    closeModal(); renderView();
-  }, function(e){
-    if (btn) { btn.disabled = false; btn.textContent = '➕ Додати в пул '+invCrewSel; }
-    toast('❌ '+e.message, true);
-  });
+  var inThis = c && c.drones ? c.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+  var list = S.items.filter(function(it){
+    return invIsDrone(it) && inThis.indexOf(it.id) === -1 &&
+      (!q || it.id.toLowerCase().indexOf(q) !== -1 || it.name.toLowerCase().indexOf(q) !== -1);
+  }).slice(0, 10);
+  if (!list.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = list.map(function(it){
+    var other = invItemCrew(it.id);
+    return '<div class="ac-item" onmousedown="invAdPick(this.dataset.id)" data-id="'+esc(it.id)+'">'+
+      '<div class="ac-id">'+esc(it.id)+' — '+esc(it.name)+
+        (other ? ' <span style="color:var(--accent)">🔒 '+esc(other.id)+'</span>' : '')+
+      '</div>'+
+      '<div class="ac-meta">'+esc(it.status)+
+        (it.assignment ? ' · '+esc(it.assignment) : '')+
+        (it.responsible ? ' · 👤 '+esc(it.responsible) : '')+
+      '</div>'+
+    '</div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function invAdPick(id) {
+  var target = crewById(invCrewSel);
+  if (!target) return;
+  var tl = target.drones ? target.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+  if (tl.indexOf(id) !== -1) { toast('⚠ '+id+' вже в пулі '+target.id, true); return; }
+  var other = invItemCrew(id);
+  if (invBusy[id]) return;
+
+  function addToTarget() {
+    var drones = tl.concat([id]).join('|');
+    rpc('updateCrew', [target.id, { drones: drones }], function(){
+      target.drones = drones;
+      delete invBusy[id];
+      toast('✅ '+id+' додано до '+target.id);
+      closeModal(); renderView();
+    }, function(e){ delete invBusy[id]; toast('❌ '+e.message, true); });
+  }
+
+  if (other) {
+    // Переведення між екіпажами: спитати, прибрати зі старого, додати сюди
+    if (!confirm('🔒 '+id+' зараз в екіпажі '+other.id+'.\nПеревести в '+target.id+'?')) return;
+    invBusy[id] = true;
+    var rest = other.drones.split('|').map(function(s){ return s.trim(); }).filter(Boolean)
+      .filter(function(x){ return x !== id; }).join('|');
+    rpc('updateCrew', [other.id, { drones: rest }], function(){
+      other.drones = rest;
+      addToTarget();
+    }, function(e){ delete invBusy[id]; toast('❌ '+e.message, true); });
+  } else {
+    invBusy[id] = true;
+    addToTarget();
+  }
 }
 
 /* ═══════════ ВИД: ЕКІПАЖ ═══════════ */
