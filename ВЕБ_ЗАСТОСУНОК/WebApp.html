@@ -151,6 +151,9 @@ textarea { height: 54px; resize: vertical; }
 .stat-tile.green { border-left-color: var(--green); }
 .stat-tile.red { border-left-color: var(--red); }
 .stat-tile.blue { border-left-color: var(--blue); }
+.stat-tile.click { cursor: pointer; }
+.stat-tile.click:hover { background: var(--panel-3); }
+.stat-tile.active { background: var(--panel-3); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .stat-num { font-family: var(--font-data); font-size: 26px; font-weight: 700; color: var(--text); line-height: 1.1; }
 .stat-lbl { font-family: var(--font-data); font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .12em; margin-top: 2px; }
 
@@ -1337,6 +1340,18 @@ var TRK_STATUSES = ['Робочий','Зламаний','Втрачений'];
 function invIsAdmin() { return !!(S.invCaps && S.invCaps.admin); }
 function invStatuses() { return (S.invCaps && S.invCaps.statuses && S.invCaps.statuses.length) ? S.invCaps.statuses : INV_STATUSES; }
 
+// Список за поточними фільтрами (вкладка + тип + пошук), БЕЗ фільтра за статусом —
+// з нього рахуються плитки дашборду, тому вони синхронні з фільтрами
+function invBaseList() {
+  var q = invFilter.q.toLowerCase();
+  var source = invTab === 'crew' ? invCrewItems() : S.items;
+  return source.filter(function(it){
+    if (invTab === 'all' && invFilter.type !== 'all' && String(it.type||'').split('-')[0] !== invFilter.type) return false;
+    if (q && (it.id+' '+it.name+' '+it.type+' '+it.responsible+' '+it.assignment).toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  });
+}
+
 function renderInventory(c) {
   var types = {};
   S.items.forEach(function(it){ var t = String(it.type||'').split('-')[0]; if (t) types[t] = 1; });
@@ -1344,7 +1359,7 @@ function renderInventory(c) {
     return '<button class="filter-chip'+(invFilter.type===t?' active':'')+'" onclick="invFilter.type=\''+t+'\';renderView()">'+(t==='all'?'ВСІ':esc(t))+'</button>';
   }).join('');
   var stats = {};
-  S.items.forEach(function(it){ var s = String(it.status||'').trim(); stats[s] = (stats[s]||0)+1; });
+  invBaseList().forEach(function(it){ var s = String(it.status||'').trim(); stats[s] = (stats[s]||0)+1; });
 
   var canEdit = !!S.invCaps;
   var sub;
@@ -1397,10 +1412,10 @@ function renderInventory(c) {
   c.innerHTML = '<div class="view-title">Інвентар <span class="accent">підрозділу</span></div>'+
     '<div class="view-sub">'+sub+'</div>'+
     '<div class="stat-row">'+
-      '<div class="stat-tile green"><div class="stat-num">'+(stats['Робочий']||0)+'</div><div class="stat-lbl">Робочі</div></div>'+
-      '<div class="stat-tile"><div class="stat-num">'+(stats['Ремонт']||0)+'</div><div class="stat-lbl">В ремонті</div></div>'+
-      '<div class="stat-tile red"><div class="stat-num">'+((stats['Несправний']||0)+(stats['Втрачений']||0))+'</div><div class="stat-lbl">Несправні + втрачені</div></div>'+
-      '<div class="stat-tile blue"><div class="stat-num">'+(stats['Резерв']||0)+'</div><div class="stat-lbl">Резерв</div></div>'+
+      '<div class="stat-tile green click'+(invFilter.status==='Робочий'?' active':'')+'" onclick="invStatFilter(\'Робочий\')" title="Фільтр: Робочі"><div class="stat-num" id="stW">'+(stats['Робочий']||0)+'</div><div class="stat-lbl">Робочі</div></div>'+
+      '<div class="stat-tile click'+(invFilter.status==='Ремонт'?' active':'')+'" onclick="invStatFilter(\'Ремонт\')" title="Фільтр: В ремонті"><div class="stat-num" id="stR">'+(stats['Ремонт']||0)+'</div><div class="stat-lbl">В ремонті</div></div>'+
+      '<div class="stat-tile red click'+(invFilter.status==='broken'?' active':'')+'" onclick="invStatFilter(\'broken\')" title="Фільтр: Несправні + втрачені"><div class="stat-num" id="stB">'+((stats['Несправний']||0)+(stats['Втрачений']||0))+'</div><div class="stat-lbl">Несправні + втрачені</div></div>'+
+      '<div class="stat-tile blue click'+(invFilter.status==='Резерв'?' active':'')+'" onclick="invStatFilter(\'Резерв\')" title="Фільтр: Резерв"><div class="stat-num" id="stRes">'+(stats['Резерв']||0)+'</div><div class="stat-lbl">Резерв</div></div>'+
     '</div>'+
     tabs+
     crewBar+
@@ -1415,6 +1430,20 @@ function renderInventory(c) {
 
 function invSetMode(m) { invMode = m; renderView(); }
 function invSetTab(t) { invTab = t; renderView(); }
+
+// Клік по плитці дашборду — фільтр за статусом (повторний клік скидає)
+function invStatFilter(st) {
+  invFilter.status = invFilter.status === st ? 'all' : st;
+  renderView();
+}
+
+// Чи проходить статус поточний фільтр плиток
+function invStatusMatch(st) {
+  if (invFilter.status === 'all') return true;
+  st = String(st||'').trim();
+  if (invFilter.status === 'broken') return st === 'Несправний' || st === 'Втрачений' || st === 'Зламаний';
+  return st === invFilter.status;
+}
 
 function invStatusSelectHtml(it) {
   var cur = String(it.status||'').trim();
@@ -1565,12 +1594,17 @@ function invTrkChangeStatus(sel) {
 
 function renderInvTable() {
   var q = invFilter.q.toLowerCase();
-  var source = invTab === 'crew' ? invCrewItems() : S.items;
-  var list = source.filter(function(it){
-    if (invTab === 'all' && invFilter.type !== 'all' && String(it.type||'').split('-')[0] !== invFilter.type) return false;
-    if (q && (it.id+' '+it.name+' '+it.type+' '+it.responsible+' '+it.assignment).toLowerCase().indexOf(q) === -1) return false;
-    return true;
-  });
+  var base = invBaseList();
+
+  // Плитки дашборду синхронні з фільтрами (тип/пошук/вкладка)
+  var stats = {};
+  base.forEach(function(it){ var s = String(it.status||'').trim(); stats[s] = (stats[s]||0)+1; });
+  if ($('stW'))   $('stW').textContent   = stats['Робочий'] || 0;
+  if ($('stR'))   $('stR').textContent   = stats['Ремонт'] || 0;
+  if ($('stB'))   $('stB').textContent   = (stats['Несправний']||0) + (stats['Втрачений']||0);
+  if ($('stRes')) $('stRes').textContent = stats['Резерв'] || 0;
+
+  var list = base.filter(function(it){ return invStatusMatch(it.status); });
   var edit = invMode === 'edit' && !!S.invCaps;
   var showActs = edit && S.invCaps.mode !== 'status-only';
 
@@ -1593,6 +1627,7 @@ function renderInvTable() {
   if (invTab === 'crew') {
     var trks = invCrewTrackers().filter(function(t){
       if (q && ((t.imei||'')+' '+t.id+' '+(t.model||'')).toLowerCase().indexOf(q) === -1) return false;
+      if (!invStatusMatch(t.status)) return false;
       return true;
     });
     rows += trks.map(function(t){
