@@ -419,13 +419,15 @@ var BANDS = {
   '3.3G D (GepRC)':[3320,3345,3370,3395,3420,3445,3470,3495],
   '3.3G E (GepRC)':[3310,3330,3355,3380,3405,3430,3455,3480]
 };
-var S = { items:[], trackers:[], sims:[], flights:[], freq:null, me:'', admin:'', view:'flights', loadedAt:null, invCaps:null };
+// invCaps: undefined = ще не завантажені, null = бекенд без підтримки, обʼєкт = права
+var S = { items:[], trackers:[], sims:[], flights:[], freq:null, me:'', admin:'', view:'flights', loadedAt:null, invCaps:undefined };
 var DEMO = (typeof google === 'undefined' || !google.script);
 
 /* ═══════════ ДЕМО-ДАНІ (працює і без таблиці) ═══════════ */
 var DEMO_DATA = {
   getCurrentUserEmail: 'pilot@unit.mil',
   getAdminEmail: 'pilot@unit.mil',
+  createCrew: 'CRW-900',
   getInventoryCaps: { mode:'full', admin:true, email:'pilot@unit.mil',
     statuses:['Робочий','Ремонт','На перевірці','Несправний','Втрачений','Списаний','Резерв'] },
   getInventoryList: [
@@ -579,8 +581,16 @@ function freqWarn(sel) {
 
 /* ═══════════ ЗАВАНТАЖЕННЯ ДАНИХ ═══════════ */
 var _loading = 0;
+var _loadPending = false;   // запит на оновлення прийшов, поки тривало інше — виконати після
+var _loadStarted = 0;
 function loadAll(showToast) {
-  if (_loading) return;
+  if (_loading) {
+    // Якщо завантаження триває — не губимо запит, а ставимо в чергу.
+    // Якщо воно «застрягло» (>25 с без відповіді) — скидаємо і вантажимо заново.
+    if (Date.now() - _loadStarted < 25000) { _loadPending = true; return; }
+    _loading = 0;
+  }
+  _loadStarted = Date.now();
   _loading = 5;
   function done() {
     _loading--;
@@ -590,6 +600,7 @@ function loadAll(showToast) {
     updateTopStats();
     renderView();
     if (showToast) toast('✅ Дані оновлено');
+    if (_loadPending) { _loadPending = false; setTimeout(function(){ loadAll(); }, 200); }
   }
   rpc('getCurrentUserEmail', [], function(v){ S.me = v || ''; $('userEmail').textContent = S.me; done(); }, function(){ done(); });
   rpc('getAdminEmail', [], function(v){ S.admin = v || ''; done(); }, function(){ done(); });
@@ -598,12 +609,16 @@ function loadAll(showToast) {
   rpc('getFlightList', [], function(v){ S.flights = v || []; loadFreqAndSims(done); }, function(){ S.flights=[]; loadFreqAndSims(done); });
 }
 function loadFreqAndSims(done) {
-  var n = 3;
+  // Права на інвентар не змінюються — тягнемо один раз за сесію
+  var needCaps = S.invCaps === undefined;
+  var n = needCaps ? 3 : 2;
   function sub(){ n--; if (!n) done(); }
   rpc('getSimList', [], function(v){ S.sims = v || []; sub(); }, function(){ S.sims=[]; sub(); });
   rpc('getFrequencyAnalysis', [], function(v){ S.freq = v; sub(); }, function(){ S.freq=null; sub(); });
-  // Права на редагування інвентарю (старий бекенд без цієї функції → тільки перегляд)
-  rpc('getInventoryCaps', [], function(v){ S.invCaps = (v && v.mode) ? v : null; sub(); }, function(){ S.invCaps = null; sub(); });
+  if (needCaps) {
+    // Старий бекенд без цієї функції → тільки перегляд
+    rpc('getInventoryCaps', [], function(v){ S.invCaps = (v && v.mode) ? v : null; sub(); }, function(){ S.invCaps = null; sub(); });
+  }
 }
 function updateTopStats() {
   $('statCrews').textContent = activeCrews().length;
@@ -871,13 +886,22 @@ function doStartFlight() {
   if (busy[drone] && !confirm('⚠ Борт '+drone+' вже в повітрі ('+busy[drone]+'). Все одно злетіти?')) return;
   var c = crewById(crewId);
   var btn = $('nfBtn'); btn.disabled = true; btn.textContent = '⏳ Запис…';
+  var fltTrk = $('nfTrk') ? $('nfTrk').value : '';
+  var fltSystem = $('nfSystem').value, fltFreq = $('nfFreq').value;
   rpc('startFlight', [{
     crew: crewId, gnst: '', drones: drone, bind: '', pilot: pilot,
-    tracker: $('nfTrk') ? $('nfTrk').value : '', trackerOk: (c && c.trackerOk) || '',
-    note: '', system: $('nfSystem').value, freq: $('nfFreq').value
+    tracker: fltTrk, trackerOk: (c && c.trackerOk) || '',
+    note: '', system: fltSystem, freq: fltFreq
   }], function(res){
     closeModal();
     toast('🛫 Виліт '+ (res && res.id ? res.id : '') +' розпочато');
+    // Одразу показуємо виліт локально — без очікування перезавантаження
+    S.flights.push({ id:(res && res.id) || ('FLT-' + Date.now()), date:new Date().toISOString().slice(0,10),
+      crew:crewId, gnst:'', drones:drone, bind:'', pilot:pilot, tracker:fltTrk,
+      trackerOk:(c && c.trackerOk) || '', start:(res && res.start) || '', end:'', status:'Активний',
+      note:'', creatorEmail:S.me, system:fltSystem, freq:fltFreq, reserves:'', equip:'' });
+    renderView();
+    updateTopStats();
     loadAll();
   }, function(e){ btn.disabled=false; btn.textContent='🛫 Злетів'; toast('❌ '+e.message, true); });
 }
@@ -2144,16 +2168,33 @@ function doSaveCrew() {
     system: $('cfSystem').value, freq: $('cfFreq').value, reserves: crewForm.reserves.join('|')
   };
   if (crewForm.editId) {
-    rpc('updateCrew', [crewForm.editId, data], function(){
-      toast('💾 '+crewForm.editId+' збережено');
+    var editId = crewForm.editId;
+    rpc('updateCrew', [editId, data], function(){
+      toast('💾 '+editId+' збережено');
+      // Одразу оновлюємо локально — без очікування перезавантаження з сервера
+      var c = crewById(editId);
+      if (c) { c.gnst=data.gnst; c.bind=data.bind; c.drones=data.drones; c.tracker=data.tracker;
+               c.system=data.system; c.freq=data.freq; c.reserves=data.reserves; }
       crewForm = {drones:[],trackers:[],reserves:[],editId:null};
+      renderView();
       loadAll();
     }, function(e){ unlock(); toast('❌ ' + e.message, true); });
   } else {
     data.pilot = '';
     rpc('createCrew', [data], function(newId){
-      toast('👥 Екіпаж '+newId+' створено');
+      // Одразу показуємо новий екіпаж локально — без очікування перезавантаження
+      if (typeof newId === 'string' && newId) {
+        toast('👥 Екіпаж '+newId+' створено');
+        S.flights.push({ id:newId, date:new Date().toISOString().slice(0,10), crew:newId,
+          gnst:data.gnst, drones:data.drones, bind:data.bind, pilot:'', tracker:data.tracker,
+          trackerOk:'', start:'', end:'', status:'Активний', note:'', creatorEmail:S.me,
+          system:data.system, freq:data.freq, reserves:data.reserves, equip:'' });
+      } else {
+        toast('👥 Екіпаж створено');
+      }
       crewForm = {drones:[],trackers:[],reserves:[],editId:null};
+      renderView();
+      updateTopStats();
       loadAll();
     }, function(e){ unlock(); toast('❌ ' + e.message, true); });
   }
