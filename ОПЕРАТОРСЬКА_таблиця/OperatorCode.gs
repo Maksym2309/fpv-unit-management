@@ -1218,6 +1218,25 @@ function setPersonRole(opId, role, token) {
   return { id: opId, role: role };
 }
 
+// Змінити статус особи: сам собі, головний — членам свого екіпажу
+function setPersonStatus(opId, status, token) {
+  const sheet = ensurePersonnelSheet();
+  const target = readPersonnel().find(x => x.id === opId);
+  if (!target) throw new Error('Не знайдено: ' + opId);
+  const p = authSession(token);
+  if (!p) throw new Error('Потрібен вхід відповідальної особи');
+  let allowed = p.id === opId;
+  if (!allowed) {
+    const crew = findPersonCrew(p.id);
+    const tCrew = findPersonCrew(opId);
+    if (crew && crew.isMain && tCrew && tCrew.crewId === crew.crewId) allowed = true;
+  }
+  if (!allowed) throw new Error('Немає прав змінювати статус цієї особи');
+  sheet.getRange(target.row, 5).setValue(String(status || '').trim());
+  sheet.getRange(target.row, 7).setValue(nowTS());
+  return { id: opId, status: status };
+}
+
 // Прийняти / не прийняти обладнання — головний відповідальний (за токеном).
 // Пише в локальний Інвентар; синхронізація переносить в основну за _TS_ACCEPT.
 function acceptItem(token, itemId, accepted, reason) {

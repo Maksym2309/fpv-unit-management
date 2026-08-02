@@ -3960,6 +3960,31 @@ function setPersonRole(opId, role, token) {
   return { id: opId, role: role };
 }
 
+// Змінити статус особи: сам собі, головний — членам свого екіпажу, адмін — будь-кому
+function setPersonStatus(opId, status, token) {
+  const sheet = ensurePersonnelSheet();
+  const target = readPersonnel().find(x => x.id === opId);
+  if (!target) throw new Error('Не знайдено: ' + opId);
+  let allowed = false;
+  if (token) {
+    const p = authSession(token);
+    if (!p) throw new Error('Сесія завершилась — увійди знову');
+    if (p.id === opId) allowed = true;
+    else {
+      const crew = findPersonCrew(p.id);
+      const tCrew = findPersonCrew(opId);
+      if (crew && crew.isMain && tCrew && tCrew.crewId === crew.crewId) allowed = true;
+    }
+  } else {
+    const email = Session.getActiveUser().getEmail() || '';
+    if (isAdmin(email)) allowed = true;
+  }
+  if (!allowed) throw new Error('Немає прав змінювати статус цієї особи');
+  sheet.getRange(target.row, 5).setValue(String(status || '').trim());
+  sheet.getRange(target.row, 7).setValue(nowTS());
+  return { id: opId, status: status };
+}
+
 // ── Адміністрування персоналу (тільки адмін за Google-акаунтом) ──
 function adminGuard() {
   const email = Session.getActiveUser().getEmail() || '';
