@@ -2430,9 +2430,28 @@ function invAdPick(id, kind) {
 
 /* ═══════════ ВИД: ЕКІПАЖ (управління екіпажами) ═══════════ */
 var crewForm = { drones: [], trackers: [], reserves: [], editId: null };
-var crewPageTab = 'staff';  // 'staff' — увесь О.С. | 'links' — активні з'єднання
-var crewPageSel = '';       // вибраний екіпаж
-var sidePanelOpen = { list: true, comp: true }; // згортання бічних панелей
+var crewPageTab = 'staff';  // 'staff' — загальний О.С. | 'links' — активні з'єднання
+var crewPageSel = '';       // екіпаж основної таблиці (тулбар вкладки зʼєднань)
+var sideCrewSel = '';       // окремий вибір у боковій панелі — лише для перегляду складу
+var sidePanelOpen = { list: true, comp: false }; // склад за замовчуванням згорнутий
+
+// Чи можна вибрати екіпаж у боковому переліку (свій/вибраний — ні, щоб не дублювати)
+function sideCrewClickable(id) {
+  if (S.auth && !isAdminUser() && S.auth.crewId === id) return false;                 // «мій» оператора
+  if (isAdminUser() && crewPageTab === 'links' && crewPageSel === id) return false;   // «вибраний» адміна
+  return true;
+}
+function sideCrewBadge(id) {
+  if (S.auth && !isAdminUser() && S.auth.crewId === id) return '<span class="badge-main">мій</span>';
+  if (isAdminUser() && crewPageTab === 'links' && crewPageSel === id) return '<span class="badge-main">вибраний</span>';
+  return '';
+}
+function sideCrewPick(id) {
+  if (!sideCrewClickable(id)) return;
+  sideCrewSel = id;
+  sidePanelOpen.comp = true;
+  renderView();
+}
 
 function sidePanelToggle(key) { sidePanelOpen[key] = !sidePanelOpen[key]; renderView(); }
 function sidePanelHead(key, title, extra) {
@@ -2453,8 +2472,16 @@ function renderCrews(c) {
     return;
   }
   var crews = activeCrews();
-  if (!crewPageSel || !crews.find(function(x){ return x.id === crewPageSel; })) {
-    crewPageSel = (S.auth && S.auth.crewId) || (crews[0] ? crews[0].id : '');
+  // Оператор завжди працює зі своїм екіпажем; адмін вибирає в тулбарі
+  if (S.auth && !isAdminUser()) {
+    crewPageSel = S.auth.crewId || '';
+  } else if (!crewPageSel || !crews.find(function(x){ return x.id === crewPageSel; })) {
+    crewPageSel = crews[0] ? crews[0].id : '';
+  }
+  // Боковий вибір складу: скинути, якщо екіпаж зник або став невибірним
+  if (sideCrewSel && (!crews.find(function(x){ return x.id === sideCrewSel; }) || !sideCrewClickable(sideCrewSel))) {
+    sideCrewSel = '';
+    sidePanelOpen.comp = false;
   }
 
   // Плитки розділу
@@ -2489,17 +2516,15 @@ function renderCrews(c) {
     html += '<div class="side-panel-body">';
     html += crews.length ? crews.map(function(cr){
       var n = (cr.main ? 1 : 0) + (cr.members||'').split('|').filter(Boolean).length;
-      // Адмін: обладнання/частоти та розформування — маленькі позначки в рядку
-      var admActs = isAdminUser()
-        ? '<span style="display:flex;gap:4px" onclick="event.stopPropagation()">'+
-            '<button class="inv-act" title="Обладнання і частоти" onclick="openCrewForm(this.dataset.id)" data-id="'+esc(cr.id)+'">'+svgIcon('edit')+'</button>'+
-            '<button class="inv-act inv-act--del" title="Розформувати екіпаж" onclick="doCloseCrew(this.dataset.id)" data-id="'+esc(cr.id)+'">'+svgIcon('power')+'</button>'+
-          '</span>'
-        : '';
-      return '<div class="crew-pick'+(cr.id===crewPageSel?' active':'')+'" onclick="crewPageSel=\''+esc(cr.id)+'\';renderView()">'+
-        '<div><div class="cp-name">'+esc(cr.crewName || cr.id)+'</div>'+
+      var clickable = sideCrewClickable(cr.id);
+      var badge = sideCrewBadge(cr.id);
+      return '<div class="crew-pick'+(cr.id===sideCrewSel?' active':'')+'"'+
+        (clickable
+          ? ' onclick="sideCrewPick(\''+esc(cr.id)+'\')"'
+          : ' style="cursor:default;opacity:.85"')+'>'+
+        '<div><div class="cp-name">'+esc(cr.crewName || cr.id)+' '+badge+'</div>'+
         '<div class="cp-sub">'+esc(cr.id)+' · 👤 '+(cr.main ? esc(personLabel(cr.main)) : 'без головного')+'</div></div>'+
-        '<span style="display:flex;align-items:center;gap:8px"><span class="cp-sub">'+n+' оп.</span>'+admActs+'</span>'+
+        '<span class="cp-sub">'+n+' оп.</span>'+
       '</div>';
     }).join('') : '<div class="empty">Активних екіпажів немає</div>';
     html += '</div>';
@@ -2616,11 +2641,21 @@ function renderLinksMain() {
   var crewOpts = crews.map(function(c2){
     return '<option value="'+esc(c2.id)+'"'+(c2.id===crewPageSel?' selected':'')+'>'+esc(c2.crewName || c2.id)+'</option>';
   }).join('');
+  // Оператор привʼязаний до свого екіпажу — випадаючого списку немає, лише позначка «мій».
+  // Адмін вибирає екіпаж; якщо він був вибраний у боковій панелі — та згортається (не дублюємо).
+  var crewPicker;
+  if (S.auth && !isAdminUser()) {
+    crewPicker = cr
+      ? '<span class="cp-name" style="font-family:var(--font-data)">'+esc(cr.crewName || cr.id)+' <span class="badge-main">мій</span></span>'
+      : '<span class="hint">Ти не привʼязаний до екіпажу</span>';
+  } else {
+    crewPicker = crews.length
+      ? '<select onchange="crewPageSel=this.value;if(sideCrewSel===crewPageSel){sideCrewSel=\'\';sidePanelOpen.comp=false;}renderView()">'+crewOpts+'</select>'
+      : '<span class="hint">Немає активних екіпажів</span>';
+  }
   var h = '<div class="staff-bar">'+
-    '<label>Вибір екіпажу:</label>'+
-    (crews.length
-      ? '<select onchange="crewPageSel=this.value;renderView()">'+crewOpts+'</select>'
-      : '<span class="hint">Немає активних екіпажів</span>')+
+    '<label>'+(S.auth && !isAdminUser() ? 'Екіпаж:' : 'Вибір екіпажу:')+'</label>'+
+    crewPicker+
     '<div class="staff-actions">'+
       (canMg
         ? '<div class="inv-mode">'+
@@ -2682,49 +2717,31 @@ function renderLinksMain() {
 }
 
 // ── Склад вибраного екіпажу ──
+// Бокова панель складу — суто інформаційна (редагування — в основній таблиці).
+// Показує екіпаж, вибраний у боковому переліку (sideCrewSel), а не в тулбарі.
 function renderCrewComposition() {
-  var cr = crewById(crewPageSel);
-  var canMg = cr ? canManageCrew(cr.id) : false;
-  // Додавання члена — позначка в заголовку панелі (головний або адмін)
-  var addBtn = (cr && canMg)
-    ? '<button class="inv-act inv-act--crew" title="Додати члена екіпажу" onclick="event.stopPropagation();crewAddMemberModal()">'+svgIcon('personAdd')+'</button>'
-    : '';
-  var h = '<div class="side-panel">'+sidePanelHead('comp', '👥 Склад екіпажу'+(cr ? ' ('+esc(cr.crewName || cr.id)+')' : ''), addBtn);
+  var cr = sideCrewSel ? crewById(sideCrewSel) : null;
+  var h = '<div class="side-panel">'+sidePanelHead('comp', '👥 Склад екіпажу'+(cr ? ' ('+esc(cr.crewName || cr.id)+')' : ''));
   if (!sidePanelOpen.comp) return h + '</div>';
   h += '<div class="side-panel-body">';
-  if (!cr) return h + '<div class="empty">Оберіть екіпаж</div></div></div>';
-  if (cr.main) h += crewMemberRowHtml(cr, cr.main, true, canMg);
-  else h += '<div class="hint" style="margin-bottom:6px">⚠ Головного не призначено'+(canMg?' — перший доданий стане головним':'')+'</div>';
+  if (!cr) return h + '<div class="empty">Оберіть екіпаж у переліку вище</div></div></div>';
+  function row(opId, isMain) {
+    var p = personById(opId);
+    return '<div class="member-row'+(isMain?' member-main':'')+'">'+
+      '<div style="flex:1"><div class="member-cs">'+esc(p ? p.callsign : opId)+
+        (isMain ? ' <span class="badge-main">Головний</span>' : '')+'</div>'+
+      '<div class="member-name">'+esc(p && p.name || '')+
+        (p && p.status && p.status !== 'Активний' ? ' · '+esc(p.status) : '')+'</div></div>'+
+      '<span class="member-role">'+esc(p && p.role || '')+'</span>'+
+    '</div>';
+  }
+  if (cr.main) h += row(cr.main, true);
+  else h += '<div class="hint" style="margin-bottom:6px">⚠ Головного не призначено</div>';
   (cr.members||'').split('|').map(function(s){ return s.trim(); }).filter(Boolean).forEach(function(op){
-    h += crewMemberRowHtml(cr, op, false, canMg);
+    h += row(op, false);
   });
   h += '</div></div>';
   return h;
-}
-
-function crewMemberRowHtml(cr, opId, isMain, canMg) {
-  var p = personById(opId);
-  var canRole = canMg || (S.auth && S.auth.id === opId);
-  var roleHtml;
-  if (canRole) {
-    var curRole = p ? p.role : '';
-    var opts = PERSON_ROLES.map(function(r){
-      return '<option value="'+esc(r)+'"'+(r===curRole?' selected':'')+'>'+esc(r)+'</option>';
-    }).join('');
-    if (curRole && PERSON_ROLES.indexOf(curRole) === -1) opts = '<option value="'+esc(curRole)+'" selected>'+esc(curRole)+'</option>' + opts;
-    roleHtml = '<select class="inv-status-sel" style="width:auto;min-width:92px" data-op="'+esc(opId)+'" onchange="crewChangeRole(this)">'+
-      '<option value=""'+(curRole?'':' selected')+'>— роль —</option>'+opts+'</select>';
-  } else {
-    roleHtml = '<span class="member-role">'+esc(p && p.role || '')+'</span>';
-  }
-  return '<div class="member-row'+(isMain?' member-main':'')+'">'+
-    '<div style="flex:1"><div class="member-cs">'+esc(p ? p.callsign : opId)+
-      (isMain ? ' <span class="badge-main">Головний</span>' : '')+'</div>'+
-    '<div class="member-name">'+esc(p && p.name || '')+(p && p.status && p.status!=='Активний' ? ' · '+esc(p.status) : '')+'</div></div>'+
-    roleHtml+
-    (canMg && !isMain ? '<button class="inv-act inv-act--crew" title="Зробити головним відповідальним" onclick="crewSetMain(this.dataset.op)" data-op="'+esc(opId)+'">⭐</button>' : '')+
-    (canMg && !isMain ? '<button class="inv-act inv-act--del" title="Прибрати з екіпажу" onclick="crewRemoveMember(this.dataset.op)" data-op="'+esc(opId)+'">✕</button>' : '')+
-  '</div>';
 }
 
 // ── Операції зі складом ──
