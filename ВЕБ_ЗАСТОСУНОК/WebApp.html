@@ -426,9 +426,12 @@ textarea { height: 54px; resize: vertical; }
         <button class="nav-item" data-view="settings" onclick="setView('settings')"><span class="nav-icon">⚙️</span>Налаштування</button>
         <button class="nav-item" id="navLogout" style="display:none;color:var(--red)" onclick="doLogout()"><span class="nav-icon">⎋</span>Вихід</button>
       </div>
-      <div class="sidebar-foot">
-        <div class="user-email" id="userEmail"></div>
-        <div class="sync-line">Оновлено: <b id="syncTime">–</b></div>
+      <div class="sidebar-foot" style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px">
+        <div>
+          <div class="user-email" id="userEmail"></div>
+          <div class="sync-line">Оновлено: <b id="syncTime">–</b></div>
+        </div>
+        <button class="icon-btn" title="Налаштування" style="color:var(--accent)" onclick="setView('settings')">⚙</button>
       </div>
     </aside>
     <main class="content" id="content">
@@ -2568,6 +2571,10 @@ function renderLinksMain() {
       (isAdminUser() && crewEdit
         ? '<button class="icon-btn" title="Створити екіпаж" style="background:var(--accent);color:var(--on-accent);font-weight:700" onclick="openCrewForm(\'\')">＋</button>'
         : '')+
+      (isAdminUser() && crewEdit && cr
+        ? '<button class="icon-btn" title="Обладнання і частоти екіпажу" onclick="openCrewForm(\''+esc(cr.id)+'\')">✏️</button>'+
+          '<button class="icon-btn" title="Розформувати екіпаж" style="color:var(--red)" onclick="doCloseCrew(\''+esc(cr.id)+'\')">🔴</button>'
+        : '')+
     '</div>'+
   '</div>';
 
@@ -2614,23 +2621,6 @@ function renderLinksMain() {
     '<thead><tr><th>ID</th><th>Позивний / Ім\'я</th><th>Роль</th><th>Статус</th><th>Призначене обладнання</th></tr></thead>'+
     '<tbody>'+(rows || '<tr><td colspan="5" class="empty">Склад порожній'+(isAdminUser()?' — додай членів кнопкою 👤⁺ у режимі редагування':'')+'</td></tr>')+'</tbody></table></div>';
 
-  // Обладнання і адмін-дії — компактно під таблицею
-  var dl = (cr.drones||'').split('|').filter(Boolean);
-  h += '<div class="tcard" style="margin-top:12px;border-left-color:var(--accent)">'+
-    '<div class="tcard-meta mono">'+
-      (cr.gnst?'📡 '+esc(cr.gnst)+'<br>':'')+
-      (cr.tracker?'🛰 '+esc(cr.tracker.split('|').join(', '))+'<br>':'')+
-      (cr.system?'📹 '+esc(cr.system)+(cr.freq?' · 📻 <b>'+esc(cr.freq)+'</b>':'')+(cr.reserves?' · 🔄 '+esc(cr.reserves.split('|').join(', ')):'')+'<br>':'')+
-      '🛸 '+(dl.length ? esc(dl.join(', ')) : '—')+
-      (cr.equip?'<br>🎒 '+esc(cr.equip.split('|').join(', ')):'')+
-    '</div>'+
-    (isAdminUser()
-      ? '<div class="btn-row" style="margin-top:10px">'+
-          '<button class="btn btn-mini btn-green" onclick="openCrewForm(\''+esc(cr.id)+'\')">✏️ Обладнання/частоти</button>'+
-          '<button class="btn btn-mini btn-red" onclick="doCloseCrew(\''+esc(cr.id)+'\')">🔴 Розформувати</button>'+
-        '</div>'
-      : '')+
-  '</div>';
   return h;
 }
 
