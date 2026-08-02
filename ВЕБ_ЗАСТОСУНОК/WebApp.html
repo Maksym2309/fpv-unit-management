@@ -403,7 +403,6 @@ textarea { height: 54px; resize: vertical; }
       <span>Екіпажі: <b id="statCrews">–</b></span>
       <span>Вильоти: <b id="statFlights">–</b></span>
       <span id="statConflictsWrap" style="display:none">Конфлікти: <b class="warn-b" id="statConflicts">0</b></span>
-      <button class="icon-btn" title="Налаштування" style="color:var(--accent)" onclick="setView('settings')">⚙</button>
       <span id="authBox"></span>
       <button class="icon-btn" title="Оновити дані" onclick="loadAll(true)">⟳</button>
     </div>
@@ -423,6 +422,10 @@ textarea { height: 54px; resize: vertical; }
         <button class="nav-item" data-view="inventory" onclick="setView('inventory')"><span class="nav-icon">📦</span>Інвентар</button>
         <button class="nav-item" data-view="crews" onclick="setView('crews')"><span class="nav-icon">👥</span>Екіпаж</button>
       </nav>
+      <div class="nav" style="margin-top:auto;border-top:1px solid var(--line);padding-top:8px">
+        <button class="nav-item" data-view="settings" onclick="setView('settings')"><span class="nav-icon">⚙️</span>Налаштування</button>
+        <button class="nav-item" id="navLogout" style="display:none;color:var(--red)" onclick="doLogout()"><span class="nav-icon">⎋</span>Вихід</button>
+      </div>
       <div class="sidebar-foot">
         <div class="user-email" id="userEmail"></div>
         <div class="sync-line">Оновлено: <b id="syncTime">–</b></div>
@@ -749,6 +752,8 @@ function renderAuthBox() {
   } else {
     el.innerHTML = '<button class="auth-chip" onclick="openLoginModal()">🔑 Вхід</button>';
   }
+  var lo = $('navLogout');
+  if (lo) lo.style.display = S.auth ? '' : 'none';
 }
 
 function openLoginModal(msg) {
@@ -2395,6 +2400,13 @@ function invAdPick(id, kind) {
 var crewForm = { drones: [], trackers: [], reserves: [], editId: null };
 var crewPageTab = 'staff';  // 'staff' — увесь О.С. | 'links' — активні з'єднання
 var crewPageSel = '';       // вибраний екіпаж
+var sidePanelOpen = { list: true, comp: true }; // згортання бічних панелей
+
+function sidePanelToggle(key) { sidePanelOpen[key] = !sidePanelOpen[key]; renderView(); }
+function sidePanelHead(key, title) {
+  return '<div class="side-panel-head" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="sidePanelToggle(\''+key+'\')">'+
+    '<span>'+title+'</span><span>'+(sidePanelOpen[key] ? '▴' : '▾')+'</span></div>';
+}
 
 var staffFilter = { q: '', mode: 'all' };  // all | crewed | free | reserve
 var staffEdit = false;                     // перегляд / редагування списку О.С.
@@ -2438,17 +2450,21 @@ function renderCrews(c) {
   html += '<div class="crew-layout"><div id="crewMain">';
   html += crewPageTab === 'staff' ? renderStaffMain() : renderLinksMain();
   html += '</div><div class="crew-side">';
-  // Бічна панель: перелік екіпажів
-  html += '<div class="side-panel"><div class="side-panel-head">🗂 Перелік екіпажів</div><div class="side-panel-body">';
-  html += crews.length ? crews.map(function(cr){
-    var n = (cr.main ? 1 : 0) + (cr.members||'').split('|').filter(Boolean).length;
-    return '<div class="crew-pick'+(cr.id===crewPageSel?' active':'')+'" onclick="crewPageSel=\''+esc(cr.id)+'\';renderView()">'+
-      '<div><div class="cp-name">'+esc(cr.crewName || cr.id)+'</div>'+
-      '<div class="cp-sub">'+esc(cr.id)+' · 👤 '+(cr.main ? esc(personLabel(cr.main)) : 'без головного')+'</div></div>'+
-      '<span class="cp-sub">'+n+' оп.</span>'+
-    '</div>';
-  }).join('') : '<div class="empty">Активних екіпажів немає</div>';
-  html += '</div></div>';
+  // Бічна панель: перелік екіпажів (згортається)
+  html += '<div class="side-panel">'+sidePanelHead('list', '🗂 Перелік екіпажів');
+  if (sidePanelOpen.list) {
+    html += '<div class="side-panel-body">';
+    html += crews.length ? crews.map(function(cr){
+      var n = (cr.main ? 1 : 0) + (cr.members||'').split('|').filter(Boolean).length;
+      return '<div class="crew-pick'+(cr.id===crewPageSel?' active':'')+'" onclick="crewPageSel=\''+esc(cr.id)+'\';renderView()">'+
+        '<div><div class="cp-name">'+esc(cr.crewName || cr.id)+'</div>'+
+        '<div class="cp-sub">'+esc(cr.id)+' · 👤 '+(cr.main ? esc(personLabel(cr.main)) : 'без головного')+'</div></div>'+
+        '<span class="cp-sub">'+n+' оп.</span>'+
+      '</div>';
+    }).join('') : '<div class="empty">Активних екіпажів немає</div>';
+    html += '</div>';
+  }
+  html += '</div>';
   // Бічна панель: склад вибраного екіпажу
   html += renderCrewComposition();
   html += '</div></div>';
@@ -2525,33 +2541,96 @@ function renderStaffInto() {
 }
 
 // ── Ліва частина, вкладка «Активні з'єднання» ──
+var crewEdit = false; // перегляд / редагування складу на вкладці зʼєднань
+
 function renderLinksMain() {
+  var crews = activeCrews();
   var cr = crewById(crewPageSel);
-  var h = '';
-  if (cr) {
-    var dl = (cr.drones||'').split('|').filter(Boolean);
-    h += '<div class="tcard" style="border-left-color:var(--accent)">'+
-      '<div class="tcard-head"><span class="tcard-id">'+esc(cr.crewName || cr.id)+'</span>'+
-        '<span class="cp-sub">'+esc(cr.id)+'</span></div>'+
-      '<div class="tcard-meta mono">'+
-        (cr.main?'👤 Головний: <b>'+esc(personLabel(cr.main))+'</b><br>':'⚠ Головного не призначено<br>')+
-        (cr.gnst?'📡 '+esc(cr.gnst)+'<br>':'')+
-        (cr.bind?'🔗 Bind: <b>'+esc(cr.bind)+'</b><br>':'')+
-        (cr.tracker?'🛰 '+esc(cr.tracker.split('|').join(', '))+'<br>':'')+
-        (cr.system?'📹 '+esc(cr.system)+(cr.freq?' · 📻 <b>'+esc(cr.freq)+'</b>':'')+(cr.reserves?' · 🔄 '+esc(cr.reserves.split('|').join(', ')):'')+'<br>':'')+
-        '🛸 '+(dl.length ? dl.map(function(d){ return '<span class="chip">'+esc(d)+'</span>'; }).join('') : '—')+
-        (cr.equip?'<br>🎒 '+esc(cr.equip.split('|').join(', ')):'')+
-      '</div>'+
-      (isAdminUser()
-        ? '<div class="btn-row" style="margin-top:10px">'+
-            '<button class="btn btn-mini btn-green" onclick="openCrewForm(\''+esc(cr.id)+'\')">✏️ Обладнання/частоти</button>'+
-            '<button class="btn btn-mini btn-red" onclick="doCloseCrew(\''+esc(cr.id)+'\')">🔴 Розформувати</button>'+
+  var canMg = cr ? canManageCrew(cr.id) : false;
+
+  // Тулбар: вибір екіпажу + перегляд/редагування + 👤⁺ (тільки адмін)
+  var crewOpts = crews.map(function(c2){
+    return '<option value="'+esc(c2.id)+'"'+(c2.id===crewPageSel?' selected':'')+'>'+esc(c2.crewName || c2.id)+'</option>';
+  }).join('');
+  var h = '<div class="staff-bar">'+
+    '<label>Вибір екіпажу:</label>'+
+    (crews.length
+      ? '<select onchange="crewPageSel=this.value;renderView()">'+crewOpts+'</select>'
+      : '<span class="hint">Немає активних екіпажів</span>')+
+    '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">'+
+      (canMg
+        ? '<div class="inv-mode">'+
+            '<button class="inv-mode-btn'+(!crewEdit?' active':'')+'" onclick="crewEdit=false;renderView()">Перегляд</button>'+
+            '<button class="inv-mode-btn'+(crewEdit?' active':'')+'" onclick="crewEdit=true;renderView()">Редагування</button>'+
           '</div>'
         : '')+
-    '</div>';
-  } else {
-    h += '<div class="empty">Оберіть екіпаж у переліку праворуч</div>';
-  }
+      (isAdminUser() && crewEdit && cr
+        ? '<button class="icon-btn" title="Додати члена екіпажу" style="background:var(--accent);color:var(--on-accent);font-weight:700" onclick="crewAddMemberModal()">👤⁺</button>'
+        : '')+
+    '</div>'+
+  '</div>';
+
+  if (!cr) return h + '<div class="empty">Оберіть екіпаж</div>';
+
+  // Таблиця членів вибраного екіпажу
+  var ids = (cr.main ? [cr.main] : []).concat(crewMembersArr(cr));
+  var rows = ids.map(function(opId){
+    var isMain = opId === cr.main;
+    var p = personById(opId);
+    var eq = p ? personEquipment(p) : [];
+    var canRole = crewEdit && (canMg || (S.auth && S.auth.id === opId));
+    var roleCell;
+    var curRole = p ? p.role : '';
+    if (canRole) {
+      var opts = PERSON_ROLES.map(function(r){
+        return '<option value="'+esc(r)+'"'+(r===curRole?' selected':'')+'>'+esc(r)+'</option>';
+      }).join('');
+      if (curRole && PERSON_ROLES.indexOf(curRole) === -1) opts = '<option value="'+esc(curRole)+'" selected>'+esc(curRole)+'</option>' + opts;
+      roleCell = '<select class="inv-status-sel" style="width:auto;min-width:92px" data-op="'+esc(opId)+'" onchange="crewChangeRole(this)">'+
+        '<option value=""'+(curRole?'':' selected')+'>— роль —</option>'+opts+'</select>';
+    } else {
+      roleCell = '<span class="mono">'+esc(isMain ? (curRole ? curRole+' / ' : '')+'Командир екіпажу' : (curRole || '—'))+'</span>';
+    }
+    var acts = '';
+    if (crewEdit && canMg) {
+      acts = '<div class="inv-acts" style="justify-content:flex-end">'+
+        (isAdminUser() ? '<button class="inv-act" title="Редагувати особу" onclick="admEditPerson(this.dataset.op)" data-op="'+esc(opId)+'">✏️</button>' : '')+
+        (!isMain ? '<button class="inv-act inv-act--crew" title="Зробити головним відповідальним" onclick="crewSetMain(this.dataset.op)" data-op="'+esc(opId)+'">⭐</button>' : '')+
+        (!isMain ? '<button class="inv-act inv-act--del" title="Прибрати з екіпажу" onclick="crewRemoveMember(this.dataset.op)" data-op="'+esc(opId)+'">✕</button>' : '')+
+      '</div>';
+    }
+    return '<tr><td class="mono accent">'+esc(opId)+'</td>'+
+      '<td><b>'+esc(p ? p.callsign : opId)+'</b>'+(isMain?' <span class="badge-main">Головний</span>':'')+
+        (p && p.name ? '<div class="member-name">'+esc(p.name)+'</div>' : '')+'</td>'+
+      '<td>'+roleCell+'</td>'+
+      '<td>'+statusChip(p ? p.status : '')+'</td>'+
+      '<td class="mono" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(eq.join(', '))+'">'+
+        (eq.length ? esc(eq.join(', ')) : '<span class="hint">—</span>')+'</td>'+
+      '<td>'+acts+'</td></tr>';
+  }).join('');
+
+  h += '<div class="table-wrap"><table class="data-table">'+
+    '<thead><tr><th>ID</th><th>Позивний / Ім\'я</th><th>Роль</th><th>Статус</th><th>Призначене обладнання</th><th style="text-align:right">Дії</th></tr></thead>'+
+    '<tbody>'+(rows || '<tr><td colspan="6" class="empty">Склад порожній'+(isAdminUser()?' — додай членів кнопкою 👤⁺ у режимі редагування':'')+'</td></tr>')+'</tbody></table></div>';
+
+  // Обладнання і адмін-дії — компактно під таблицею
+  var dl = (cr.drones||'').split('|').filter(Boolean);
+  h += '<div class="tcard" style="margin-top:12px;border-left-color:var(--accent)">'+
+    '<div class="tcard-meta mono">'+
+      (cr.gnst?'📡 '+esc(cr.gnst)+'<br>':'')+
+      (cr.tracker?'🛰 '+esc(cr.tracker.split('|').join(', '))+'<br>':'')+
+      (cr.system?'📹 '+esc(cr.system)+(cr.freq?' · 📻 <b>'+esc(cr.freq)+'</b>':'')+(cr.reserves?' · 🔄 '+esc(cr.reserves.split('|').join(', ')):'')+'<br>':'')+
+      '🛸 '+(dl.length ? esc(dl.join(', ')) : '—')+
+      (cr.equip?'<br>🎒 '+esc(cr.equip.split('|').join(', ')):'')+
+    '</div>'+
+    (isAdminUser()
+      ? '<div class="btn-row" style="margin-top:10px">'+
+          '<button class="btn btn-mini btn-green" onclick="openCrewForm(\''+esc(cr.id)+'\')">✏️ Обладнання/частоти</button>'+
+          '<button class="btn btn-mini btn-red" onclick="doCloseCrew(\''+esc(cr.id)+'\')">🔴 Розформувати</button>'+
+        '</div>'
+      : '')+
+  '</div>';
+
   if (isAdminUser()) {
     h += '<div class="panel-title" style="margin-top:14px">➕ Новий екіпаж</div><div class="panel" id="crewFormPanel"></div>';
   }
@@ -2561,8 +2640,9 @@ function renderLinksMain() {
 // ── Склад вибраного екіпажу ──
 function renderCrewComposition() {
   var cr = crewById(crewPageSel);
-  var h = '<div class="side-panel"><div class="side-panel-head">👥 Склад екіпажу'+
-    (cr ? ' ('+esc(cr.crewName || cr.id)+')' : '')+'</div><div class="side-panel-body">';
+  var h = '<div class="side-panel">'+sidePanelHead('comp', '👥 Склад екіпажу'+(cr ? ' ('+esc(cr.crewName || cr.id)+')' : ''));
+  if (!sidePanelOpen.comp) return h + '</div>';
+  h += '<div class="side-panel-body">';
   if (!cr) return h + '<div class="empty">Оберіть екіпаж</div></div></div>';
   var canMg = canManageCrew(cr.id);
   if (cr.main) h += crewMemberRowHtml(cr, cr.main, true, canMg);
@@ -2570,7 +2650,6 @@ function renderCrewComposition() {
   (cr.members||'').split('|').map(function(s){ return s.trim(); }).filter(Boolean).forEach(function(op){
     h += crewMemberRowHtml(cr, op, false, canMg);
   });
-  if (canMg) h += '<button class="btn btn-green" style="margin-top:8px" onclick="crewAddMemberModal()">➕ Додати члена</button>';
   h += '</div></div>';
   return h;
 }
