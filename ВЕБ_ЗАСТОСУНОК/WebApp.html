@@ -2469,13 +2469,13 @@ function renderCrews(c) {
       'oninput="staffFilter.q=this.value;renderStaffInto()" style="width:220px"></div>'+
   '</div>'+
     '<div class="stat-row">'+
-      '<div class="stat-tile click'+(crewPageTab==='links'?' active':'')+'" onclick="crewPageTab=\'links\';renderView()" title="Активні з\'єднання"><div class="stat-num">'+crews.length+'</div><div class="stat-lbl">Активні екіпажі</div></div>'+
       '<div class="stat-tile blue click'+(crewPageTab==='staff'&&staffFilter.mode==='all'?' active':'')+'" onclick="crewPageTab=\'staff\';staffFilter.mode=\'all\';renderView()"><div class="stat-num">'+totalOS+'</div><div class="stat-lbl">Загальний О.С.</div></div>'+
+      '<div class="stat-tile click'+(crewPageTab==='links'?' active':'')+'" onclick="crewPageTab=\'links\';renderView()" title="Активні з\'єднання"><div class="stat-num">'+crews.length+'</div><div class="stat-lbl">Активні екіпажі</div></div>'+
       '<div class="stat-tile green click'+(crewPageTab==='staff'&&staffFilter.mode==='crewed'?' active':'')+'" onclick="crewPageTab=\'staff\';staffFilter.mode=\'crewed\';renderView()"><div class="stat-num">'+inCrews+'</div><div class="stat-lbl">В екіпажах</div></div>'+
       '<div class="stat-tile red click'+(crewPageTab==='staff'&&staffFilter.mode==='reserve'?' active':'')+'" onclick="crewPageTab=\'staff\';staffFilter.mode=\'reserve\';renderView()"><div class="stat-num">'+reserve+'</div><div class="stat-lbl">Резерв О.С.</div></div>'+
     '</div>'+
     '<div class="inv-tabs">'+
-      '<button class="inv-tab'+(crewPageTab==='staff'?' active':'')+'" onclick="crewPageTab=\'staff\';renderView()">Увесь О.С.</button>'+
+      '<button class="inv-tab'+(crewPageTab==='staff'?' active':'')+'" onclick="crewPageTab=\'staff\';renderView()">Загальний О.С.</button>'+
       '<button class="inv-tab'+(crewPageTab==='links'?' active':'')+'" onclick="crewPageTab=\'links\';renderView()">Активні з\'єднання</button>'+
     '</div>';
 
