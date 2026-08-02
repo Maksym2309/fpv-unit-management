@@ -1,0 +1,428 @@
+<!DOCTYPE html><html class="dark" lang="uk" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Hornet Tactical OS - Crew Management</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:ital,wght@0,400..700;1,400..700&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet">
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet">
+<!-- Tailwind Config Injection -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "outline-variant": "#514532",
+                        "on-tertiary-fixed": "#1b0063",
+                        "secondary-fixed-dim": "#abc9f2",
+                        "on-tertiary-container": "#512bd4",
+                        "background": "#131313",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#5e4200",
+                        "surface-container-low": "#1c1b1b",
+                        "tertiary": "#e3dcff",
+                        "primary": "#ffdca1",
+                        "surface-dim": "#131313",
+                        "surface-container-highest": "#353534",
+                        "surface-container-high": "#2a2a2a",
+                        "on-primary": "#412d00",
+                        "inverse-surface": "#e5e2e1",
+                        "primary-container": "#ffb800",
+                        "tertiary-fixed": "#e6deff",
+                        "surface-container": "#201f1f",
+                        "error-container": "#93000a",
+                        "tertiary-container": "#c7bcff",
+                        "surface-bright": "#3a3939",
+                        "secondary-fixed": "#d2e4ff",
+                        "on-tertiary": "#30009b",
+                        "secondary": "#abc9f2",
+                        "inverse-on-surface": "#313030",
+                        "primary-fixed-dim": "#ffba20",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary": "#103253",
+                        "on-error": "#690005",
+                        "surface-container-lowest": "#0e0e0e",
+                        "surface-variant": "#353534",
+                        "surface": "#131313",
+                        "tertiary-fixed-dim": "#c9beff",
+                        "on-secondary-fixed-variant": "#2a486b",
+                        "inverse-primary": "#7c5800",
+                        "surface-tint": "#ffba20",
+                        "secondary-container": "#2a486b",
+                        "on-background": "#e5e2e1",
+                        "on-secondary-container": "#9ab7e0",
+                        "outline": "#9e8f78",
+                        "on-secondary-fixed": "#001c37",
+                        "on-tertiary-fixed-variant": "#4619ca",
+                        "on-primary-container": "#6b4c00",
+                        "on-surface-variant": "#d5c4ab",
+                        "on-primary-fixed": "#271900",
+                        "primary-fixed": "#ffdea8"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-desktop": "24px",
+                        "margin-mobile": "12px",
+                        "unit": "4px",
+                        "gutter": "16px",
+                        "panel-padding": "12px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Archivo Narrow"],
+                        "body-md": ["Archivo Narrow"],
+                        "data-mono": ["JetBrains Mono"],
+                        "display-lg": ["Archivo Narrow"],
+                        "label-caps": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "display-lg": ["48px", { "lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.1em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        };
+    </script>
+<style>
+        .hud-glow {
+            box-shadow: 0 0 15px rgba(255, 184, 0, 0.05);
+        }
+        .clip-t-r {
+            clip-path: polygon(0 0, 85% 0, 100% 25%, 100% 100%, 0 100%);
+        }
+        .zebra-row:nth-child(even) {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #0e0e0e; }
+        ::-webkit-scrollbar-thumb { background: #514532; }
+    </style>
+</head>
+<body class="font-body-md antialiased overflow-hidden flex h-screen bg-background text-on-background" data-mode="connect">
+<!-- TopAppBar (Desktop) -->
+<header class="hidden md:flex fixed top-0 w-full z-50 items-center px-margin-desktop h-16 bg-background border-b border-outline-variant flat no">
+<div class="font-headline-md text-headline-md font-bold text-primary tracking-tighter uppercase mr-auto">WILD HORNETS</div>
+<div class="flex items-center gap-4">
+
+<div class="flex items-center gap-4 text-primary">
+<span class="material-symbols-outlined p-1 hover:bg-surface-container-highest transition-colors active:scale-95 duration-75 cursor-pointer rounded-full">home</span>
+<span class="material-symbols-outlined p-1 hover:bg-surface-container-highest transition-colors active:scale-95 duration-75 cursor-pointer rounded-full">settings</span>
+<span class="material-symbols-outlined p-1 hover:bg-surface-container-highest transition-colors active:scale-95 duration-75 cursor-pointer rounded-full">signal_cellular_alt</span>
+</div>
+</div>
+</header>
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col h-full w-[280px] bg-surface-container-lowest border-r border-outline-variant pt-20 pb-panel-padding px-panel-padding fixed left-0 top-0 z-40">
+<button class="absolute -right-3 top-24 w-6 h-6 bg-surface-container border border-outline-variant rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors z-50 active:scale-95">
+<span class="material-symbols-outlined text-[16px]">chevron_left</span>
+</button>
+<div class="mb-8 flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 bg-surface-container border border-outline-variant flex items-center justify-center relative overflow-hidden clip-t-r">
+<img alt="Unit Operator Avatar" class="absolute inset-0 w-full h-full object-cover opacity-50" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAu-2jizGmw9BdYWMzTL4n4ZQruwphooGdmj5AufkFPJB7jYWANtSO8QI_0uVKMOcYZtYvkH8CHdCI9cb8WO4ZBUaCOWVz-ub3Mvj4Pz9v-LTQ2e2TKNKw16ltRKLq4Lfbis-kqqPHdjyiW3oQkHxqht1z3ZJDRbZQOABBqCuEE_-0xqPXF36Pl53CQvBWo78Uiln2d39yZhTM-8MtzqAoAsYx8zeHz1KLUTzBPVUtNwDe0chD_nQgbDUSjxlWLSFqERU4s4R8-88R0">
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-primary uppercase">СЕКТОР-7</h2>
+<div class="font-label-caps text-label-caps text-on-surface-variant flex items-center gap-1">
+<span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>
+                        ОПЕРАТИВНИЙ СТАН: АКТИВНИЙ
+                    </div>
+</div>
+</div>
+</div>
+<button class="w-full bg-primary-container text-on-primary-container font-bold py-2 px-4 mb-6 uppercase font-label-caps text-label-caps tracking-widest active:translate-x-1 duration-150 hover:bg-primary-fixed transition-colors border border-primary-container clip-t-r flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+            НОВИЙ ВИЛІТ
+        </button>
+<div class="flex-1 flex flex-col gap-unit">
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface hover:text-primary hover:bg-surface-container-high transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">description</span>
+                Журнал польоту
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface hover:text-primary hover:bg-surface-container-high transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">settings_input_antenna</span>
+                Карта частот
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface hover:text-primary hover:bg-surface-container-high transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">location_on</span>
+                GPS Трекери
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-on-surface hover:text-primary hover:bg-surface-container-high transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">inventory_2</span>
+                Інвентар
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 bg-primary-container text-on-primary-container font-bold font-label-caps text-label-caps uppercase active:scale-95 duration-75 transition-transform shadow-lg" href="#" style="clip-path: polygon(0px 0px, 100% 0px, 95% 100%, 0% 100%);">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: &quot;FILL&quot; 1;">group</span>
+                Екіпаж
+            </a>
+</div>
+<div class="mt-auto border-t border-outline-variant pt-4 flex flex-col gap-unit">
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface hover:text-primary hover:bg-surface-container-high transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">settings</span>
+                Налаштування
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-error hover:bg-error/10 transition-all active:scale-95 duration-75 font-label-caps text-label-caps uppercase" href="#">
+<span class="material-symbols-outlined text-[18px]">logout</span>
+                Вихід
+            </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 md:ml-[280px] h-full overflow-hidden flex flex-col bg-background pt-16">
+<!-- Header & Actions -->
+<div class="bg-surface-container-low border-b border-outline-variant p-margin-desktop flex flex-wrap items-center justify-between gap-4">
+<div>
+<h1 class="font-headline-md text-headline-md text-on-surface m-0 uppercase flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" data-icon="group">group</span>
+                    УПРАВЛІННЯ ЕКІПАЖАМИ
+                </h1>
+<div class="flex gap-2 text-on-surface-variant font-data-mono text-data-mono mt-2">
+<span class="">РЕСУРСНИЙ МОДУЛЬ</span>
+<span class="text-outline-variant">|</span>
+<span class="">РОЗПОДІЛ ОСОБОВОГО СКЛАДУ</span>
+</div>
+</div>
+<div class="flex gap-3 mb-2">
+<div class="hud-glow border-b border-outline-variant bg-surface px-3 py-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-on-surface font-data-mono text-data-mono placeholder:text-outline-variant w-48" placeholder="ПОШУК ПЕРСОНАЛУ..." type="text">
+</div>
+<button class="border border-outline-variant text-on-surface px-4 py-2 font-label-caps text-label-caps hover:bg-surface-container-high transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">filter_list</span>
+                    ФІЛЬТРИ
+                </button>
+</div>
+</div>
+<!-- Tabs Navigation -->
+<div class="flex border-b border-outline-variant/50 font-label-caps text-label-caps overflow-x-auto bg-surface-container-low">
+<button class="px-6 py-3 text-primary border-b-2 border-primary bg-primary/5 whitespace-nowrap">УВЕСЬ О.С.</button>
+<button class="px-6 py-3 text-on-surface-variant border-b-2 border-transparent hover:text-primary hover:bg-surface-container-high whitespace-nowrap transition-colors">АКТИВНІ З'ЄДНАННЯ</button>
+</div>
+<!-- Main Layout Grid -->
+<div class="flex-1 flex flex-col lg:flex-row overflow-hidden p-panel-padding gap-gutter">
+<div class="flex-1 bg-surface-container border border-outline-variant relative flex flex-col min-h-0">
+<div class="p-2 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-highest relative z-10">
+<div class="flex items-center gap-4">
+<span class="font-label-caps text-[10px] text-on-surface-variant uppercase">Фільтр списку:</span>
+<div class="relative group">
+<button class="flex items-center gap-3 px-4 py-1.5 bg-surface-container border border-primary text-primary font-label-caps text-[11px] hover:bg-primary/10 transition-colors uppercase">
+<span class="">УСІ</span>
+<span class="material-symbols-outlined text-[14px]">expand_more</span>
+</button>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex items-center bg-surface-container border border-outline-variant p-1 rounded-l border-r-0">
+<button class="px-3 py-1 font-label-caps text-[10px] hover:text-primary transition-colors text-on-surface-variant" id="view-mode-btn">ПЕРЕГЛЯД</button>
+<button class="px-3 py-1 font-label-caps text-[10px] transition-colors bg-primary text-on-primary" id="edit-mode-btn">РЕДАГУВАННЯ</button>
+</div>
+
+</div>
+</div>
+<div class="flex-1 overflow-auto bg-surface-container-lowest">
+<!-- Personnel Table -->
+<div class="grid grid-cols-12 gap-2 px-4 py-2 bg-surface-container-low border-b border-outline-variant/30 font-label-caps text-[10px] text-on-surface-variant uppercase sticky top-0 z-10">
+<div class="col-span-1">ID</div>
+<div class="col-span-3">ПОЗИВНИЙ / ІМ'Я</div>
+<div class="col-span-2">РОЛЬ</div>
+<div class="col-span-2">СТАТУС</div>
+<div class="col-span-3">ПРИЗНАЧЕНЕ ОБЛАДНАННЯ</div>
+
+</div>
+<div class="flex-1 overflow-y-auto"><!-- Row 1: Олексій Яструб -->
+<div class="grid grid-cols-12 gap-2 px-4 py-3 items-center zebra-row font-data-mono text-[12px] text-on-surface border-b border-outline-variant/10">
+<div class="col-span-1 text-primary">OP-001</div>
+<div class="col-span-3 flex items-center gap-2">
+<div class="w-6 h-6 bg-surface-container border border-outline-variant overflow-hidden flex-shrink-0">
+<img alt="" class="w-full h-full object-cover grayscale opacity-70" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_r_2vEmoutyMN87Tx7gPrmgVGxJez3k4X3K8X4awwQFd_BAMsWUH8pxQoM2Gp2es8tJwPW6UP5l9KlEoGemJ4LDmikjOx1xCpirhjm0bbnmdeHS8FxqB8bcVCLl06cJMYOK3040alHGbfAVvbAosRKTLSi8UZY433tqCpL3VBHgKlarQjLexsK1pfDFzS5lgBdy8ik8nTWSx3HGPxzvYKUp_S3UWm9wpgApu5NA29BaAv3bxYCXTTb2U4LAreeshd-1F8R04RwEu2">
+</div>
+<span class="">Олексій "Яструб"</span>
+</div>
+<div class="col-span-2 font-bold">КОМАНДИР</div>
+<div class="col-span-2">
+<span class="text-[9px] text-emerald-400 font-label-caps px-1 border border-emerald-400/30">АКТИВНИЙ</span>
+</div>
+<div class="col-span-3 text-on-surface-variant truncate">Пульт "Tango", Окуляри FPV-X</div>
+<div class="col-span-1 flex justify-end gap-1 action-cell" style="opacity: 1;"></div>
+</div>
+<!-- Row 2: Іван Сокіл -->
+<div class="grid grid-cols-12 gap-2 px-4 py-3 items-center zebra-row font-data-mono text-[12px] text-on-surface border-b border-outline-variant/10">
+<div class="col-span-1 text-primary">OP-014</div>
+<div class="col-span-3 flex items-center gap-2">
+<div class="w-6 h-6 bg-surface-container border border-outline-variant overflow-hidden flex-shrink-0">
+<img alt="" class="w-full h-full object-cover grayscale opacity-70" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAnOX92fb6ZCWYR41jZ18m0y3aUbPpMbCto5pw10npnAoBftFjvDzSE9rkED5eQNJN-Y9enGTwWaOxfSmDJDESbVEJQXzOT2He73ePQT3gFIAfOO07cVHCFJ-4CmcYxjmFempjs1d1GQuhz0VSXz9Lgzyqk0laKZukH_ZWPGQ2w-QTEtbE-Cnac3vg0wO341KannKm8GBKsv9gLqtzCIAehlfa_jgh1diRh-aQCJgNcz_na_pwIm_VSm9_gCdbDcInbgNO2zNTL9UEf">
+</div>
+<span class="">Іван "Сокіл"</span>
+</div>
+<div class="col-span-2 font-bold">ПІЛОТ</div>
+<div class="col-span-2">
+<span class="text-[9px] text-emerald-400 font-label-caps px-1 border border-emerald-400/30">АКТИВНИЙ</span>
+</div>
+<div class="col-span-3 text-on-surface-variant truncate">Пульт "Sierra", FPV-Дрон</div>
+<div class="col-span-1 flex justify-end gap-1 action-cell" style="opacity: 1;"></div>
+</div>
+<!-- Row 3: Сергій Ворон -->
+<div class="grid grid-cols-12 gap-2 px-4 py-3 items-center zebra-row font-data-mono text-[12px] text-on-surface border-b border-outline-variant/10">
+<div class="col-span-1 text-primary">OP-027</div>
+<div class="col-span-3 flex items-center gap-2">
+<div class="w-6 h-6 bg-surface-container border border-outline-variant overflow-hidden flex-shrink-0">
+<img alt="" class="w-full h-full object-cover grayscale opacity-70" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2jTEhL2-LmJGeYwgvA_3KuRbbDiq14f7zP-EFVDymb4l3V4K8Pr0gOWN37bI4DYsz_sl8ryom91SCot8bqGVy4UbHyKnokSAhvBuLbjhKqBvEWp9rOzxjA9paHJprFyZbWXg0vtzk8JZ2xc1dAVL5ANhImdrAvZD6QCKAe43ZT9XIhdz1-vrSFwp5CB8oiYBepSKHysXWyqifIwmjMS2wmab_sD9E7OU2FAo5gG_bkJXE_7zkwJN4BNP0GioZeUq-8HZ4AzSv_KAD">
+</div>
+<span class="">Сергій "Ворон"</span>
+</div>
+<div class="col-span-2 font-bold">ТЕХНІК</div>
+<div class="col-span-2">
+<span class="text-[9px] text-primary-container font-label-caps px-1 border border-primary-container/30">ВІДПОЧИНОК</span>
+</div>
+<div class="col-span-3 text-on-surface-variant truncate">Планшет, РЕБ-сканер</div>
+<div class="col-span-1 flex justify-end gap-1 action-cell" style="opacity: 1;"></div>
+</div>
+<!-- Row 4: Дмитро Грім -->
+<div class="grid grid-cols-12 gap-2 px-4 py-3 items-center zebra-row font-data-mono text-[12px] text-on-surface border-b border-outline-variant/10">
+<div class="col-span-1 text-primary">OP-042</div>
+<div class="col-span-3 flex items-center gap-2">
+<div class="w-6 h-6 bg-surface-container border border-outline-variant overflow-hidden flex-shrink-0">
+<div class="w-full h-full bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-[14px] text-outline-variant">person</span>
+</div>
+</div>
+<span class="">Дмитро "Грім"</span>
+</div>
+<div class="col-span-2 font-bold">ШТУРМАН</div>
+<div class="col-span-2">
+<span class="text-[9px] text-outline-variant font-label-caps px-1 border border-outline-variant/30">РЕЗЕРВ</span>
+</div>
+<div class="col-span-3 text-on-surface-variant truncate">Оптичний приціл, Рація</div>
+<div class="col-span-1 flex justify-end gap-1 action-cell" style="opacity: 1;"></div>
+</div></div>
+</div>
+</div>
+<!-- Right Side Panel (Dynamic) -->
+<div class="w-full lg:w-80 flex flex-col gap-gutter min-h-0">
+<!-- Panel: Crew List -->
+<div class="bg-surface border border-outline-variant flex flex-col transition-all duration-300 overflow-hidden flex-1 min-h-[48px]" id="panel-crew-list">
+<div class="bg-surface-container-low border-b border-outline-variant/50 p-3 flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-colors" onclick="document.getElementById('panel-crew-list').classList.toggle('flex-1'); document.getElementById('panel-crew-list').classList.toggle('h-auto'); document.getElementById('content-crew-list').classList.toggle('hidden'); this.querySelector('.toggle-icon').textContent = this.querySelector('.toggle-icon').textContent === 'keyboard_arrow_down' ? 'keyboard_arrow_up' : 'keyboard_arrow_down';"><h2 class="font-label-caps text-label-caps text-on-surface uppercase m-0 flex items-center gap-2"><span class="material-symbols-outlined text-[16px] text-primary">list_alt</span>ПЕРЕЛІК ЕКІПАЖІВ</h2><span class="material-symbols-outlined text-[18px] text-primary toggle-icon">keyboard_arrow_up</span></div>
+<div class="flex-1 overflow-y-auto p-2 flex flex-col gap-1" id="content-crew-list">
+<div class="flex justify-between items-center p-2 bg-primary/10 border border-primary cursor-pointer group">
+<span class="font-data-mono text-xs text-primary">АЛЬФА</span>
+<span class="font-label-caps text-[10px] text-primary">3 ОП.</span>
+</div>
+<div class="flex justify-between items-center p-2 hover:bg-surface-container-high border border-transparent cursor-pointer group transition-colors">
+<span class="font-data-mono text-xs text-on-surface-variant group-hover:text-on-surface">БРАВО</span>
+<span class="font-label-caps text-[10px] text-outline-variant">0 ОП.</span>
+</div>
+<div class="flex justify-between items-center p-2 hover:bg-surface-container-high border border-transparent cursor-pointer group transition-colors">
+<span class="font-data-mono text-xs text-on-surface-variant group-hover:text-on-surface">ЧАРЛІ</span>
+<span class="font-label-caps text-[10px] text-outline-variant">0 ОП.</span>
+</div>
+</div>
+</div>
+<!-- Panel: Crew Composition -->
+<div class="bg-surface border border-outline-variant flex flex-col transition-all duration-300 overflow-hidden flex-1 min-h-[48px]" id="panel-crew-composition">
+<div class="bg-surface-container-low border-b border-outline-variant/50 p-3 flex justify-between items-center cursor-pointer hover:bg-surface-container-high transition-colors" onclick="document.getElementById('panel-crew-composition').classList.toggle('flex-1'); document.getElementById('panel-crew-composition').classList.toggle('h-auto'); document.getElementById('content-crew-composition').classList.toggle('hidden'); this.querySelector('.toggle-icon').textContent = this.querySelector('.toggle-icon').textContent === 'keyboard_arrow_down' ? 'keyboard_arrow_up' : 'keyboard_arrow_down';"><h2 class="font-label-caps text-label-caps text-on-surface uppercase m-0 flex items-center gap-2"><span class="material-symbols-outlined text-[16px] text-primary">group</span>СКЛАД ЕКІПАЖУ (АЛЬФА)</h2><span class="material-symbols-outlined text-[18px] text-primary toggle-icon">keyboard_arrow_up</span></div>
+<div class="flex-1 overflow-y-auto p-2 flex flex-col gap-2 pr-3" id="content-crew-composition">
+<div class="flex items-center gap-3 p-2 bg-surface-container-low border border-outline-variant/30 rounded">
+<div class="w-8 h-8 rounded-full bg-surface-container border border-outline-variant overflow-hidden flex-shrink-0">
+<img alt="" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_r_2vEmoutyMN87Tx7gPrmgVGxJez3k4X3K8X4awwQFd_BAMsWUH8pxQoM2Gp2es8tJwPW6UP5l9KlEoGemJ4LDmikjOx1xCpirhjm0bbnmdeHS8FxqB8bcVCLl06cJMYOK3040alHGbfAVvbAosRKTLSi8UZY433tqCpL3VBHgKlarQjLexsK1pfDFzS5lgBdy8ik8nTWSx3HGPxzvYKUp_S3UWm9wpgApu5NA29BaAv3bxYCXTTb2U4LAreeshd-1F8R04RwEu2">
+</div>
+<div class="flex-1 min-w-0">
+<div class="font-data-mono text-[11px] text-on-surface truncate">Олексій "Яструб"</div>
+<div class="font-label-caps text-[9px] text-primary truncate">КОМАНДИР</div>
+</div>
+</div>
+<div class="flex items-center gap-3 p-2 bg-surface-container-low border border-outline-variant/30 rounded">
+<div class="w-8 h-8 rounded-full bg-surface-container border border-outline-variant overflow-hidden flex-shrink-0">
+<img alt="" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAnOX92fb6ZCWYR41jZ18m0y3aUbPpMbCto5pw10npnAoBftFjvDzSE9rkED5eQNJN-Y9enGTwWaOxfSmDJDESbVEJQXzOT2He73ePQT3gFIAfOO07cVHCFJ-4CmcYxjmFempjs1d1GQuhz0VSXz9Lgzyqk0laKZukH_ZWPGQ2w-QTEtbE-Cnac3vg0wO341KannKm8GBKsv9gLqtzCIAehlfa_jgh1diRh-aQCJgNcz_na_pwIm_VSm9_gCdbDcInbgNO2zNTL9UEf">
+</div>
+<div class="flex-1 min-w-0">
+<div class="font-data-mono text-[11px] text-on-surface truncate">Іван "Сокіл"</div>
+<div class="font-label-caps text-[9px] text-on-surface-variant truncate">ПІЛОТ</div>
+</div>
+</div>
+<div class="flex items-center gap-3 p-2 bg-surface-container-low border border-outline-variant/30 rounded opacity-50">
+<div class="w-8 h-8 rounded-full bg-surface-container border border-outline-variant overflow-hidden flex-shrink-0">
+<img alt="" class="w-full h-full object-cover grayscale" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2jTEhL2-LmJGeYwgvA_3KuRbbDiq14f7zP-EFVDymb4l3V4K8Pr0gOWN37bI4DYsz_sl8ryom91SCot8bqGVy4UbHyKnokSAhvBuLbjhKqBvEWp9rOzxjA9paHJprFyZbWXg0vtzk8JZ2xc1dAVL5ANhImdrAvZD6QCKAe43ZT9XIhdz1-vrSFwp5CB8oiYBepSKHysXWyqifIwmjMS2wmab_sD9E7OU2FAo5gG_bkJXE_7zkwJN4BNP0GioZeUq-8HZ4AzSv_KAD">
+</div>
+<div class="flex-1 min-w-0">
+<div class="font-data-mono text-[11px] text-on-surface truncate">Сергій "Ворон"</div>
+<div class="font-label-caps text-[9px] text-on-surface-variant truncate">ШТУРМАН / ТЕХНІК</div>
+</div>
+<span class="font-label-caps text-[8px] text-primary-container px-1 py-0.5 border border-primary-container rounded">ВІДП.</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const viewBtn = document.getElementById('view-mode-btn');
+            const editBtn = document.getElementById('edit-mode-btn');
+            const addBtn = document.getElementById('add-crew-btn');
+            const actionCells = document.querySelectorAll('.action-cell');
+            const actionHeader = document.querySelector('.action-header');
+            const statusSelectors = document.querySelectorAll('.status-selector');
+
+            function setMode(isEdit) {
+                if (isEdit) {
+                    editBtn.classList.add('bg-primary', 'text-on-primary');
+                    editBtn.classList.remove('text-on-surface-variant');
+                    viewBtn.classList.remove('bg-primary', 'text-on-primary');
+                    viewBtn.classList.add('text-on-surface-variant');
+                    
+                    addBtn.style.visibility = 'visible';
+                    addBtn.style.opacity = '1';
+                    
+                    actionHeader.style.opacity = '1';
+                    actionCells.forEach(cell => cell.style.opacity = '1');
+                    statusSelectors.forEach(sel => {
+                        sel.disabled = false;
+                        sel.style.pointerEvents = 'auto';
+                        sel.classList.remove('border-transparent');
+                        sel.classList.add('border-outline-variant');
+                    });
+                } else {
+                    viewBtn.classList.add('bg-primary', 'text-on-primary');
+                    viewBtn.classList.remove('text-on-surface-variant');
+                    editBtn.classList.remove('bg-primary', 'text-on-primary');
+                    editBtn.classList.add('text-on-surface-variant');
+                    
+                    addBtn.style.visibility = 'hidden';
+                    addBtn.style.opacity = '0';
+                    
+                    actionHeader.style.opacity = '0';
+                    actionCells.forEach(cell => cell.style.opacity = '0');
+                    statusSelectors.forEach(sel => {
+                        sel.disabled = true;
+                        sel.style.pointerEvents = 'none';
+                        sel.classList.remove('border-outline-variant');
+                        sel.classList.add('border-transparent');
+                    });
+                }
+            }
+
+            viewBtn.addEventListener('click', () => setMode(false));
+            editBtn.addEventListener('click', () => setMode(true));
+
+            // Default to View Mode as requested by matching logic (though initial was edit, we follow the pattern)
+            setMode(false);
+        });
+    </script>
+
+
+
+
+</body></html>

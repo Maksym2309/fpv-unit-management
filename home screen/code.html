@@ -1,0 +1,270 @@
+<!DOCTYPE html><html class="dark" lang="uk" style=""><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{try{
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-surface": "#e5e2e1",
+                    "outline-variant": "#514532",
+                    "on-tertiary-fixed": "#1b0063",
+                    "secondary-fixed-dim": "#abc9f2",
+                    "on-tertiary-container": "#512bd4",
+                    "background": "#131313",
+                    "error": "#ffb4ab",
+                    "on-primary-fixed-variant": "#5e4200",
+                    "surface-container-low": "#1c1b1b",
+                    "tertiary": "#e3dcff",
+                    "primary": "#ffdca1",
+                    "surface-dim": "#131313",
+                    "surface-container-highest": "#353534",
+                    "surface-container-high": "#2a2a2a",
+                    "on-primary": "#412d00",
+                    "inverse-surface": "#e5e2e1",
+                    "primary-container": "#ffb800",
+                    "tertiary-fixed": "#e6deff",
+                    "surface-container": "#201f1f",
+                    "error-container": "#93000a",
+                    "tertiary-container": "#c7bcff",
+                    "surface-bright": "#3a3939",
+                    "secondary-fixed": "#d2e4ff",
+                    "on-tertiary": "#30009b",
+                    "secondary": "#abc9f2",
+                    "inverse-on-surface": "#313030",
+                    "primary-fixed-dim": "#ffba20",
+                    "on-error-container": "#ffdad6",
+                    "on-secondary": "#103253",
+                    "on-error": "#690005",
+                    "surface-container-lowest": "#0e0e0e",
+                    "surface-variant": "#353534",
+                    "surface": "#131313",
+                    "tertiary-fixed-dim": "#c9beff",
+                    "on-secondary-fixed-variant": "#2a486b",
+                    "inverse-primary": "#7c5800",
+                    "surface-tint": "#ffba20",
+                    "secondary-container": "#2a486b",
+                    "on-background": "#e5e2e1",
+                    "on-secondary-container": "#9ab7e0",
+                    "outline": "#9e8f78",
+                    "on-secondary-fixed": "#001c37",
+                    "on-tertiary-fixed-variant": "#4619ca",
+                    "on-primary-container": "#6b4c00",
+                    "on-surface-variant": "#d5c4ab",
+                    "on-primary-fixed": "#271900",
+                    "primary-fixed": "#ffdea8"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "margin-desktop": "24px",
+                    "margin-mobile": "12px",
+                    "unit": "4px",
+                    "gutter": "16px",
+                    "panel-padding": "12px"
+            },
+            "fontFamily": {
+                    "headline-md": [
+                            "Archivo Narrow"
+                    ],
+                    "body-md": [
+                            "Archivo Narrow"
+                    ],
+                    "data-mono": [
+                            "JetBrains Mono"
+                    ],
+                    "display-lg": [
+                            "Archivo Narrow"
+                    ],
+                    "label-caps": [
+                            "JetBrains Mono"
+                    ]
+            },
+            "fontSize": {
+                    "headline-md": [
+                            "24px",
+                            {
+                                    "lineHeight": "32px",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-md": [
+                            "16px",
+                            {
+                                    "lineHeight": "24px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "data-mono": [
+                            "14px",
+                            {
+                                    "lineHeight": "20px",
+                                    "letterSpacing": "0.02em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "display-lg": [
+                            "48px",
+                            {
+                                    "lineHeight": "52px",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "label-caps": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "letterSpacing": "0.1em",
+                                    "fontWeight": "700"
+                            }
+                    ]
+            }
+          }
+        }
+      }
+    }catch(_e){}}catch(_e){}</script><link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:ital,wght@0,400..700;1,400..700&amp;family=JetBrains+Mono:wght@400..800&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"><meta charset="utf-8"></head><body class="bg-background min-h-screen text-on-surface overflow-hidden flex flex-col font-body-md hud-scanline" data-mode="connect">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-margin-desktop h-16 bg-background dark:bg-background text-primary dark:text-primary font-headline-md text-headline-md border-b border-outline-variant flat no shadows">
+<div class="flex items-center gap-4"><span class="font-headline-md text-headline-md font-bold text-primary tracking-tighter uppercase" style="opacity: 0;">WILD HORNETS</span></div>
+<div class="flex items-center gap-4"><button class="text-on-surface-variant hover:bg-surface-container-highest transition-colors p-2 rounded active:scale-95 duration-75"><span class="material-symbols-outlined">home</span></button>
+<button class="text-on-surface-variant hover:bg-surface-container-highest transition-colors p-2 rounded active:scale-95 duration-75">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-container-highest transition-colors p-2 rounded active:scale-95 duration-75">
+<span class="material-symbols-outlined" data-original-icon="signal_cellular_alt">signal_cellular_alt</span>
+</button>
+</div>
+</header>
+<div class="flex flex-1 pt-16 h-screen">
+<!-- SideNavBar (Hidden on Mobile, Visible on Desktop) -->
+<!-- Main Content Canvas -->
+<main class="flex-1 p-margin-mobile md:p-margin-desktop overflow-y-auto bg-surface-dim relative">
+<!-- Decorative Hex Grid Background -->
+<div class="absolute inset-0 opacity-[0.02] pointer-events-none" style="background-image: radial-gradient(#ffb800 1px, transparent 1px); background-size: 20px 20px;"></div>
+<!-- Dashboard Header / HUD -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4 border-b border-outline-variant border-opacity-30 pb-4 relative z-10">
+<div>
+<h1 class="font-display-lg text-display-lg text-on-surface uppercase tracking-tight">Термінал <span class="text-primary-container">Управління</span></h1>
+<p class="font-data-mono text-data-mono text-on-surface-variant mt-1">SYS.DATE: 2024.10.24 | LOC: 48.4647° N, 35.0461° E</p>
+</div>
+<div class="flex gap-4">
+<div class="bg-surface-container p-3 border border-outline-variant clip-corner flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container text-2xl">storm</span>
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant text-[10px]">ПОГОДА / ВІТЕР</div>
+<div class="font-data-mono text-data-mono text-on-surface">5 м/с Пн-Сх</div>
+</div>
+</div>
+<div class="bg-surface-container p-3 border border-outline-variant clip-corner flex items-center gap-3">
+<span class="material-symbols-outlined text-error text-2xl">flight_takeoff</span>
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant text-[10px]">АКТИВНІ ВИЛЬОТИ</div>
+<div class="font-headline-md text-headline-md text-on-surface leading-none">03</div>
+</div>
+</div>
+</div>
+</div>
+<!-- -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter relative z-10">
+<!-- Tile 1 -->
+<a class="group relative bg-surface-container-high border border-outline-variant p-6 h-64 flex flex-col justify-between clip-corner hover:border-primary-container transition-all overflow-hidden md:col-span-2" href="#">
+<div class="absolute inset-0 bg-primary-container opacity-0 group-hover:opacity-5 transition-opacity"></div>
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
+<span class="material-symbols-outlined text-8xl text-primary-container">description</span>
+</div>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-primary-container text-4xl mb-2">description</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Журнал польоту</h3>
+</div>
+<div class="relative z-10 font-data-mono text-data-mono text-on-surface-variant text-[12px] flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+                        Останній запис: 12:45
+                    </div>
+</a>
+<!-- Tile 2 -->
+<a class="group relative bg-surface-container-high border border-outline-variant p-6 h-64 flex flex-col justify-between clip-corner hover:border-primary-container transition-all overflow-hidden" href="#">
+<div class="absolute inset-0 bg-primary-container opacity-0 group-hover:opacity-5 transition-opacity"></div>
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
+<span class="material-symbols-outlined text-8xl text-primary-container">settings_input_antenna</span>
+</div>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-primary-container text-4xl mb-2">settings_input_antenna</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Карта частот</h3>
+</div>
+<div class="relative z-10 font-data-mono text-data-mono text-on-surface-variant text-[12px] flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+                        Перешкоди на 5.8GHz
+                    </div>
+</a>
+<!-- Tile 3 -->
+<a class="group relative bg-surface-container-high border border-outline-variant p-6 h-64 flex flex-col justify-between clip-corner hover:border-primary-container transition-all overflow-hidden bg-[url('placeholder')] bg-cover bg-center" data-alt="A dark, stylized topographical map interface showing active drone tracking dots in bright amber against a charcoal and deep blue grid, evoking a modern military tactical HUD display." href="#">
+<div class="absolute inset-0 bg-background/80 backdrop-blur-sm group-hover:bg-background/60 transition-all"></div>
+<div class="relative z-10 flex justify-between items-start">
+<div class="">
+<span class="material-symbols-outlined text-primary-container text-4xl mb-2">location_on</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">GPS Трекери</h3>
+</div>
+<div class="bg-surface/80 border border-primary-container px-2 py-1 font-data-mono text-data-mono text-primary-container text-[10px]">
+                            LIVE
+                        </div>
+</div>
+<div class="relative z-10 font-data-mono text-data-mono text-on-surface-variant text-[12px]">
+                        Активні маяки: 12 / 15
+                    </div>
+</a>
+<!-- Tile 4 -->
+<a class="group relative bg-surface-container-high border border-outline-variant p-6 h-64 flex flex-col justify-between clip-corner hover:border-primary-container transition-all overflow-hidden" href="#">
+<div class="absolute inset-0 bg-primary-container opacity-0 group-hover:opacity-5 transition-opacity"></div>
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
+<span class="material-symbols-outlined text-8xl text-primary-container">inventory_2</span>
+</div>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-primary-container text-4xl mb-2">inventory_2</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Інвентар</h3>
+</div>
+<div class="relative z-10 font-data-mono text-data-mono text-on-surface-variant text-[12px] flex flex-col gap-1">
+<div class="flex justify-between border-b border-outline-variant border-opacity-30 pb-1"><span class="">Борти:</span> <span class="text-on-surface">24</span></div>
+<div class="flex justify-between pt-1"><span class="">БКС:</span> <span class="text-on-surface">86%</span></div>
+</div>
+</a>
+<!-- Tile 5: Crew Management -->
+<a class="group relative bg-surface-container-high border border-outline-variant p-6 h-64 flex flex-col justify-between clip-corner hover:border-primary-container transition-all overflow-hidden" href="#">
+<div class="absolute inset-0 bg-primary-container opacity-0 group-hover:opacity-5 transition-opacity"></div>
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
+<span class="material-symbols-outlined text-8xl text-primary-container">group</span>
+</div>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-primary-container text-4xl mb-2">group</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Управління Екіпажем</h3>
+</div>
+</a><a class="group relative bg-surface-container-high border border-outline-variant p-6 h-64 flex flex-col justify-between clip-corner hover:border-primary-container transition-all overflow-hidden" href="#">
+<div class="absolute inset-0 bg-primary-container opacity-0 group-hover:opacity-5 transition-opacity"></div>
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
+<span class="material-symbols-outlined text-8xl text-primary-container">settings_suggest</span>
+</div>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-primary-container text-4xl mb-2">settings_suggest</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Управління сектором</h3>
+</div>
+<div class="relative z-10 font-data-mono text-data-mono text-on-surface-variant text-[12px] flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+                        Конфігурація: Сектор-7
+                    </div>
+</a><a class="group relative bg-surface-container-high border border-outline-variant p-6 h-64 flex flex-col justify-between clip-corner hover:border-primary-container transition-all overflow-hidden" href="#">
+<div class="absolute inset-0 bg-primary-container opacity-0 group-hover:opacity-5 transition-opacity"></div>
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
+<span class="material-symbols-outlined text-8xl text-primary-container">school</span>
+</div>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-primary-container text-4xl mb-2">school</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Навчальна інформація</h3>
+</div>
+<div class="relative z-10 font-data-mono text-data-mono text-on-surface-variant text-[12px]">
+База знань, інструкції та протоколи
+</div>
+</a></div></main></div>
+</body></html>

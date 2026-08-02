@@ -1294,7 +1294,7 @@ function getInventoryList() {
   const ss  = SpreadsheetApp.getActiveSpreadsheet();
   const inv = getSheet(ss, 'Інвентар');
   if (!inv || inv.getLastRow() < 3) return [];
-  return inv.getRange(3, 1, inv.getLastRow() - 2, COLS.NOTE).getDisplayValues()
+  return inv.getRange(3, 1, inv.getLastRow() - 2, 12).getDisplayValues()
     .filter(row => String(row[0]).trim() !== '')
     .map(row => ({
       id:          String(row[0]),
@@ -1306,6 +1306,8 @@ function getInventoryList() {
       date:        String(row[COLS.DATE - 1] || ''),
       kit:         String(row[COLS.KIT - 1] || ''),
       note:        String(row[COLS.NOTE - 1] || ''),
+      accepted:    String(row[10] || ''),  // col 11 — Прийнято / Не прийнято / ''
+      acceptReason: String(row[11] || ''), // col 12 — Причина неприйняття
     }));
 }
 
@@ -1315,6 +1317,35 @@ function getInventoryCaps() {
   let admin = false;
   try { admin = isAdmin(email); } catch(e) { admin = !!email && email === ADMIN_EMAIL; }
   return { mode: 'full', admin: admin, email: email, statuses: STATUS_LIST };
+}
+
+// Прийняти / не прийняти обладнання. Головний відповідальний екіпажу (за токеном)
+// або адмін (за Google-акаунтом). accepted: true/false, reason — причина відмови.
+function acceptItem(token, itemId, accepted, reason) {
+  let allowed = false;
+  if (token) {
+    const p = authSession(token);
+    if (!p) throw new Error('Сесія завершилась — увійди знову');
+    const crew = findPersonCrew(p.id);
+    if (crew && crew.isMain) allowed = true;
+    else throw new Error('Приймати обладнання може тільки головний відповідальний екіпажу');
+  } else {
+    const email = Session.getActiveUser().getEmail() || '';
+    if (isAdmin(email)) allowed = true;
+    else throw new Error('Потрібен вхід відповідальної особи');
+  }
+  if (!allowed) throw new Error('Недостатньо прав');
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const inv = getSheet(ss, 'Інвентар');
+  if (!inv || inv.getLastRow() < 3) throw new Error('Інвентар не знайдено');
+  const ids = inv.getRange(3, COLS.ID, inv.getLastRow() - 2, 1).getValues().flat().map(String);
+  const idx = ids.indexOf(String(itemId));
+  if (idx === -1) throw new Error('ID не знайдено: ' + itemId);
+  const row = idx + 3;
+  inv.getRange(row, 11).setValue(accepted ? 'Прийнято' : 'Не прийнято');
+  inv.getRange(row, 12).setValue(accepted ? '' : String(reason || ''));
+  inv.getRange(row, 13).setValue(nowTS());
+  return { id: itemId, accepted: !!accepted };
 }
 
 // Видалити предмет з обліку через веб-застосунок — тільки адмін
@@ -3285,7 +3316,7 @@ function getFlightList() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) return [];
-  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 19).getValues()
+  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 22).getValues()
     .filter(row => String(row[0]).trim() !== '')
     .map(row => ({
       id:           String(row[0]),
@@ -3306,11 +3337,24 @@ function getFlightList() {
       freq:         String(row[15] || ''),
       reserves:     String(row[16] || ''),
       equip:        String(row[18] || ''), // col S — Спорядження екіпажу (щогли, екрани…)
+      main:         String(row[19] || ''), // col T — Головний відповідальний (OP-ID)
+      members:      String(row[20] || ''), // col U — Члени екіпажу (OP-ID через |)
+      crewName:     String(row[21] || ''), // col V — Назва екіпажу
     }));
 }
 
-// Почати виліт
+// Почати виліт. data.token (опційно): якщо переданий — зліт фіксує
+// тільки член екіпажу data.crew (головний або додатковий).
 function startFlight(data) {
+  if (data && data.token) {
+    const p = authSession(data.token);
+    if (!p) throw new Error('Сесія завершилась — увійди знову');
+    const crew = findPersonCrew(p.id);
+    if (!crew || crew.crewId !== String(data.crew)) {
+      throw new Error('Фіксувати зліт може тільки член екіпажу ' + data.crew);
+    }
+    if (!data.pilot) data.pilot = p.callsign;
+  }
   return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
@@ -3364,7 +3408,7 @@ function getCrewList() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) return [];
-  const rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 19).getValues();
+  const rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 22).getValues();
   // Унікальні екіпажі по полю crew (col 3) — беремо тільки рядки де це "crew definition"
   // Crew definition: рядки де col 9 (start) порожнє — це заголовки екіпажу
   const crews = {};
@@ -3382,6 +3426,9 @@ function getCrewList() {
         freq:    String(r[15] || ''),  // col P — Частота
         reserves: String(r[16] || ''), // col Q — Резервні VTX
         equip:   String(r[18] || ''),  // col S — Спорядження
+        main:    String(r[19] || ''),  // col T — Головний (OP-ID)
+        members: String(r[20] || ''),  // col U — Члени (OP-ID через |)
+        crewName: String(r[21] || ''), // col V — Назва
       };
     }
   });
@@ -3423,16 +3470,28 @@ function createCrew(data) {
   ]);
   const newRow = sheet.getLastRow();
   if (data.note) touchFlightNote(sheet, newRow);
-  if (data.equip) sheet.getRange(newRow, 19).setValue(data.equip); // col S — Спорядження
+  // S:Спорядження, T:Головний, U:Члени, V:Назва, W:_TS_CREW
+  sheet.getRange(newRow, 19, 1, 5).setValues([[
+    data.equip || '', data.main || '', data.members || '', data.crewName || '', nowTS()
+  ]]);
   return crewId;
   });
 }
 
-// Оновити екіпаж
-function updateCrew(crewId, data) {
+// Оновити екіпаж. token (опційно): якщо переданий — зміну може робити
+// тільки головний відповідальний цього екіпажу (адмін працює без токена).
+function updateCrew(crewId, data, token) {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet) throw new Error('Журнал польоту не знайдено');
+  if (token !== undefined && token !== null && token !== '') {
+    const p = authSession(token);
+    if (!p) throw new Error('Сесія завершилась — увійди знову');
+    const crew = findPersonCrew(p.id);
+    if (!crew || crew.crewId !== crewId || !crew.isMain) {
+      throw new Error('Змінювати екіпаж може тільки його головний відповідальний');
+    }
+  }
   const ids = sheet.getRange(3, 1, sheet.getLastRow() - 2, 1).getValues().flat().map(String);
   const idx = ids.indexOf(crewId);
   if (idx === -1) throw new Error('Екіпаж не знайдено: ' + crewId);
@@ -3446,6 +3505,10 @@ function updateCrew(crewId, data) {
   if (data.freq    !== undefined) sheet.getRange(row, 16).setValue(data.freq);   // col P
   if (data.reserves!== undefined) sheet.getRange(row, 17).setValue(data.reserves); // col Q
   if (data.equip   !== undefined) sheet.getRange(row, 19).setValue(data.equip);  // col S — Спорядження
+  if (data.main    !== undefined) sheet.getRange(row, 20).setValue(data.main);   // col T — Головний
+  if (data.members !== undefined) sheet.getRange(row, 21).setValue(data.members);// col U — Члени
+  if (data.crewName!== undefined) sheet.getRange(row, 22).setValue(data.crewName);// col V — Назва
+  sheet.getRange(row, 23).setValue(nowTS()); // col W — _TS_CREW: визначення екіпажу оновлено
   return { id: crewId };
 }
 
@@ -3646,20 +3709,21 @@ function createFlightLogSheet(ss) {
   const sheet = ss.insertSheet('Журнал польоту');
   const headers = ['ID вильоту','Дата','Екіпаж','Наземна станція','Борти','Bind фраза',
     'Відповідальна особа','Sinotrack','Трекер ОК','Початок','Кінець','Статус','Примітка','Автор',
-    'Відеосистема','Частота','Резервні VTX','_TS_NOTE','Спорядження'];
-  const widths  = [100,100,120,160,180,130,140,120,90,80,80,100,200,180,130,90,180,10,160];
+    'Відеосистема','Частота','Резервні VTX','_TS_NOTE','Спорядження','Головний','Члени','Назва','_TS_CREW'];
+  const widths  = [100,100,120,160,180,130,140,120,90,80,80,100,200,180,130,90,180,10,160,90,180,110,10];
 
   sheet.getRange('A1:Q1').merge()
     .setValue('✈️ ЖУРНАЛ ПОЛЬОТУ')
     .setBackground('#1a3a5c').setFontColor('#fff')
     .setFontSize(13).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.setRowHeight(1, 38);
-  sheet.getRange(2, 1, 1, 19).setValues([headers])
+  sheet.getRange(2, 1, 1, 23).setValues([headers])
     .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
   sheet.setRowHeight(2, 28);
   widths.forEach((w, i) => sheet.setColumnWidth(i + 1, w));
   sheet.setFrozenRows(2);
   sheet.hideColumns(18); // _TS_NOTE timestamp примітки
+  sheet.hideColumns(23); // _TS_CREW timestamp визначення екіпажу
 
   // Форматуємо колонки часу як текст
   sheet.getRange('J3:K500').setNumberFormat('@STRING@');
@@ -3743,6 +3807,227 @@ function protectSinotrackSheets() {
 }
 
 // ============================================================
+// ПЕРСОНАЛ ТА АВТОРИЗАЦІЯ (відповідальні особи)
+// ============================================================
+// Аркуш «Персонал»: ID | Позивний | Ім'я | Роль | Статус | Пароль (сіль$хеш) | _TS
+// Ролі — декоративні мітки; права визначає членство в екіпажі (головний/додатковий).
+const PERSONNEL_COLS = 7;
+const PERSON_ROLES = ['Пілот','Штурман','Технік','Сапер','Оператор','Командир'];
+
+function ensurePersonnelSheet(ss) {
+  const s = ss || SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = getSheet(s, 'Персонал');
+  if (!sheet) {
+    sheet = s.insertSheet('Персонал');
+    sheet.getRange('A1:E1').merge().setValue('👤 ПЕРСОНАЛ — ВІДПОВІДАЛЬНІ ОСОБИ')
+      .setBackground('#1a3a5c').setFontColor('#fff').setFontSize(13).setFontWeight('bold')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sheet.setRowHeight(1, 38);
+    sheet.getRange(2, 1, 1, PERSONNEL_COLS)
+      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS']])
+      .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.setFrozenRows(2);
+    [90, 140, 180, 110, 110, 10, 10].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+    try { sheet.hideColumns(6, 2); } catch(e) {} // пароль і _TS приховані
+  }
+  return sheet;
+}
+
+function makeSalt() { return Utilities.getUuid().replace(/-/g, '').slice(0, 12); }
+function hashPassword(pw, salt) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + ':' + String(pw), Utilities.Charset.UTF_8)
+    .map(b => ((b + 256) % 256).toString(16).padStart(2, '0')).join('');
+}
+
+function readPersonnel() {
+  const sheet = ensurePersonnelSheet();
+  if (sheet.getLastRow() < 3) return [];
+  return sheet.getRange(3, 1, sheet.getLastRow() - 2, PERSONNEL_COLS).getValues()
+    .map((r, i) => ({ row: 3 + i,
+      id: String(r[0]).trim(), callsign: String(r[1]).trim(), name: String(r[2]).trim(),
+      role: String(r[3]).trim(), status: String(r[4]).trim(), pass: String(r[5]).trim() }))
+    .filter(p => p.id && p.status !== 'Видалений');
+}
+
+// Екіпаж особи: активні CRW-рядки Журналу польоту (Головний col 20, Члени col 21)
+function findPersonCrew(opId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getSheet(ss, 'Журнал польоту');
+  if (!sheet || sheet.getLastRow() < 3 || !opId) return null;
+  const rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 22).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const id = String(r[0]).trim();
+    if (!id.startsWith('CRW-')) continue;
+    if (String(r[11]).trim() !== 'Активний') continue;
+    const main = String(r[19] || '').trim();
+    const members = String(r[20] || '').split('|').map(s => s.trim()).filter(Boolean);
+    if (main === opId) return { crewId: id, crewName: String(r[21] || '').trim(), isMain: true };
+    if (members.indexOf(opId) !== -1) return { crewId: id, crewName: String(r[21] || '').trim(), isMain: false };
+  }
+  return null;
+}
+
+// Публічна інформація про особу (без пароля)
+function personPublic(p) {
+  const crew = findPersonCrew(p.id);
+  return { id: p.id, callsign: p.callsign, name: p.name, role: p.role, status: p.status,
+    crewId: crew ? crew.crewId : '', crewName: crew ? crew.crewName : '',
+    isMain: !!(crew && crew.isMain) };
+}
+
+// Список персоналу для сторінки екіпажів (доступний після входу або адміну)
+function getPersonnelList() {
+  return readPersonnel().map(p => personPublic(p));
+}
+
+// ── Сесії: токен у кеші скрипта, 6 годин ──
+function authLogin(callsign, password) {
+  callsign = String(callsign || '').trim();
+  const p = readPersonnel().find(x => x.callsign.toLowerCase() === callsign.toLowerCase());
+  if (!p) throw new Error('Невірний позивний або пароль');
+  const parts = p.pass.split('$');
+  if (parts.length !== 2 || hashPassword(password, parts[0]) !== parts[1]) {
+    throw new Error('Невірний позивний або пароль');
+  }
+  const token = Utilities.getUuid();
+  CacheService.getScriptCache().put('auth_' + token, p.id, 21600);
+  return { token: token, op: personPublic(p) };
+}
+
+function authSession(token) {
+  if (!token) return null;
+  const opId = CacheService.getScriptCache().get('auth_' + String(token));
+  if (!opId) return null;
+  return readPersonnel().find(x => x.id === opId) || null;
+}
+
+function authWhoAmI(token) {
+  const p = authSession(token);
+  return p ? personPublic(p) : null;
+}
+
+function authLogout(token) {
+  if (token) CacheService.getScriptCache().remove('auth_' + String(token));
+  return { ok: true };
+}
+
+function authChangePassword(token, oldPw, newPw) {
+  const p = authSession(token);
+  if (!p) throw new Error('Сесія завершилась — увійди знову');
+  const parts = p.pass.split('$');
+  if (parts.length !== 2 || hashPassword(oldPw, parts[0]) !== parts[1]) throw new Error('Старий пароль невірний');
+  if (!newPw || String(newPw).length < 4) throw new Error('Новий пароль закороткий (мінімум 4 символи)');
+  const salt = makeSalt();
+  const sheet = ensurePersonnelSheet();
+  sheet.getRange(p.row, 6).setValue(salt + '$' + hashPassword(newPw, salt));
+  sheet.getRange(p.row, 7).setValue(nowTS());
+  return { ok: true };
+}
+
+// Особа може змінити власну декоративну роль
+function authChangeMyRole(token, role) {
+  const p = authSession(token);
+  if (!p) throw new Error('Сесія завершилась — увійди знову');
+  const sheet = ensurePersonnelSheet();
+  sheet.getRange(p.row, 4).setValue(String(role || '').trim());
+  sheet.getRange(p.row, 7).setValue(nowTS());
+  return personPublic(readPersonnel().find(x => x.id === p.id));
+}
+
+// Змінити роль особи: сам собі, головний — членам свого екіпажу, адмін — будь-кому
+function setPersonRole(opId, role, token) {
+  const sheet = ensurePersonnelSheet();
+  const target = readPersonnel().find(x => x.id === opId);
+  if (!target) throw new Error('Не знайдено: ' + opId);
+  let allowed = false;
+  if (token) {
+    const p = authSession(token);
+    if (!p) throw new Error('Сесія завершилась — увійди знову');
+    if (p.id === opId) allowed = true;
+    else {
+      const crew = findPersonCrew(p.id);
+      const tCrew = findPersonCrew(opId);
+      if (crew && crew.isMain && tCrew && tCrew.crewId === crew.crewId) allowed = true;
+    }
+  } else {
+    const email = Session.getActiveUser().getEmail() || '';
+    if (isAdmin(email)) allowed = true;
+  }
+  if (!allowed) throw new Error('Немає прав змінювати роль цієї особи');
+  sheet.getRange(target.row, 4).setValue(String(role || '').trim());
+  sheet.getRange(target.row, 7).setValue(nowTS());
+  return { id: opId, role: role };
+}
+
+// ── Адміністрування персоналу (тільки адмін за Google-акаунтом) ──
+function adminGuard() {
+  const email = Session.getActiveUser().getEmail() || '';
+  if (!isAdmin(email)) throw new Error('Тільки для адміністратора');
+}
+
+function adminListPersonnel() {
+  adminGuard();
+  return readPersonnel().map(p => personPublic(p));
+}
+
+// Створити/оновити особу. d = {id?, callsign, name, role, status, newPassword?}
+function adminSavePerson(d) {
+  adminGuard();
+  return withScriptLock(function() {
+    const sheet = ensurePersonnelSheet();
+    const list = readPersonnel();
+    if (d.id) {
+      const p = list.find(x => x.id === d.id);
+      if (!p) throw new Error('Не знайдено: ' + d.id);
+      if (d.callsign !== undefined) {
+        const cs = String(d.callsign).trim();
+        if (!cs) throw new Error('Позивний не може бути порожнім');
+        const dup = list.find(x => x.id !== d.id && x.callsign.toLowerCase() === cs.toLowerCase());
+        if (dup) throw new Error('Позивний вже зайнятий: ' + cs);
+        sheet.getRange(p.row, 2).setValue(cs);
+      }
+      if (d.name   !== undefined) sheet.getRange(p.row, 3).setValue(d.name);
+      if (d.role   !== undefined) sheet.getRange(p.row, 4).setValue(d.role);
+      if (d.status !== undefined) sheet.getRange(p.row, 5).setValue(d.status);
+      if (d.newPassword) {
+        const salt = makeSalt();
+        sheet.getRange(p.row, 6).setValue(salt + '$' + hashPassword(d.newPassword, salt));
+      }
+      sheet.getRange(p.row, 7).setValue(nowTS());
+      return { id: d.id };
+    }
+    // Нова особа
+    const cs = String(d.callsign || '').trim();
+    if (!cs) throw new Error('Вкажи позивний');
+    if (!d.newPassword) throw new Error('Вкажи початковий пароль');
+    const dup2 = list.find(x => x.callsign.toLowerCase() === cs.toLowerCase());
+    if (dup2) throw new Error('Позивний вже зайнятий: ' + cs);
+    let maxN = 0;
+    // Рахуємо і «видалених», щоб ID не повторювались
+    const sheetIds = sheet.getLastRow() >= 3
+      ? sheet.getRange(3, 1, sheet.getLastRow() - 2, 1).getValues().flat() : [];
+    sheetIds.forEach(id => { const m = String(id).match(/OP-(\d+)/); if (m) maxN = Math.max(maxN, parseInt(m[1], 10)); });
+    const newId = 'OP-' + String(maxN + 1).padStart(3, '0');
+    const salt = makeSalt();
+    sheet.appendRow([newId, cs, d.name || '', d.role || '', d.status || 'Активний',
+      salt + '$' + hashPassword(d.newPassword, salt), nowTS()]);
+    return { id: newId };
+  });
+}
+
+// «Видалення» — tombstone-статус, щоб синхронізація не воскрешала запис
+function adminDeletePerson(id) {
+  adminGuard();
+  const sheet = ensurePersonnelSheet();
+  const p = readPersonnel().find(x => x.id === id);
+  if (!p) throw new Error('Не знайдено: ' + id);
+  sheet.getRange(p.row, 5).setValue('Видалений');
+  sheet.getRange(p.row, 7).setValue(nowTS());
+  return { ok: true };
+}
+
+// ============================================================
 // СИНХРОНІЗАЦІЯ З ТАБЛИЦЕЮ ОПЕРАТОРІВ
 // ============================================================
 const OPERATOR_SS_KEY = 'operatorSpreadsheetId';
@@ -3807,7 +4092,8 @@ function rebuildOperatorFlightLog() {
   // Синхронізувати дані
   const mainSs = SpreadsheetApp.getActiveSpreadsheet();
   ensureNoteTsColumns(mainSs);
-  pushSheet(mainSs, opSs, 'Журнал польоту', 19);
+  ensureNoteTsColumns(opSs);
+  pushSheet(mainSs, opSs, 'Журнал польоту', 23);
   SpreadsheetApp.getUi().alert('✅ Журнал польоту в операторській таблиці перестворено!');
 }
 
@@ -3834,6 +4120,12 @@ function syncToOperators() {
 
     // 4. SIM-карти — двосторонній merge по timestamp
     mergeSim(mainSs, opSs);
+
+    // 5. Персонал (відповідальні особи) — двосторонній merge по timestamp
+    ensurePersonnelSheet(mainSs);
+    ensurePersonnelSheet(opSs);
+    mergeByTimestamp(mainSs, opSs, 'Персонал', PERSONNEL_COLS, PERSONNEL_COLS);
+
     pushDashboard(mainSs, opSs);
     pushDronesForOps(mainSs, opSs); // завжди оновлюємо інвентар
     syncLostNotes(mainSs); // перенести деталі втрати в нотатки бортів
@@ -3852,17 +4144,18 @@ function mergeFlightLog(mainSs, opSs) {
   const opSheet   = getSheet(opSs,   'Журнал польоту');
   if (!mainSheet || !opSheet) return;
 
-  // Зібрати існуючі рядки основної (19 колонок: _TS_NOTE col R + Спорядження col S)
+  // Зібрати існуючі рядки основної (23 колонки: _TS_NOTE R, Спорядження S,
+  // Головний T, Члени U, Назва V, _TS_CREW W)
   const mainIds = new Set();
   let mainRows = [];
   if (mainSheet.getLastRow() >= 3) {
-    mainRows = mainSheet.getRange(3, 1, mainSheet.getLastRow() - 2, 19).getDisplayValues();
+    mainRows = mainSheet.getRange(3, 1, mainSheet.getLastRow() - 2, 23).getDisplayValues();
     mainRows.forEach(r => { const id = String(r[0]).trim(); if (id) mainIds.add(id); });
   }
 
   // Знайти нові рядки в операторській
   if (opSheet.getLastRow() >= 3) {
-    const opData = opSheet.getRange(3, 1, opSheet.getLastRow() - 2, 19).getDisplayValues();
+    const opData = opSheet.getRange(3, 1, opSheet.getLastRow() - 2, 23).getDisplayValues();
     opData.forEach(row => {
       const id = String(row[0]).trim();
       if (id && !mainIds.has(id)) {
@@ -3896,33 +4189,71 @@ function mergeFlightLog(mainSs, opSs) {
               mainSheet.getRange(3 + idx, 18).setValue(opNoteTs || nowTS());
             }
           }
+          // Визначення екіпажу (CRW-рядки): новіша сторона за _TS_CREW перемагає —
+          // головний відповідальний редагує склад з операторської таблиці
+          if (id.startsWith('CRW-')) {
+            const opCrewTs = String(row[22] || '').trim();
+            const mnCrewTs = String(mainRow[22] || '').trim();
+            if (opCrewTs && (!mnCrewTs || opCrewTs > mnCrewTs)) {
+              // D:наземка E:борти F:bind H:трекери O:система P:частота Q:резервні
+              // S:спорядження T:головний U:члени V:назва W:_TS_CREW
+              [[4,3],[5,4],[6,5],[8,7],[15,14],[16,15],[17,16],[19,18],[20,19],[21,20],[22,21],[23,22]]
+                .forEach(([col, i]) => mainSheet.getRange(3 + idx, col).setValue(row[i]));
+            }
+          }
         }
       }
     });
   }
 
   // Push оновленого журналу назад в операторську
-  pushSheet(mainSs, opSs, 'Журнал польоту', 19);
+  pushSheet(mainSs, opSs, 'Журнал польоту', 23);
 }
 
-// Міграція: додати колонки, яких ще немає (мітки часу приміток + спорядження)
+// Міграція: додати колонки, яких ще немає
+// (мітки часу приміток, спорядження, головний/члени/назва екіпажу, прийняття обладнання)
 function ensureNoteTsColumns(ss) {
   const fl = getSheet(ss, 'Журнал польоту');
-  if (fl && String(fl.getRange(2, 18).getValue()) !== '_TS_NOTE') {
-    if (fl.getMaxColumns() < 18) fl.insertColumnsAfter(fl.getMaxColumns(), 18 - fl.getMaxColumns());
-    fl.getRange(2, 18).setValue('_TS_NOTE');
-    try { fl.hideColumns(18); } catch(e) {}
-  }
-  if (fl && String(fl.getRange(2, 19).getValue()) !== 'Спорядження') {
-    if (fl.getMaxColumns() < 19) fl.insertColumnsAfter(fl.getMaxColumns(), 19 - fl.getMaxColumns());
-    fl.getRange(2, 19).setValue('Спорядження')
-      .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
+  if (fl) {
+    const flCols = [
+      [18, '_TS_NOTE', true],
+      [19, 'Спорядження', false],
+      [20, 'Головний', false],
+      [21, 'Члени', false],
+      [22, 'Назва', false],
+      [23, '_TS_CREW', true],
+    ];
+    flCols.forEach(([col, header, hidden]) => {
+      if (String(fl.getRange(2, col).getValue()) !== header) {
+        if (fl.getMaxColumns() < col) fl.insertColumnsAfter(fl.getMaxColumns(), col - fl.getMaxColumns());
+        const cell = fl.getRange(2, col).setValue(header);
+        if (hidden) { try { fl.hideColumns(col); } catch(e) {} }
+        else cell.setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
+      }
+    });
   }
   const snt = getSheet(ss, 'Sinotrack');
   if (snt && String(snt.getRange(2, 10).getValue()) !== '_TS_NOTE') {
     if (snt.getMaxColumns() < 10) snt.insertColumnsAfter(snt.getMaxColumns(), 10 - snt.getMaxColumns());
     snt.getRange(2, 10).setValue('_TS_NOTE');
     try { snt.hideColumns(10); } catch(e) {}
+  }
+  // Інвентар: колонки прийняття обладнання головним відповідальним
+  const inv = getSheet(ss, 'Інвентар');
+  if (inv) {
+    const invCols = [
+      [11, 'Прийнято', false],
+      [12, 'Причина', false],
+      [13, '_TS_ACCEPT', true],
+    ];
+    invCols.forEach(([col, header, hidden]) => {
+      if (String(inv.getRange(2, col).getValue()) !== header) {
+        if (inv.getMaxColumns() < col) inv.insertColumnsAfter(inv.getMaxColumns(), col - inv.getMaxColumns());
+        const cell = inv.getRange(2, col).setValue(header);
+        if (hidden) { try { inv.hideColumns(col); } catch(e) {} }
+        else cell.setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
+      }
+    });
   }
 }
 
@@ -4061,11 +4392,24 @@ function mergeDroneStatuses(mainSs, opSs) {
   const opInv   = getSheet(opSs,   'Інвентар');
 
   if (mainInv && opInv && opInv.getLastRow() >= 3) {
-    const opData   = opInv.getRange(3, 1, opInv.getLastRow() - 2, COLS.STATUS).getValues();
-    const mainData = mainInv.getRange(3, 1, mainInv.getLastRow() - 2, COLS.STATUS).getValues();
+    // 13 колонок: включно зі STATUS_TS (10) і прийняттям (11-13)
+    const opData   = opInv.getRange(3, 1, opInv.getLastRow() - 2, 13).getValues();
+    const mainData = mainInv.getRange(3, 1, mainInv.getLastRow() - 2, 13).getValues();
+    const mainDataTs = mainData;
 
-    // Читаємо також timestamp зміни статусу (col STATUS_TS = 10)
-    const mainDataTs = mainInv.getRange(3, 1, mainInv.getLastRow() - 2, COLS.STATUS_TS).getValues();
+    // Прийняття обладнання: новіша сторона (за _TS_ACCEPT col 13) перемагає
+    opData.forEach(opRow => {
+      const id = String(opRow[0]).trim();
+      const idx = mainData.findIndex(r => String(r[0]).trim() === id);
+      if (idx === -1) return;
+      const opAccTs = String(opRow[12] || '').trim();
+      const mnAccTs = String(mainData[idx][12] || '').trim();
+      if (opAccTs && (!mnAccTs || opAccTs > mnAccTs)) {
+        mainInv.getRange(3 + idx, 11).setValue(opRow[10]);
+        mainInv.getRange(3 + idx, 12).setValue(opRow[11]);
+        mainInv.getRange(3 + idx, 13).setValue(opRow[12]);
+      }
+    });
 
     opData.forEach(opRow => {
       const id    = String(opRow[0]).trim();
@@ -4150,18 +4494,19 @@ function pushDashboard(fromSs, toSs) {
 }
 
 // Копіювати борти з інвентарю для вибору в польоті
+// 13 колонок: включно з приміткою, STATUS_TS і прийняттям обладнання
 function pushDronesForOps(fromSs, toSs) {
   const inv = getSheet(fromSs, 'Інвентар');
   const ops = getSheet(toSs, 'Інвентар');
   if (!inv || !ops) return;
   const lastRow = inv.getLastRow();
   if (lastRow < 3) return;
-  const data = inv.getRange(3, 1, lastRow - 2, COLS.KIT).getValues();
+  const data = inv.getRange(3, 1, lastRow - 2, 13).getValues();
   if (ops.getLastRow() >= 3) {
-    ops.getRange(3, 1, ops.getLastRow() - 2, COLS.KIT).clearContent();
+    ops.getRange(3, 1, ops.getLastRow() - 2, 13).clearContent();
   }
   if (data.length > 0) {
-    ops.getRange(3, 1, data.length, COLS.KIT).setValues(data);
+    ops.getRange(3, 1, data.length, 13).setValues(data);
   }
 }
 
