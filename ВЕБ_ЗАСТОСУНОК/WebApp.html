@@ -2471,10 +2471,6 @@ function renderCrews(c) {
 
   c.innerHTML = html;
   if (crewPageTab === 'staff') renderStaffInto();
-  if (crewPageTab === 'links' && isAdminUser()) {
-    if (!crewForm.editId) crewForm = { drones: [], trackers: [], reserves: [], editId: null };
-    renderCrewForm();
-  }
 }
 
 // ── Ліва частина, вкладка «Увесь О.С.» ──
@@ -2493,9 +2489,11 @@ function renderStaffMain() {
         }).join('')+
       '</select>'+
       editToggle+
+      (isAdminUser() && staffEdit
+        ? '<button class="icon-btn" title="Додати особу" style="background:var(--accent);color:var(--on-accent);font-weight:700" onclick="admEditPerson(\'\')">＋</button>'
+        : '')+
     '</div>'+
-    '<div class="table-wrap"><table class="data-table" id="staffTable"></table></div>'+
-    (isAdminUser() && staffEdit ? '<button class="btn btn-green" style="margin-top:10px" onclick="admEditPerson(\'\')">➕ Додати особу</button>' : '');
+    '<div class="table-wrap"><table class="data-table" id="staffTable"></table></div>';
 }
 
 // Призначене обладнання особи — предмети, де вона відповідальна
@@ -2567,6 +2565,9 @@ function renderLinksMain() {
       (isAdminUser() && crewEdit && cr
         ? '<button class="icon-btn" title="Додати члена екіпажу" style="background:var(--accent);color:var(--on-accent);font-weight:700" onclick="crewAddMemberModal()">👤⁺</button>'
         : '')+
+      (isAdminUser() && crewEdit
+        ? '<button class="icon-btn" title="Створити екіпаж" style="background:var(--accent);color:var(--on-accent);font-weight:700" onclick="openCrewForm(\'\')">＋</button>'
+        : '')+
     '</div>'+
   '</div>';
 
@@ -2591,27 +2592,27 @@ function renderLinksMain() {
     } else {
       roleCell = '<span class="mono">'+esc(isMain ? (curRole ? curRole+' / ' : '')+'Командир екіпажу' : (curRole || '—'))+'</span>';
     }
+    // Дії — під ID, у стилі позначок з інвентарю
     var acts = '';
     if (crewEdit && canMg) {
-      acts = '<div class="inv-acts" style="justify-content:flex-end">'+
+      acts = '<div class="inv-acts">'+
         (isAdminUser() ? '<button class="inv-act" title="Редагувати особу" onclick="admEditPerson(this.dataset.op)" data-op="'+esc(opId)+'">✏️</button>' : '')+
         (!isMain ? '<button class="inv-act inv-act--crew" title="Зробити головним відповідальним" onclick="crewSetMain(this.dataset.op)" data-op="'+esc(opId)+'">⭐</button>' : '')+
         (!isMain ? '<button class="inv-act inv-act--del" title="Прибрати з екіпажу" onclick="crewRemoveMember(this.dataset.op)" data-op="'+esc(opId)+'">✕</button>' : '')+
       '</div>';
     }
-    return '<tr><td class="mono accent">'+esc(opId)+'</td>'+
+    return '<tr><td class="mono accent">'+esc(opId)+acts+'</td>'+
       '<td><b>'+esc(p ? p.callsign : opId)+'</b>'+(isMain?' <span class="badge-main">Головний</span>':'')+
         (p && p.name ? '<div class="member-name">'+esc(p.name)+'</div>' : '')+'</td>'+
       '<td>'+roleCell+'</td>'+
       '<td>'+statusChip(p ? p.status : '')+'</td>'+
       '<td class="mono" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(eq.join(', '))+'">'+
-        (eq.length ? esc(eq.join(', ')) : '<span class="hint">—</span>')+'</td>'+
-      '<td>'+acts+'</td></tr>';
+        (eq.length ? esc(eq.join(', ')) : '<span class="hint">—</span>')+'</td></tr>';
   }).join('');
 
   h += '<div class="table-wrap"><table class="data-table">'+
-    '<thead><tr><th>ID</th><th>Позивний / Ім\'я</th><th>Роль</th><th>Статус</th><th>Призначене обладнання</th><th style="text-align:right">Дії</th></tr></thead>'+
-    '<tbody>'+(rows || '<tr><td colspan="6" class="empty">Склад порожній'+(isAdminUser()?' — додай членів кнопкою 👤⁺ у режимі редагування':'')+'</td></tr>')+'</tbody></table></div>';
+    '<thead><tr><th>ID</th><th>Позивний / Ім\'я</th><th>Роль</th><th>Статус</th><th>Призначене обладнання</th></tr></thead>'+
+    '<tbody>'+(rows || '<tr><td colspan="5" class="empty">Склад порожній'+(isAdminUser()?' — додай членів кнопкою 👤⁺ у режимі редагування':'')+'</td></tr>')+'</tbody></table></div>';
 
   // Обладнання і адмін-дії — компактно під таблицею
   var dl = (cr.drones||'').split('|').filter(Boolean);
@@ -2630,10 +2631,6 @@ function renderLinksMain() {
         '</div>'
       : '')+
   '</div>';
-
-  if (isAdminUser()) {
-    h += '<div class="panel-title" style="margin-top:14px">➕ Новий екіпаж</div><div class="panel" id="crewFormPanel"></div>';
-  }
   return h;
 }
 
@@ -2827,7 +2824,7 @@ function renderCrewForm() {
       '<div id="cfReserveList" style="margin-top:6px"></div></div>'+
     (editing
       ? '<div class="btn-row"><button class="btn btn-green" id="cfBtn" onclick="doSaveCrew()">💾 Зберегти</button>'+
-        '<button class="btn btn-sec" onclick="crewForm={drones:[],trackers:[],reserves:[],editId:null};renderView()">Скасувати</button></div>'
+        '<button class="btn btn-sec" onclick="crewForm={drones:[],trackers:[],reserves:[],editId:null};closeModal()">Скасувати</button></div>'
       : '<button class="btn btn-green" id="cfBtn" onclick="doSaveCrew()">👥 Створити екіпаж</button>');
 
   if (cr && cr.freq) cfSetFreqValue(cr.freq);
@@ -2944,17 +2941,24 @@ function cfRenderChips() {
     return '<span class="chip click chip-freq" onclick="crewForm.reserves=crewForm.reserves.filter(function(x){return x!==\''+esc(r)+'\'});cfRenderChips()">'+esc(r)+' ✕</span>';
   }).join('') || '<span class="hint">— порожньо —</span>';
 }
+// Форма екіпажу у спливаючому вікні: без crewId — створення, з crewId — редагування
 function openCrewForm(crewId) {
-  var cr = crewById(crewId);
-  if (!cr) return;
-  crewForm = {
-    editId: crewId,
-    drones: cr.drones ? cr.drones.split('|').filter(Boolean) : [],
-    trackers: cr.tracker ? cr.tracker.split('|').map(function(s){return s.trim();}).filter(Boolean) : [],
-    reserves: cr.reserves ? cr.reserves.split('|').filter(Boolean) : []
-  };
+  if (crewId) {
+    var cr = crewById(crewId);
+    if (!cr) return;
+    crewForm = {
+      editId: crewId,
+      drones: cr.drones ? cr.drones.split('|').filter(Boolean) : [],
+      trackers: cr.tracker ? cr.tracker.split('|').map(function(s){return s.trim();}).filter(Boolean) : [],
+      reserves: cr.reserves ? cr.reserves.split('|').filter(Boolean) : []
+    };
+  } else {
+    crewForm = { drones: [], trackers: [], reserves: [], editId: null };
+  }
+  var cr2 = crewId ? crewById(crewId) : null;
+  openModal(crewId ? '✏️ Екіпаж '+esc((cr2 && cr2.crewName) || crewId) : '➕ Новий екіпаж',
+    '<div id="crewFormPanel"></div>', true);
   renderCrewForm();
-  $('crewFormPanel').scrollIntoView({behavior:'smooth', block:'start'});
 }
 function doSaveCrew() {
   if (!crewForm.drones.length) { toast('⚠ Додай хоча б один борт', true); return; }
@@ -2985,6 +2989,7 @@ function doSaveCrew() {
                if (data.crewName !== undefined) c.crewName = data.crewName;
                if (data.main !== undefined) c.main = data.main; }
       crewForm = {drones:[],trackers:[],reserves:[],editId:null};
+      closeModal();
       renderView();
       loadAll();
     }, function(e){ unlock(); toast('❌ ' + e.message, true); });
@@ -3004,6 +3009,7 @@ function doSaveCrew() {
         toast('👥 Екіпаж створено');
       }
       crewForm = {drones:[],trackers:[],reserves:[],editId:null};
+      closeModal();
       renderView();
       updateTopStats();
       loadAll();
