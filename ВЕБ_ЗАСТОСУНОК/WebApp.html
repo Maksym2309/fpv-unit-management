@@ -2657,7 +2657,9 @@ function renderLinksMain() {
     '<label>'+(S.auth && !isAdminUser() ? 'Екіпаж:' : 'Вибір екіпажу:')+'</label>'+
     crewPicker+
     '<div class="staff-actions">'+
-      (canMg
+      // Адмін бачить перемикач завжди (інакше з нулем екіпажів не увімкнути
+      // редагування і не створити перший екіпаж), головний — для свого екіпажу
+      (isAdminUser() || canMg
         ? '<div class="inv-mode">'+
             '<button class="inv-mode-btn'+(!crewEdit?' active':'')+'" onclick="crewEdit=false;renderView()">Перегляд</button>'+
             '<button class="inv-mode-btn'+(crewEdit?' active':'')+'" onclick="crewEdit=true;renderView()">Редагування</button>'+
