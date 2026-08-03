@@ -433,10 +433,10 @@ textarea { height: 54px; resize: vertical; }
         <button class="nav-item" data-view="inventory" onclick="setView('inventory')"><span class="nav-icon">📦</span>Інвентар</button>
         <button class="nav-item" data-view="crews" onclick="setView('crews')"><span class="nav-icon">👥</span>Екіпаж</button>
       </nav>
-      <div class="nav" style="margin-top:auto;padding-bottom:4px">
-        <button class="nav-item" id="navLogout" style="display:none;color:var(--red)" onclick="doLogout()"><span class="nav-icon">⎋</span>Вихід</button>
+      <div class="nav" id="navLogoutWrap" style="display:none;margin-top:auto;border-top:1px solid var(--line);padding:8px 0 4px">
+        <button class="nav-item" id="navLogout" style="color:var(--red)" onclick="doLogout()"><span class="nav-icon">⎋</span>Вихід</button>
       </div>
-      <div class="sidebar-foot" style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px">
+      <div class="sidebar-foot" id="sidebarFoot" style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px">
         <div>
           <div class="user-email" id="userEmail"></div>
           <div class="sync-line">Оновлено: <b id="syncTime">–</b></div>
@@ -784,8 +784,12 @@ function renderAuthBox() {
   } else {
     el.innerHTML = '<button class="auth-chip" onclick="openLoginModal()">🔑 Вхід</button>';
   }
-  var lo = $('navLogout');
-  if (lo) lo.style.display = S.auth ? '' : 'none';
+  // «Вихід» (разом із рискою над ним) — лише після входу; футер тоді
+  // втрачає власний auto-відступ, щоб кнопка сиділа впритул над ним
+  var lw = $('navLogoutWrap');
+  if (lw) lw.style.display = S.auth ? '' : 'none';
+  var sf = $('sidebarFoot');
+  if (sf) sf.style.marginTop = S.auth ? '0' : '';
 }
 
 function openLoginModal(msg) {
