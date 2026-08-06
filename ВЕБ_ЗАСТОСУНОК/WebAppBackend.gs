@@ -6,9 +6,23 @@
 // Або просто встав цей код у кінець Code.gs / OperatorCode.gs.
 // ═══════════════════════════════════════════════════════════
 
-// Точка входу веб-застосунку. Після деплою (Deploy → Web app)
-// відкривається у окремій вкладці браузера.
+// ── РІВЕНЬ 2 (PWA) ──
+// Адреса PWA на GitHub Pages (напр. 'https://maksym2309.github.io/fpv-unit-management/').
+// ВАЖЛИВО: коли деплой перемкнено на «Execute as: Me» + «Anyone», сторінку /exec
+// відкривати не можна (кожен відвідувач діяв би від імені власника) — тому при
+// заповненому PWA_URL doGet лише переадресовує на PWA. Порожній PWA_URL —
+// стара поведінка (віддає застосунок; тоді деплой має бути «User accessing»).
+var PWA_URL = '';
+
+// Точка входу веб-застосунку
 function doGet(e) {
+  if (PWA_URL) {
+    return HtmlService.createHtmlOutput(
+      '<meta http-equiv="refresh" content="0; url=' + PWA_URL + '">' +
+      '<style>body{background:#131313;color:#a8a5a2;font-family:monospace;text-align:center;padding-top:60px}a{color:#ffb800}</style>' +
+      '<p>Застосунок переїхав:<br><br><a href="' + PWA_URL + '">' + PWA_URL + '</a></p>'
+    ).setTitle('WILD HORNETS — Tactical OS');
+  }
   return HtmlService.createHtmlOutputFromFile('WebApp')
     .setTitle('WILD HORNETS — Tactical OS')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
@@ -20,8 +34,9 @@ function doGet(e) {
 // службового/тестового деплою, який не працює — тому константа надійніша.
 var WEBAPP_URL = '';
 
-// URL задеплоєного веб-застосунку
+// URL застосунку для меню таблиці: PWA (якщо налаштовано) → константа → службовий
 function getWebAppUrl() {
+  if (PWA_URL) return PWA_URL;
   if (WEBAPP_URL) return WEBAPP_URL;
   try { return ScriptApp.getService().getUrl() || ''; } catch (err) { return ''; }
 }

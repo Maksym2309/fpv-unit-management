@@ -223,7 +223,7 @@ function getActiveFrequencyData() {
   if (!sheet || sheet.getLastRow() < 3) return [];
   const rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 17).getValues();
   const result = [];
-  const myEmail = Session.getActiveUser().getEmail() || '';
+  const myEmail = apiUserEmail_() || '';
 
   rows.forEach(r => {
     const id = String(r[0]).trim();
@@ -365,7 +365,7 @@ function diagFrequencies() {
 function getFrequencyAnalysis() {
   const active   = getActiveFrequencyData();
   const external = getExternalFreqs();
-  const myEmail  = Session.getActiveUser().getEmail() || '';
+  const myEmail  = apiUserEmail_() || '';
 
   // Позначити джерело кожного активного вильоту
   active.forEach(a => {
@@ -429,7 +429,7 @@ function swapCrewFrequency(crewId, newMainCode) {
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) throw new Error('Журнал порожній');
 
-  const myEmail = Session.getActiveUser().getEmail() || '';
+  const myEmail = apiUserEmail_() || '';
   const rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 17).getValues();
 
   for (let i = 0; i < rows.length; i++) {
@@ -658,7 +658,7 @@ function isAllowed(email) {
 // Показати/сховати аркуші залежно від поточного користувача
 function applySheetVisibility() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
-  const email = Session.getActiveUser().getEmail() || '';
+  const email = apiUserEmail_() || '';
 
   // Визначаємо рівень доступу
   let level = 'none'; // невідомий
@@ -712,7 +712,7 @@ function getAccessData() {
     adminEmail:    ADMIN_EMAIL,
     adminEmails:   getAdminEmails(),
     allowedEmails: getAllowedEmails(),
-    currentUser:   Session.getActiveUser().getEmail() || '',
+    currentUser:   apiUserEmail_() || '',
   };
 }
 
@@ -752,7 +752,7 @@ function removeAllowedEmail(email) {
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
 
-  const userEmail = Session.getActiveUser().getEmail() || '';
+  const userEmail = apiUserEmail_() || '';
   const userIsAdmin = isAdmin(userEmail);
 
   // Меню Польоти — для всіх
@@ -840,7 +840,7 @@ function openEditForm() {
 // ============================================================
 // Отримати email поточного користувача для sidebar
 function getCurrentUserEmail() {
-  return Session.getActiveUser().getEmail() || '';
+  return apiUserEmail_() || '';
 }
 
 function getAdminEmail() {
@@ -908,7 +908,7 @@ function addItemCore(d) {
   const logSheet = getSheet(ss, 'Журнал руху');
   if (logSheet) {
     logSheet.appendRow([dateFormatted, newId, d.name, 'Надходження',
-      '—', d.assignment, Session.getActiveUser().getEmail() || '—', '', 'Форма']);
+      '—', d.assignment, apiUserEmail_() || '—', '', 'Форма']);
   }
 
   // Якщо назва нова — зберегти в довідник
@@ -946,7 +946,7 @@ function updateItemStatusById(d) {
   const oldStatus = String(sheet.getRange(row, COLS.STATUS).getValue());
   const name      = String(sheet.getRange(row, COLS.NAME).getValue());
   const today     = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  const user      = Session.getActiveUser().getEmail() || '—';
+  const user      = apiUserEmail_() || '—';
   const log       = getSheet(ss, 'Журнал руху');
 
   setItemStatus(sheet, row, d.status);
@@ -1071,7 +1071,7 @@ function onEdit(e) {
   const id  = sheet.getRange(row, COLS.ID).getValue();
   const name = sheet.getRange(row, COLS.NAME).getValue();
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  const user  = Session.getActiveUser().getEmail() || '—';
+  const user  = apiUserEmail_() || '—';
 
   // Зміна СТАТУСУ (col E = 5)
   if (col === COLS.STATUS) {
@@ -1313,7 +1313,7 @@ function getInventoryList() {
 
 // Права поточного користувача на сторінці Інвентар веб-застосунку
 function getInventoryCaps() {
-  const email = Session.getActiveUser().getEmail() || '';
+  const email = apiUserEmail_() || '';
   let admin = false;
   try { admin = isAdmin(email); } catch(e) { admin = !!email && email === ADMIN_EMAIL; }
   return { mode: 'full', admin: admin, email: email, statuses: STATUS_LIST };
@@ -1330,7 +1330,7 @@ function acceptItem(token, itemId, accepted, reason) {
     if (crew && crew.isMain) allowed = true;
     else throw new Error('Приймати обладнання може тільки головний відповідальний екіпажу');
   } else {
-    const email = Session.getActiveUser().getEmail() || '';
+    const email = apiUserEmail_() || '';
     if (isAdmin(email)) allowed = true;
     else throw new Error('Потрібен вхід відповідальної особи');
   }
@@ -1350,7 +1350,7 @@ function acceptItem(token, itemId, accepted, reason) {
 
 // Видалити предмет з обліку через веб-застосунок — тільки адмін
 function webDeleteInventoryItem(id, reason) {
-  const email = Session.getActiveUser().getEmail() || '';
+  const email = apiUserEmail_() || '';
   if (!isAdmin(email)) throw new Error('Видаляти предмети може тільки адміністратор');
   return deleteItemsByIds([id], reason || 'Видалено через веб-застосунок');
 }
@@ -1380,7 +1380,7 @@ function executeMovement(data) {
 
   if (data.status) setItemStatus(inv, row, data.status);
   if (log) log.appendRow([today, data.id, name, 'Передача', oldResp || '—', data.to,
-    Session.getActiveUser().getEmail() || '—', data.to, data.comment || '']);
+    apiUserEmail_() || '—', data.to, data.comment || '']);
   return { id: data.id, name, from: oldResp || '—', to: data.to };
 }
 
@@ -1400,7 +1400,7 @@ function executeReturn(data) {
   setItemStatus(inv, row, data.status || 'На перевірці');
   inv.getRange(row, COLS.RESPONSIBLE).setValue('');
   if (log) log.appendRow([today, data.id, name, 'Повернення', oldResp || '—', '—',
-    oldResp || '—', Session.getActiveUser().getEmail() || '—', 'Статус: ' + (data.status || 'На перевірці')]);
+    oldResp || '—', apiUserEmail_() || '—', 'Статус: ' + (data.status || 'На перевірці')]);
   return { id: data.id, name, from: oldResp || '—', status: data.status };
 }
 
@@ -1568,7 +1568,7 @@ function writeOffConsumableById(data) {
   const name  = String(sheet.getRange(row, 2).getValue());
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   if (logSheet) logSheet.appendRow([today, data.id, name, writeOff,
-    data.purpose || '', data.reason || '', Session.getActiveUser().getEmail() || '—', '']);
+    data.purpose || '', data.reason || '', apiUserEmail_() || '—', '']);
   return { id: data.id, name, written: writeOff, left: currentQty - writeOff,
     status: sheet.getRange(row, 8).getDisplayValue() };
 }
@@ -1585,7 +1585,7 @@ function deleteConsumableById(id, reason) {
   const row  = idx + 3;
   const name = String(sheet.getRange(row, 2).getValue());
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  if (log) log.appendRow([today, id, name, '—', 'Видалення', reason || '', Session.getActiveUser().getEmail() || '—', '']);
+  if (log) log.appendRow([today, id, name, '—', 'Видалення', reason || '', apiUserEmail_() || '—', '']);
   sheet.deleteRow(row);
   return { id, name };
 }
@@ -1615,7 +1615,7 @@ function writeOffConsumable() {
 
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   writeoff.appendRow([today, id, name, qty, '—', r3.getResponseText().trim(),
-    Session.getActiveUser().getEmail() || '—', '']);
+    apiUserEmail_() || '—', '']);
   ui.alert('✅ Списано: "' + name + '", ' + qty + ' од.');
 }
 
@@ -2641,7 +2641,7 @@ function deleteSelectedRows() {
   const reason = r2.getResponseText().trim() || 'не вказано';
 
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  const user  = Session.getActiveUser().getEmail() || '—';
+  const user  = apiUserEmail_() || '—';
 
   // Журнал для всіх
   toDelete.forEach(r => {
@@ -2695,7 +2695,7 @@ function deleteItemsByIds(ids, reason) {
   if (!inv) throw new Error('Аркуш "Інвентар" не знайдено');
 
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  const user  = Session.getActiveUser().getEmail() || '—';
+  const user  = apiUserEmail_() || '—';
   const deleted = [];
   const notFound = [];
 
@@ -3372,7 +3372,7 @@ function startFlight(data) {
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   const now   = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'HH:mm');
 
-  const creatorEmail = Session.getActiveUser().getEmail() || '';
+  const creatorEmail = apiUserEmail_() || '';
   sheet.appendRow([
     newId, today,
     data.crew      || '',    // C: Екіпаж
@@ -3451,7 +3451,7 @@ function createCrew(data) {
   }
   const crewId = 'CRW-' + String(maxNum + 1).padStart(3, '0');
   const today  = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  const email  = Session.getActiveUser().getEmail() || '';
+  const email  = apiUserEmail_() || '';
   sheet.appendRow([
     crewId, today, crewId,    // A:ID, B:Дата, C:Екіпаж
     data.gnst||'',             // D:Наземна станція
@@ -3525,7 +3525,7 @@ function endFlight(flightId, droneStatuses, note) {
   const row = idx + 3;
 
   // Перевірка прав: тільки автор або адмін може завершити
-  const currentEmail  = Session.getActiveUser().getEmail() || '';
+  const currentEmail  = apiUserEmail_() || '';
   const creatorEmail  = String(sheet.getRange(row, 14).getValue()); // col N — Автор
   const isAdmin       = currentEmail === ADMIN_EMAIL;
   const isCreator     = !creatorEmail || creatorEmail === currentEmail;
@@ -3543,7 +3543,7 @@ function endFlight(flightId, droneStatuses, note) {
   let cascadeLost = false;
   let lostSummary = '';  // деталі втрати для примітки вильоту
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  const user  = Session.getActiveUser().getEmail() || '';
+  const user  = apiUserEmail_() || '';
   if (droneStatuses && inv) {
     const invIds = inv.getRange(3, COLS.ID, inv.getLastRow() - 2, 1).getValues().flat().map(String);
     droneStatuses.forEach(ds => {
@@ -3809,9 +3809,10 @@ function protectSinotrackSheets() {
 // ============================================================
 // ПЕРСОНАЛ ТА АВТОРИЗАЦІЯ (відповідальні особи)
 // ============================================================
-// Аркуш «Персонал»: ID | Позивний | Ім'я | Роль | Статус | Пароль (сіль$хеш) | _TS
+// Аркуш «Персонал»: ID | Позивний | Ім'я | Роль | Статус | Пароль (сіль$хеш) | _TS | Адмін
 // Ролі — декоративні мітки; права визначає членство в екіпажі (головний/додатковий).
-const PERSONNEL_COLS = 7;
+// «Адмін» (чекбокс) — права адміністратора у PWA; ставиться адміном у застосунку або в аркуші.
+const PERSONNEL_COLS = 8;
 const PERSON_ROLES = ['Пілот','Штурман','Технік','Сапер','Оператор','Командир'];
 
 function ensurePersonnelSheet(ss) {
@@ -3824,11 +3825,21 @@ function ensurePersonnelSheet(ss) {
       .setHorizontalAlignment('center').setVerticalAlignment('middle');
     sheet.setRowHeight(1, 38);
     sheet.getRange(2, 1, 1, PERSONNEL_COLS)
-      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS']])
+      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін']])
       .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
     sheet.setFrozenRows(2);
-    [90, 140, 180, 110, 110, 10, 10].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+    [90, 140, 180, 110, 110, 10, 10, 70].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
     try { sheet.hideColumns(6, 2); } catch(e) {} // пароль і _TS приховані
+  }
+  // Міграція: колонка «Адмін» (чекбокс) для аркушів, створених раніше
+  if (String(sheet.getRange(2, 8).getValue()).trim() !== 'Адмін') {
+    sheet.getRange(2, 8).setValue('Адмін')
+      .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.setColumnWidth(8, 70);
+    try {
+      sheet.getRange(3, 8, 300, 1).setDataValidation(
+        SpreadsheetApp.newDataValidation().requireCheckbox().build());
+    } catch(e) {}
   }
   return sheet;
 }
@@ -3845,7 +3856,8 @@ function readPersonnel() {
   return sheet.getRange(3, 1, sheet.getLastRow() - 2, PERSONNEL_COLS).getValues()
     .map((r, i) => ({ row: 3 + i,
       id: String(r[0]).trim(), callsign: String(r[1]).trim(), name: String(r[2]).trim(),
-      role: String(r[3]).trim(), status: String(r[4]).trim(), pass: String(r[5]).trim() }))
+      role: String(r[3]).trim(), status: String(r[4]).trim(), pass: String(r[5]).trim(),
+      admin: r[7] === true || /^(true|так|✓|1)$/i.test(String(r[7] || '').trim()) }))
     .filter(p => p.id && p.status !== 'Видалений');
 }
 
@@ -3873,7 +3885,7 @@ function personPublic(p) {
   const crew = findPersonCrew(p.id);
   return { id: p.id, callsign: p.callsign, name: p.name, role: p.role, status: p.status,
     crewId: crew ? crew.crewId : '', crewName: crew ? crew.crewName : '',
-    isMain: !!(crew && crew.isMain) };
+    isMain: !!(crew && crew.isMain), admin: !!p.admin };
 }
 
 // Список персоналу для сторінки екіпажів (доступний після входу або адміну)
@@ -3951,7 +3963,7 @@ function setPersonRole(opId, role, token) {
       if (crew && crew.isMain && tCrew && tCrew.crewId === crew.crewId) allowed = true;
     }
   } else {
-    const email = Session.getActiveUser().getEmail() || '';
+    const email = apiUserEmail_() || '';
     if (isAdmin(email)) allowed = true;
   }
   if (!allowed) throw new Error('Немає прав змінювати роль цієї особи');
@@ -3976,7 +3988,7 @@ function setPersonStatus(opId, status, token) {
       if (crew && crew.isMain && tCrew && tCrew.crewId === crew.crewId) allowed = true;
     }
   } else {
-    const email = Session.getActiveUser().getEmail() || '';
+    const email = apiUserEmail_() || '';
     if (isAdmin(email)) allowed = true;
   }
   if (!allowed) throw new Error('Немає прав змінювати статус цієї особи');
@@ -3987,7 +3999,7 @@ function setPersonStatus(opId, status, token) {
 
 // ── Адміністрування персоналу (тільки адмін за Google-акаунтом) ──
 function adminGuard() {
-  const email = Session.getActiveUser().getEmail() || '';
+  const email = apiUserEmail_() || '';
   if (!isAdmin(email)) throw new Error('Тільки для адміністратора');
 }
 
@@ -4015,6 +4027,7 @@ function adminSavePerson(d) {
       if (d.name   !== undefined) sheet.getRange(p.row, 3).setValue(d.name);
       if (d.role   !== undefined) sheet.getRange(p.row, 4).setValue(d.role);
       if (d.status !== undefined) sheet.getRange(p.row, 5).setValue(d.status);
+      if (d.admin  !== undefined) sheet.getRange(p.row, 8).setValue(!!d.admin);
       if (d.newPassword) {
         const salt = makeSalt();
         sheet.getRange(p.row, 6).setValue(salt + '$' + hashPassword(d.newPassword, salt));
@@ -4036,7 +4049,7 @@ function adminSavePerson(d) {
     const newId = 'OP-' + String(maxN + 1).padStart(3, '0');
     const salt = makeSalt();
     sheet.appendRow([newId, cs, d.name || '', d.role || '', d.status || 'Активний',
-      salt + '$' + hashPassword(d.newPassword, salt), nowTS()]);
+      salt + '$' + hashPassword(d.newPassword, salt), nowTS(), !!d.admin]);
     return { id: newId };
   });
 }
