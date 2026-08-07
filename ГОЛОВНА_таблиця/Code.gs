@@ -4190,9 +4190,10 @@ function syncToOperators() {
     mergeSim(mainSs, opSs);
 
     // 5. Персонал (відповідальні особи) — двосторонній merge по timestamp
+    // УВАГА: _TS — колонка 7 (PERSONNEL_COLS тепер 8, остання — «Адмін»)
     ensurePersonnelSheet(mainSs);
     ensurePersonnelSheet(opSs);
-    mergeByTimestamp(mainSs, opSs, 'Персонал', PERSONNEL_COLS, PERSONNEL_COLS);
+    mergeByTimestamp(mainSs, opSs, 'Персонал', PERSONNEL_COLS, 7);
 
     pushDashboard(mainSs, opSs);
     pushDronesForOps(mainSs, opSs); // завжди оновлюємо інвентар
