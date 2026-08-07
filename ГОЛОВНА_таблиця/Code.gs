@@ -3893,7 +3893,11 @@ function getPersonnelList() {
   return readPersonnel().map(p => personPublic(p));
 }
 
-// ── Сесії: токен у кеші скрипта, 6 годин ──
+// ── Сесії: токен у Script Properties, 30 днів (ковзне продовження) ──
+// Вхід на пристрої робиться один раз; поки людина користується застосунком,
+// сесія продовжується сама. Вихід або 30 днів простою — токен вмирає.
+const AUTH_SESSION_DAYS = 30;
+
 function authLogin(callsign, password) {
   callsign = String(callsign || '').trim();
   const p = readPersonnel().find(x => x.callsign.toLowerCase() === callsign.toLowerCase());
@@ -3903,15 +3907,41 @@ function authLogin(callsign, password) {
     throw new Error('Невірний позивний або пароль');
   }
   const token = Utilities.getUuid();
-  CacheService.getScriptCache().put('auth_' + token, p.id, 21600);
+  authPurgeExpired_();
+  PropertiesService.getScriptProperties().setProperty('auth_' + token,
+    JSON.stringify({ op: p.id, exp: Date.now() + AUTH_SESSION_DAYS * 24 * 3600 * 1000 }));
   return { token: token, op: personPublic(p) };
 }
 
 function authSession(token) {
   if (!token) return null;
-  const opId = CacheService.getScriptCache().get('auth_' + String(token));
-  if (!opId) return null;
-  return readPersonnel().find(x => x.id === opId) || null;
+  const props = PropertiesService.getScriptProperties();
+  const key = 'auth_' + String(token);
+  const raw = props.getProperty(key);
+  if (!raw) return null;
+  let s;
+  try { s = JSON.parse(raw); } catch (e) { props.deleteProperty(key); return null; }
+  if (!s || !s.op || !s.exp || s.exp < Date.now()) { props.deleteProperty(key); return null; }
+  // Ковзне продовження: якщо лишилось менше половини строку — продовжуємо
+  if (s.exp - Date.now() < AUTH_SESSION_DAYS * 12 * 3600 * 1000) {
+    s.exp = Date.now() + AUTH_SESSION_DAYS * 24 * 3600 * 1000;
+    props.setProperty(key, JSON.stringify(s));
+  }
+  return readPersonnel().find(x => x.id === s.op) || null;
+}
+
+// Прибрати протухлі сесії (викликається при кожному вході)
+function authPurgeExpired_() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  const now = Date.now();
+  Object.keys(all).forEach(k => {
+    if (k.indexOf('auth_') !== 0) return;
+    try {
+      const s = JSON.parse(all[k]);
+      if (!s.exp || s.exp < now) props.deleteProperty(k);
+    } catch (e) { props.deleteProperty(k); }
+  });
 }
 
 function authWhoAmI(token) {
@@ -3920,7 +3950,7 @@ function authWhoAmI(token) {
 }
 
 function authLogout(token) {
-  if (token) CacheService.getScriptCache().remove('auth_' + String(token));
+  if (token) PropertiesService.getScriptProperties().deleteProperty('auth_' + String(token));
   return { ok: true };
 }
 
