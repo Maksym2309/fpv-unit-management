@@ -39,6 +39,9 @@ body {
 
 /* ── Каркас ── */
 #app { display: flex; flex-direction: column; height: 100vh; }
+/* Мобільні браузери: 100vh вищий за видимий екран (адресний рядок) —
+   dvh міряє реальний видимий viewport, низ більше не обрізається */
+@supports (height: 100dvh) { #app { height: 100dvh; } }
 header.topbar {
   height: 56px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: 0 20px; background: var(--bg); border-bottom: 1px solid var(--line-2); z-index: 40;
@@ -834,6 +837,7 @@ function setView(v) {
   document.querySelector('.sidebar').classList.remove('open');
   renderView();
 }
+var _lastRenderedView = null;
 function renderView() {
   var c = $('content');
   renderAuthBox();
@@ -842,6 +846,9 @@ function renderView() {
     c.innerHTML = '<div class="loading-view"><span class="pulse-dot"></span>Завантаження даних…</div>';
     return;
   }
+  // Перемальовка того самого розділу (згортання панелей, оновлення даних)
+  // не має скидати позицію прокрутки — інакше на мобільному сторінка «стрибає»
+  var keepScroll = (_lastRenderedView === S.view) ? c.scrollTop : 0;
   if (S.view === 'home') renderHome(c);
   else if (S.view === 'flights') renderFlights(c);
   else if (S.view === 'freq') renderFreq(c);
@@ -849,6 +856,8 @@ function renderView() {
   else if (S.view === 'inventory') renderInventory(c);
   else if (S.view === 'crews') renderCrews(c);
   else if (S.view === 'settings') renderSettings(c);
+  _lastRenderedView = S.view;
+  c.scrollTop = keepScroll;
 }
 
 /* ═══════════ АВТОРИЗАЦІЯ ═══════════ */
