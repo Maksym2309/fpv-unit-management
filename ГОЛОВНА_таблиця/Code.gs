@@ -4603,6 +4603,7 @@ function addMissingSheets() {
     { name: 'SIM-карти',    fn: () => createSimSheet(ss) },
     { name: 'Журнал польоту', fn: () => createFlightLogSheet(ss) },
     { name: 'Дашборд',      fn: () => createDashboard(ss) },
+    { name: 'Персонал',     fn: () => ensurePersonnelSheet(ss) },
   ];
 
   const added = [];
