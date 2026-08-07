@@ -844,7 +844,11 @@ function openLoginModal(msg) {
     (msg ? '<div class="hint" style="margin-bottom:10px">'+esc(msg)+'</div>' : '')+
     '<div class="f"><label>Позивний</label><input type="text" id="lgCallsign" autocomplete="off"></div>'+
     '<div class="f"><label>Пароль</label><input type="password" id="lgPassword" onkeydown="if(event.key===\'Enter\')doLogin()"></div>'+
-    '<button class="btn btn-green" id="lgBtn" onclick="doLogin()">🔑 Увійти</button>'
+    '<button class="btn btn-green" id="lgBtn" onclick="doLogin()">🔑 Увійти</button>'+
+    (MODE === 'api'
+      ? '<div style="text-align:center;margin-top:10px"><a href="#" class="hint" onclick="setApiUrl();return false">⚙ Змінити адресу бази (/exec)</a>'+
+        '<div class="hint" style="margin-top:4px;word-break:break-all;opacity:.6">'+esc(API_URL)+'</div></div>'
+      : '')
   );
   setTimeout(function(){ var i = $('lgCallsign'); if (i) i.focus(); }, 60);
 }
