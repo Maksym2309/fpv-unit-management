@@ -218,6 +218,8 @@ textarea { height: 54px; resize: vertical; }
 .table-wrap { overflow: auto; border: 1px solid var(--line); max-height: 62vh; }
 .filter-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
 .filter-row input, .filter-row select { width: auto; min-width: 160px; flex: 0 1 auto; }
+.inv-search { flex: 1 1 180px !important; min-width: 140px !important; }
+.type-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .filter-chip { padding: 5px 10px; font-family: var(--font-data); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; background: var(--panel); border: 1px solid var(--line-2); color: var(--muted); cursor: pointer; }
 .filter-chip.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
@@ -257,7 +259,7 @@ textarea { height: 54px; resize: vertical; }
 .matrix-wrap { overflow: auto; flex: 1; padding: 6px 8px 8px; }
 .matrix { border-collapse: collapse; width: 100%; table-layout: fixed; font-family: var(--font-data); min-width: 620px; }
 .matrix th { color: var(--dim); font-size: 10px; font-weight: 700; letter-spacing: .08em; padding: 7px 2px; border-bottom: 1px solid var(--line-2); text-align: center; position: sticky; top: -6px; background: var(--panel-2); z-index: 3; }
-.matrix th.band-col, .matrix td.band { width: 104px; text-align: left; padding-left: 8px; }
+.matrix th.band-col, .matrix td.band { width: 76px; text-align: left; padding-left: 6px; }
 .matrix td.band { color: var(--accent); font-size: 10px; line-height: 1.25; white-space: normal; overflow-wrap: break-word; border-right: 1px solid var(--line-2); font-weight: 700; }
 .matrix td { padding: 3px; }
 .cell { height: 40px; display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 12px; background: var(--panel-3); border: 1px solid rgba(81,69,50,.45); color: var(--muted); overflow: hidden; }
@@ -439,6 +441,19 @@ textarea { height: 54px; resize: vertical; }
   .side-panel { max-width: 100%; }
   .side-panel-body { overflow-x: auto; }
   .crew-pick { flex-wrap: wrap; gap: 4px; }
+
+  /* Матриця частот: вужча колонка бендів + щільніші клітинки */
+  .matrix { min-width: 520px; }
+  .matrix th.band-col, .matrix td.band { width: 58px; font-size: 9px; padding-left: 4px; }
+  .matrix td { padding: 2px; }
+  .cell { height: 34px; font-size: 11px; }
+  .cell .ctag { font-size: 8px; }
+
+  /* Панелі інструментів інвентаря: стовпчиком, на всю ширину */
+  .inv-crew-bar, .filter-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .inv-crew-bar select, .filter-row input, .inv-search { width: 100% !important; min-width: 0 !important; }
+  .filter-row .inv-mode, .inv-crew-bar .inv-mode { margin-left: 0; display: flex; }
+  .filter-row .inv-mode-btn, .inv-crew-bar .inv-mode-btn { flex: 1; }
 }
 </style>
 </head>
@@ -621,8 +636,16 @@ var DEMO_DATA = {
     {id:'FPV-205', name:'Hornet 10"', type:'FPV-10', assignment:'Sting', status:'Ремонт', responsible:'Грім', kit:''},
     {id:'STNG-01', name:'Sting 5"', type:'STNG', assignment:'Sting', status:'Робочий', responsible:'Грім', kit:''},
     {id:'GNST-01', name:'Наземна станція #1', type:'GNST', assignment:'На виїзд', status:'Робочий', responsible:'Сокіл', kit:'KIT-01'},
-    {id:'GNST-02', name:'Наземна станція #2', type:'GNST', assignment:'Школа', status:'Робочий', responsible:'', kit:''}
+    {id:'GNST-02', name:'Наземна станція #2', type:'GNST', assignment:'Школа', status:'Робочий', responsible:'', kit:''},
+    {id:'PC-0001', name:'Планшет оператора', type:"PC — Персональний комп'ютер", assignment:'Інше', status:'Робочий', responsible:'', kit:''}
   ],
+  getFormData: {
+    types: ['FPV — FPV дрон (4+ мотори)', 'STNG — Sting', 'GNST — Наземна станція (комплект)', "PC — Персональний комп'ютер"],
+    assignments: ['Школа', 'На виїзд', 'Sting', 'Симулятор', 'Інше', 'Майстерня', 'Літак'],
+    statuses: ['Робочий', 'Ремонт', 'На перевірці', 'Несправний', 'Втрачений', 'Списаний', 'Резерв'],
+    today: '2026-08-09'
+  },
+  webAddInventoryItem: function(d){ return { fullId: 'NEW-0001-20260809', shortId: 'NEW-0001', name: d.name }; },
   getSinotrackList: [
     {id:'SNT-001', model:'ST-901', status:'Робочий', simContact:'Vodafone-07', simNumber:'+380671112233', binding:'FPV-101', imei:'8641290055512', note:''},
     {id:'SNT-002', model:'ST-901', status:'Робочий', simContact:'', simNumber:'', binding:'', imei:'', note:''},
@@ -1869,13 +1892,18 @@ var TRK_STATUSES = ['Робочий','Зламаний','Втрачений'];
 function invIsAdmin() { return !!(S.invCaps && S.invCaps.admin); }
 function invStatuses() { return (S.invCaps && S.invCaps.statuses && S.invCaps.statuses.length) ? S.invCaps.statuses : INV_STATUSES; }
 
+// Короткий код типу: «PC — Персональний комп'ютер» → «PC», «FPV-7» → «FPV»
+function invTypeCode(t) {
+  return String(t || '').split(/[—–-]/)[0].trim();
+}
+
 // Список за поточними фільтрами (вкладка + тип + пошук), БЕЗ фільтра за статусом —
 // з нього рахуються плитки дашборду, тому вони синхронні з фільтрами
 function invBaseList() {
   var q = invFilter.q.toLowerCase();
   var source = invTab === 'crew' ? invCrewItems() : S.items;
   return source.filter(function(it){
-    if (invTab === 'all' && invFilter.type !== 'all' && String(it.type||'').split('-')[0] !== invFilter.type) return false;
+    if (invTab === 'all' && invFilter.type !== 'all' && invTypeCode(it.type) !== invFilter.type) return false;
     if (q && (it.id+' '+it.name+' '+it.type+' '+it.responsible+' '+it.assignment).toLowerCase().indexOf(q) === -1) return false;
     return true;
   });
@@ -1883,9 +1911,11 @@ function invBaseList() {
 
 function renderInventory(c) {
   var types = {};
-  S.items.forEach(function(it){ var t = String(it.type||'').split('-')[0]; if (t) types[t] = 1; });
+  S.items.forEach(function(it){ var t = invTypeCode(it.type); if (t) types[t] = 1; });
+  // Значення типу — через data-атрибут: апострофи/лапки в назві типу не ламають onclick
   var typeChips = ['all'].concat(Object.keys(types).sort()).map(function(t){
-    return '<button class="filter-chip'+(invFilter.type===t?' active':'')+'" onclick="invFilter.type=\''+t+'\';renderView()">'+(t==='all'?'ВСІ':esc(t))+'</button>';
+    return '<button class="filter-chip'+(invFilter.type===t?' active':'')+'" data-t="'+esc(t)+'" '+
+      'onclick="invFilter.type=this.dataset.t;renderView()">'+(t==='all'?'ВСІ':esc(t))+'</button>';
   }).join('');
   var stats = {};
   invBaseList().forEach(function(it){ var s = String(it.status||'').trim(); stats[s] = (stats[s]||0)+1; });
@@ -1928,8 +1958,10 @@ function renderInventory(c) {
     return;
   }
 
-  // Панель вибору екіпажу (вкладка екіпажу)
-  var crewBar = '';
+  var searchInput = '<input type="text" id="invSearch" class="inv-search" placeholder="Пошук: ID, назва, відповідальний…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderInvTable()">';
+
+  // Єдина панель інструментів (як у вкладці екіпажів): все в один рядок
+  var toolbar;
   if (invTab === 'crew') {
     var crews = activeCrews();
     // Не-адмін бачить тільки свій екіпаж
@@ -1943,13 +1975,25 @@ function renderInventory(c) {
       return '<option value="'+esc(cr.id)+'"'+(cr.id===invCrewSel?' selected':'')+'>'+esc(cr.crewName || cr.id)+(cr.bind?' ['+esc(cr.bind)+']':'')+'</option>';
     }).join('');
     var addDroneBtn = (invMode==='edit' && canEdit && invIsAdmin() && invCrewSel)
-      ? '<button class="btn btn-mini btn-green" onclick="invAddDroneToCrewModal()">➕ Додати</button>' : '';
-    crewBar = '<div class="inv-crew-bar">'+
-      '<label>Вибір підрозділу:</label>'+
+      ? '<button class="btn btn-mini btn-green" title="Додати обладнання в екіпаж" onclick="invAddDroneToCrewModal()">➕</button>' : '';
+    toolbar = '<div class="inv-crew-bar">'+
+      '<label>Підрозділ:</label>'+
       (crews.length
         ? '<select onchange="invCrewSel=this.value;renderView()">'+crewOpts+'</select>'
         : '<span class="hint">'+(S.auth && !S.auth.crewId ? 'Ти не привʼязаний до екіпажу' : 'Немає активних екіпажів')+'</span>')+
+      searchInput+
+      modeToggle+
       addDroneBtn+
+    '</div>';
+  } else {
+    // Загальний інвентар: пошук + типи + режим + «➕» для адміна
+    var addItemBtn = invIsAdmin()
+      ? '<button class="btn btn-mini btn-green" title="Додати предмет в інвентар" onclick="invAddItemModal()">➕</button>' : '';
+    toolbar = '<div class="filter-row">'+
+      searchInput+
+      '<div class="type-chips">'+typeChips+'</div>'+
+      modeToggle+
+      addItemBtn+
     '</div>';
   }
 
@@ -1962,14 +2006,56 @@ function renderInventory(c) {
       '<div class="stat-tile blue click'+(invFilter.status==='Резерв'?' active':'')+'" onclick="invStatFilter(\'Резерв\')" title="Фільтр: Резерв"><div class="stat-num" id="stRes">'+(stats['Резерв']||0)+'</div><div class="stat-lbl">Резерв</div></div>'+
     '</div>'+
     tabs+
-    crewBar+
-    '<div class="filter-row">'+
-      '<input type="text" id="invSearch" placeholder="Пошук: ID, назва, відповідальний…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderInvTable()">'+
-      (invTab==='all' ? typeChips : '')+
-      modeToggle+
-    '</div>'+
+    toolbar+
     '<div class="table-wrap"><table class="data-table" id="invTable"></table></div>';
   renderInvTable();
+}
+
+/* ── Додавання предмета інвентаря (адмін) ── */
+var _formData = null;
+function invAddItemModal() {
+  function show(fd) {
+    var typeOpts = (fd.types || []).map(function(t){
+      return '<option value="'+esc(t)+'">'+esc(t)+'</option>';
+    }).join('');
+    var asgOpts = (fd.assignments || []).map(function(a){
+      return '<option value="'+esc(a)+'"'+(a==='Інше'?' selected':'')+'>'+esc(a)+'</option>';
+    }).join('');
+    var stOpts = (fd.statuses || []).map(function(s){
+      return '<option value="'+esc(s)+'"'+(s==='Робочий'?' selected':'')+'>'+esc(s)+'</option>';
+    }).join('');
+    openModal('➕ Новий предмет інвентаря',
+      '<div class="f"><label>Назва *</label><input type="text" id="niName" placeholder="Напр. Hornet 7&quot; HD"></div>'+
+      '<div class="f"><label>Тип *</label><select id="niType">'+typeOpts+'</select></div>'+
+      '<div class="f"><label>Закріплення</label><select id="niAsg">'+asgOpts+'</select></div>'+
+      '<div class="f"><label>Статус</label><select id="niStatus">'+stOpts+'</select></div>'+
+      '<div class="f"><label>Відповідальний</label><input type="text" id="niResp" placeholder="Позивний або ПІБ"></div>'+
+      '<div class="f"><label>Примітка</label><input type="text" id="niNote"></div>'+
+      '<button class="btn btn-green" id="niBtn" onclick="invDoAddItem()">➕ Додати предмет</button>'
+    );
+    setTimeout(function(){ var i = $('niName'); if (i) i.focus(); }, 60);
+  }
+  if (_formData) { show(_formData); return; }
+  rpc('getFormData', [], function(fd){ _formData = fd || {}; show(_formData); });
+}
+
+function invDoAddItem() {
+  var d = {
+    name: $('niName').value.trim(), type: $('niType').value,
+    assignment: $('niAsg').value, status: $('niStatus').value,
+    responsible: $('niResp').value.trim(), note: $('niNote').value.trim()
+  };
+  if (!d.name) { toast('⚠ Вкажи назву предмета', true); return; }
+  var btn = $('niBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('webAddInventoryItem', [d], function(res){
+    toast('➕ '+(res && res.shortId ? res.shortId+' — ' : '')+d.name+' додано');
+    closeModal();
+    loadAll();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '➕ Додати предмет'; }
+    toast('❌ '+e.message, true);
+  });
 }
 
 function invSetMode(m) { invMode = m; renderView(); }

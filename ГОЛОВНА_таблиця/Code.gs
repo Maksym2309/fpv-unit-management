@@ -1355,6 +1355,22 @@ function webDeleteInventoryItem(id, reason) {
   return deleteItemsByIds([id], reason || 'Видалено через веб-застосунок');
 }
 
+// Створити предмет інвентаря з веб-застосунку (тільки адмін)
+function webAddInventoryItem(d) {
+  const email = apiUserEmail_() || '';
+  if (!isAdmin(email)) throw new Error('Додавати предмети може тільки адміністратор');
+  if (!d || !String(d.name || '').trim()) throw new Error('Вкажи назву предмета');
+  if (!d.type) throw new Error('Вкажи тип предмета');
+  return addItemFromForm({
+    name: String(d.name).trim(),
+    type: d.type,
+    assignment: d.assignment || 'Інше',
+    status: d.status || 'Робочий',
+    responsible: String(d.responsible || '').trim(),
+    note: String(d.note || '').trim(),
+  });
+}
+
 // Виконати передачу
 function executeMovement(data) {
   const ss  = SpreadsheetApp.getActiveSpreadsheet();

@@ -36,6 +36,7 @@ const API_FUNCTIONS = [
   'updateSinotrackStatus', 'updateSimStatus',
   // інвентар
   'acceptItem', 'updateItemStatusById', 'webDeleteInventoryItem',
+  'webAddInventoryItem', 'getFormData',
 ];
 
 // Контекст поточного API-виклику (на час одного виконання doPost)
