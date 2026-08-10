@@ -1779,56 +1779,132 @@ function reloadFreq() {
 }
 
 /* ═══════════ ВИД: GPS ТРЕКЕРИ ═══════════ */
+/* Вкладка GPS трекерів — той самий патерн, що Інвентар/Екіпаж:
+   заголовок + пошук праворуч, плитки-фільтри, вкладки, Перегляд/Редагування + «+», таблиця */
+var trkTab = 'trk';   // trk | sim
+var trkMode = 'view';
+var trkFilter = { q: '', status: 'all' };
+var TRK_STATUSES = ['Робочий', 'Зламаний', 'Втрачений'];
+var SIM_STATUSES = ['Активна', 'Заблокована', 'Втрачена', 'Невідомо'];
+
+function trkCanEdit() { return invIsAdmin() || !!(S.auth && S.auth.isMain); }
+function trkStatTile(st) {
+  trkTab = 'trk';
+  trkFilter.status = trkFilter.status === st ? 'all' : st;
+  renderView();
+}
+function trkSimFreeTile() {
+  trkTab = 'sim';
+  trkFilter.status = trkFilter.status === 'free' ? 'all' : 'free';
+  renderView();
+}
+
 function renderTrackers(c) {
-  var trks = S.trackers, sims = S.sims;
-  var html = '<div class="view-title">GPS <span class="accent">трекери</span></div>'+
-    '<div class="view-sub">Sinotrack · SIM-карти · прив\'язки</div>'+
-    '<div class="btn-row" style="max-width:420px;margin-bottom:16px">'+
-      '<button class="btn btn-mini" onclick="openAddTracker()">+ Трекер</button>'+
-      '<button class="btn btn-mini btn-sec" onclick="openAddSim()">+ SIM-карта</button>'+
+  var canEdit = trkCanEdit();
+  var stats = {};
+  S.trackers.forEach(function(t){ var s = String(t.status||'').trim(); stats[s] = (stats[s]||0)+1; });
+  var freeSims = S.sims.filter(function(s){ return !s.binding; }).length;
+
+  var sub = S.trackers.length + ' трекерів · ' + S.sims.length + ' SIM · ' +
+    (canEdit ? (trkMode==='edit' ? 'редагування' : 'перегляд') : 'перегляд');
+
+  var modeToggle = canEdit
+    ? '<div class="inv-mode">'+
+        '<button class="inv-mode-btn'+(trkMode!=='edit'?' active':'')+'" onclick="trkMode=\'view\';renderView()">Перегляд</button>'+
+        '<button class="inv-mode-btn'+(trkMode==='edit'?' active':'')+'" onclick="trkMode=\'edit\';renderView()">Редагування</button>'+
+      '</div>'
+    : '';
+  var addBtn = (canEdit && trkMode==='edit')
+    ? '<button class="icon-btn" title="'+(trkTab==='sim'?'Додати SIM-карту':'Додати трекер')+'" style="background:var(--accent);color:var(--on-accent)" onclick="'+(trkTab==='sim'?'openAddSim()':'openAddTracker()')+'">'+svgIcon('plus')+'</button>'
+    : '';
+
+  c.innerHTML = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
+    '<div><div class="view-title">GPS <span class="accent">трекери</span></div>'+
+    '<div class="view-sub">'+sub+'</div></div>'+
+    '<div style="margin-bottom:12px"><input type="text" id="trkSearch" placeholder="Пошук: IMEI, модель, SIM, борт…" value="'+esc(trkFilter.q)+'" oninput="trkFilter.q=this.value;renderTrkTable()" style="width:220px"></div>'+
+  '</div>'+
+    '<div class="stat-row">'+
+      '<div class="stat-tile green click'+(trkTab==='trk'&&trkFilter.status==='Робочий'?' active':'')+'" onclick="trkStatTile(\'Робочий\')"><div class="stat-num">'+(stats['Робочий']||0)+'</div><div class="stat-lbl">Робочі</div></div>'+
+      '<div class="stat-tile click'+(trkTab==='trk'&&trkFilter.status==='Зламаний'?' active':'')+'" onclick="trkStatTile(\'Зламаний\')"><div class="stat-num">'+(stats['Зламаний']||0)+'</div><div class="stat-lbl">Зламані</div></div>'+
+      '<div class="stat-tile red click'+(trkTab==='trk'&&trkFilter.status==='Втрачений'?' active':'')+'" onclick="trkStatTile(\'Втрачений\')"><div class="stat-num">'+(stats['Втрачений']||0)+'</div><div class="stat-lbl">Втрачені</div></div>'+
+      '<div class="stat-tile blue click'+(trkTab==='sim'&&trkFilter.status==='free'?' active':'')+'" onclick="trkSimFreeTile()"><div class="stat-num">'+freeSims+'</div><div class="stat-lbl">Вільні SIM</div></div>'+
     '</div>'+
-    '<div class="grid-2">';
+    '<div class="inv-tabs">'+
+      '<button class="inv-tab'+(trkTab==='trk'?' active':'')+'" onclick="trkTab=\'trk\';trkFilter.status=\'all\';renderView()">Трекери</button>'+
+      '<button class="inv-tab'+(trkTab==='sim'?' active':'')+'" onclick="trkTab=\'sim\';trkFilter.status=\'all\';renderView()">SIM-карти</button>'+
+    '</div>'+
+    '<div class="filter-row"><div class="staff-actions">'+modeToggle+addBtn+'</div></div>'+
+    '<div class="table-wrap"><table class="data-table" id="trkTable"></table></div>';
+  renderTrkTable();
+}
 
-  html += '<div><div class="panel-title">📡 Трекери ('+trks.length+')</div>';
-  html += trks.length ? trks.map(function(t){
-    var cls = t.status==='Зламаний' ? 'bad' : (t.status==='Втрачений' ? 'lost' : 'ok');
-    return '<div class="tcard '+cls+'">'+
-      '<div class="tcard-head"><span class="tcard-id">'+esc(t.imei||t.id)+(t.imei?' <span style="font-size:10px;color:var(--dim)">('+esc(t.id)+')</span>':'')+'</span>'+statusChip(t.status)+'</div>'+
-      '<div class="tcard-meta mono">'+esc(t.model)+
-      '<br>📱 '+(t.simContact?esc(t.simContact)+' · '+esc(t.simNumber):'SIM не прив\'язана')+
-      (t.binding?'<br>🔗 Борт: '+esc(t.binding):'')+'</div>'+
-      '<div class="btn-row" style="margin-top:8px">'+
-        '<button class="btn btn-mini btn-sec" onclick="doTrkStatus(\''+esc(t.id)+'\',\'Робочий\')">✅</button>'+
-        '<button class="btn btn-mini btn-sec" onclick="doTrkStatus(\''+esc(t.id)+'\',\'Зламаний\')">🔧</button>'+
-        '<button class="btn btn-mini btn-sec" onclick="doTrkStatus(\''+esc(t.id)+'\',\'Втрачений\')">❌</button>'+
-        (t.simContact
-          ? '<button class="btn btn-mini btn-red" onclick="doUnbindSim(\''+esc(t.id)+'\')">🔌 Відв\'язати SIM</button>'
-          : '<button class="btn btn-mini btn-green" onclick="openBindSim(\''+esc(t.id)+'\')">🔗 SIM</button>')+
-      '</div>'+
-    '</div>';
-  }).join('') : '<div class="empty">Трекерів ще немає</div>';
-  html += '</div>';
+function renderTrkTable() {
+  var el = $('trkTable');
+  if (!el) return;
+  var q = trkFilter.q.toLowerCase();
+  var edit = trkMode === 'edit' && trkCanEdit();
+  var head, rows;
 
-  html += '<div><div class="panel-title">📱 SIM-карти ('+sims.length+')</div>';
-  html += sims.length ? sims.map(function(s){
-    var cls = s.status==='Втрачена' ? 'lost' : (s.status==='Активна' ? 'ok' : 'bad');
-    return '<div class="tcard '+cls+'">'+
-      '<div class="tcard-head"><span class="tcard-id">'+esc(s.id)+' — '+esc(s.contact)+'</span>'+statusChip(s.status)+'</div>'+
-      '<div class="tcard-meta mono">📞 '+esc(s.number)+
-      (s.binding?'<br>🔗 Трекер: <b>'+esc(s.binding)+'</b>':'<br><span style="color:var(--dim)">— вільна</span>')+'</div>'+
-      '<div class="btn-row" style="margin-top:8px">'+
-        '<button class="btn btn-mini btn-sec" onclick="doSimStatus(\''+esc(s.id)+'\',\'Активна\')">✅</button>'+
-        '<button class="btn btn-mini btn-sec" onclick="doSimStatus(\''+esc(s.id)+'\',\'Заблокована\')">🚫</button>'+
-        '<button class="btn btn-mini btn-sec" onclick="doSimStatus(\''+esc(s.id)+'\',\'Втрачена\')">❌</button>'+
-        '<button class="btn btn-mini btn-sec" onclick="doSimStatus(\''+esc(s.id)+'\',\'Невідомо\')">❓</button>'+
-      '</div>'+
-    '</div>';
-  }).join('') : '<div class="empty">SIM-карт ще немає</div>';
-  html += '</div></div>';
-  c.innerHTML = html;
+  if (trkTab === 'trk') {
+    var list = S.trackers.filter(function(t){
+      if (trkFilter.status !== 'all' && String(t.status||'').trim() !== trkFilter.status) return false;
+      if (q && ((t.imei||'')+' '+t.id+' '+(t.model||'')+' '+(t.simContact||'')+' '+(t.simNumber||'')+' '+(t.binding||'')).toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+    head = '<thead><tr><th>ID'+(edit?' / дії':'')+'</th><th>Модель</th><th>SIM</th><th>Борт</th><th>Екіпаж</th><th>Статус</th><th>Примітка</th></tr></thead>';
+    rows = list.map(function(t){
+      var crew = invTrackerCrew(t.id);
+      var acts = '';
+      if (edit) {
+        acts = '<div class="inv-acts">'+
+          (t.simContact
+            ? '<button class="inv-act inv-act--del" title="Відв\'язати SIM" onclick="doUnbindSim(this.dataset.id)" data-id="'+esc(t.id)+'">'+svgIcon('x')+'</button>'
+            : '<button class="inv-act inv-act--ok" title="Прив\'язати SIM" onclick="openBindSim(this.dataset.id)" data-id="'+esc(t.id)+'">'+svgIcon('plus')+'</button>')+
+        '</div>';
+      }
+      var stCell = edit
+        ? '<select class="inv-status-sel" style="width:auto;min-width:100px" data-id="'+esc(t.id)+'" onchange="doTrkStatus(this.dataset.id, this.value)">'+
+            TRK_STATUSES.map(function(s){ return '<option value="'+s+'"'+(String(t.status).trim()===s?' selected':'')+'>'+s+'</option>'; }).join('')+
+          '</select>'
+        : statusChip(t.status);
+      return '<tr>'+
+        '<td class="mono accent">'+esc(t.imei||t.id)+(t.imei?'<div class="hint">'+esc(t.id)+'</div>':'')+acts+'</td>'+
+        '<td class="mono">'+esc(t.model||'')+'</td>'+
+        '<td class="mono">'+(t.simContact ? esc(t.simContact)+'<div class="hint">'+esc(t.simNumber||'')+'</div>' : '<span class="hint">— без SIM</span>')+'</td>'+
+        '<td class="mono">'+esc(t.binding||'—')+'</td>'+
+        '<td class="mono">'+(crew ? esc(crew.crewName || crew.id) : '—')+'</td>'+
+        '<td>'+stCell+'</td>'+
+        '<td class="mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(t.note||'')+'">'+esc(t.note||'')+'</td>'+
+      '</tr>';
+    }).join('');
+    el.innerHTML = head + '<tbody>'+(rows || '<tr><td colspan="7" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
+  } else {
+    var slist = S.sims.filter(function(s){
+      if (trkFilter.status === 'free' && s.binding) return false;
+      if (trkFilter.status !== 'all' && trkFilter.status !== 'free' && String(s.status||'').trim() !== trkFilter.status) return false;
+      if (q && (s.id+' '+(s.contact||'')+' '+(s.number||'')+' '+(s.binding||'')).toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+    head = '<thead><tr><th>ID</th><th>Контакт</th><th>Номер</th><th>Трекер</th><th>Статус</th></tr></thead>';
+    rows = slist.map(function(s){
+      var stCell = edit
+        ? '<select class="inv-status-sel" style="width:auto;min-width:110px" data-id="'+esc(s.id)+'" onchange="doSimStatus(this.dataset.id, this.value)">'+
+            SIM_STATUSES.map(function(x){ return '<option value="'+x+'"'+(String(s.status).trim()===x?' selected':'')+'>'+x+'</option>'; }).join('')+
+          '</select>'
+        : statusChip(s.status);
+      return '<tr>'+
+        '<td class="mono accent">'+esc(s.id)+'</td>'+
+        '<td class="mono">'+esc(s.contact||'')+'</td>'+
+        '<td class="mono">'+esc(s.number||'')+'</td>'+
+        '<td class="mono">'+(s.binding ? esc(s.binding) : '<span class="hint">— вільна</span>')+'</td>'+
+        '<td>'+stCell+'</td>'+
+      '</tr>';
+    }).join('');
+    el.innerHTML = head + '<tbody>'+(rows || '<tr><td colspan="5" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
+  }
 }
 function doTrkStatus(id, st) {
-  if (st === 'Втрачений' && !confirm('❗ Позначити трекер '+id+' ВТРАЧЕНИМ? Це незворотньо, SIM теж стане втраченою.')) return;
+  if (st === 'Втрачений' && !confirm('❗ Позначити трекер '+id+' ВТРАЧЕНИМ? Це незворотньо, SIM теж стане втраченою.')) { renderTrkTable(); return; }
   rpc('updateSinotrackStatus', [id, st, ''], function(){ toast('📡 '+id+' → '+st); loadAll(); });
 }
 function doSimStatus(id, st) {
