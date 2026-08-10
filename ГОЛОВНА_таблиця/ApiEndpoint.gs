@@ -36,7 +36,7 @@ const API_FUNCTIONS = [
   'updateSinotrackStatus', 'updateSimStatus',
   // інвентар
   'acceptItem', 'updateItemStatusById', 'webDeleteInventoryItem',
-  'webAddInventoryItem', 'getFormData', 'getNextIdNum',
+  'webAddInventoryItem', 'getFormData', 'getNextIdNum', 'webSetItemAssignment',
   // витратники
   'getConsumablesList', 'getCompatOptions', 'webUpdateConsumable',
   'webAddConsumable', 'webWriteOffConsumable', 'webDeleteConsumable',

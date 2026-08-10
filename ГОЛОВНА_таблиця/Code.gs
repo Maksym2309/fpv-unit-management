@@ -1374,6 +1374,30 @@ function webAddInventoryItem(d) {
   });
 }
 
+// Змінити закріплення предмета (тільки адмін), із записом у Журнал руху
+function webSetItemAssignment(id, assignment) {
+  const email = apiUserEmail_() || '';
+  if (!isAdmin(email)) throw new Error('Змінювати закріплення може тільки адміністратор');
+  if (ASSIGNMENT_LIST.indexOf(assignment) === -1) throw new Error('Невідоме закріплення: ' + assignment);
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const inv = getSheet(ss, 'Інвентар');
+  if (!inv) throw new Error('Інвентар не знайдено');
+  const ids = inv.getRange(3, COLS.ID, inv.getLastRow() - 2, 1).getValues().flat().map(String);
+  const idx = ids.indexOf(String(id));
+  if (idx === -1) throw new Error('ID не знайдено: ' + id);
+  const row = idx + 3;
+  const old = String(inv.getRange(row, COLS.ASSIGNMENT).getValue());
+  if (old === assignment) return { id: id, assignment: assignment };
+  inv.getRange(row, COLS.ASSIGNMENT).setValue(assignment);
+  const log = getSheet(ss, 'Журнал руху');
+  if (log) {
+    const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    const name = String(inv.getRange(row, COLS.NAME).getValue());
+    log.appendRow([today, id, name, 'Зміна закріплення', old || '—', assignment, email || '—', '', 'Веб-застосунок']);
+  }
+  return { id: id, assignment: assignment };
+}
+
 // ── Витратники з веб-застосунку (редагування — тільки адмін) ──
 function webConsGuard_() {
   const email = apiUserEmail_() || '';
