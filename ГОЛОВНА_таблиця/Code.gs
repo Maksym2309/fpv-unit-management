@@ -1355,19 +1355,22 @@ function webDeleteInventoryItem(id, reason) {
   return deleteItemsByIds([id], reason || 'Видалено через веб-застосунок');
 }
 
-// Створити предмет інвентаря з веб-застосунку (тільки адмін)
+// Створити предмети інвентаря з веб-застосунку (тільки адмін).
+// qty 1–20 — як у sidebar-формі AddForm. Повертає масив {fullId, shortId, name}
+// для показу наклейок.
 function webAddInventoryItem(d) {
   const email = apiUserEmail_() || '';
   if (!isAdmin(email)) throw new Error('Додавати предмети може тільки адміністратор');
   if (!d || !String(d.name || '').trim()) throw new Error('Вкажи назву предмета');
   if (!d.type) throw new Error('Вкажи тип предмета');
-  return addItemFromForm({
+  return addItemsFromForm({
     name: String(d.name).trim(),
     type: d.type,
     assignment: d.assignment || 'Інше',
     status: d.status || 'Робочий',
     responsible: String(d.responsible || '').trim(),
     note: String(d.note || '').trim(),
+    qty: d.qty || 1,
   });
 }
 

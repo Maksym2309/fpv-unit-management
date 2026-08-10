@@ -221,6 +221,19 @@ textarea { height: 54px; resize: vertical; }
 .inv-search-wrap { margin: 0 0 12px; }
 .inv-search-wrap input { width: 100%; max-width: 420px; }
 .type-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* Додавання предметів: прев'ю ID, кількість, наклейки */
+.id-preview { background: var(--panel-2); border: 1px solid var(--accent); padding: 8px 10px; text-align: center; margin-bottom: 12px; font-family: var(--font-data); }
+.id-preview .lbl { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .12em; }
+.id-preview .short { font-size: 20px; font-weight: 700; letter-spacing: 3px; color: var(--accent); }
+.id-preview .range { font-size: 10px; color: var(--muted); margin-top: 2px; }
+.qty-row { display: flex; align-items: center; gap: 8px; }
+.qty-row input { width: 80px; text-align: center; font-weight: 700; }
+.qty-btn { width: 34px; height: 34px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text); font-size: 18px; cursor: pointer; flex-shrink: 0; }
+.qty-btn:hover { background: var(--accent); color: var(--on-accent); }
+.sticker-list { display: flex; flex-direction: column; max-height: 300px; overflow-y: auto; }
+.sticker-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); padding: 6px 0; }
+.sticker-id { font-family: var(--font-data); font-size: 10px; color: var(--muted); word-break: break-all; }
+.sticker { background: var(--accent); color: var(--on-accent); font-family: var(--font-data); font-size: 15px; font-weight: 700; letter-spacing: 2px; padding: 6px 10px; white-space: nowrap; }
 .filter-chip { padding: 5px 10px; font-family: var(--font-data); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; background: var(--panel); border: 1px solid var(--line-2); color: var(--muted); cursor: pointer; }
 .filter-chip.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
@@ -647,7 +660,16 @@ var DEMO_DATA = {
     statuses: ['Робочий', 'Ремонт', 'На перевірці', 'Несправний', 'Втрачений', 'Списаний', 'Резерв'],
     today: '2026-08-09'
   },
-  webAddInventoryItem: function(d){ return { fullId: 'NEW-0001-20260809', shortId: 'NEW-0001', name: d.name }; },
+  getNextIdNum: function(code){ return 12; },
+  webAddInventoryItem: function(d){
+    var out = [], q = Math.min(20, Math.max(1, parseInt(d.qty, 10) || 1));
+    var code = String(d.type).split(' ')[0];
+    for (var i = 0; i < q; i++) {
+      var n = ('0000' + (12 + i)).slice(-4);
+      out.push({ fullId: code + '-' + n + '-20260810', shortId: code + '-' + n, name: d.name });
+    }
+    return out;
+  },
   getSinotrackList: [
     {id:'SNT-001', model:'ST-901', status:'Робочий', simContact:'Vodafone-07', simNumber:'+380671112233', binding:'FPV-101', imei:'8641290055512', note:''},
     {id:'SNT-002', model:'ST-901', status:'Робочий', simContact:'', simNumber:'', binding:'', imei:'', note:''},
@@ -2011,7 +2033,7 @@ function renderInventory(c) {
   renderInvTable();
 }
 
-/* ── Додавання предмета інвентаря (адмін) ── */
+/* ── Додавання предметів інвентаря (адмін) — як sidebar AddForm ── */
 var _formData = null;
 function invAddItemModal() {
   function show(fd) {
@@ -2024,36 +2046,92 @@ function invAddItemModal() {
     var stOpts = (fd.statuses || []).map(function(s){
       return '<option value="'+esc(s)+'"'+(s==='Робочий'?' selected':'')+'>'+esc(s)+'</option>';
     }).join('');
-    openModal('➕ Новий предмет інвентаря',
+    openModal('➕ Нові предмети інвентаря',
+      '<div class="id-preview" id="niPreview" style="display:none">'+
+        '<div class="lbl">Наступний ID (наклейка)</div>'+
+        '<div class="short" id="niPrevShort">—</div>'+
+        '<div class="range" id="niPrevRange"></div>'+
+      '</div>'+
       '<div class="f"><label>Назва *</label><input type="text" id="niName" placeholder="Напр. Hornet 7&quot; HD"></div>'+
-      '<div class="f"><label>Тип *</label><select id="niType">'+typeOpts+'</select></div>'+
+      '<div class="f"><label>Тип *</label><select id="niType" onchange="invUpdateIdPreview()">'+typeOpts+'</select></div>'+
+      '<div class="f"><label>Кількість (кожен отримає свій ID)</label><div class="qty-row">'+
+        '<button class="qty-btn" onclick="invQtyStep(-1)">−</button>'+
+        '<input type="number" id="niQty" value="1" min="1" max="20" oninput="invUpdateIdPreview()">'+
+        '<button class="qty-btn" onclick="invQtyStep(1)">+</button>'+
+      '</div></div>'+
       '<div class="f"><label>Закріплення</label><select id="niAsg">'+asgOpts+'</select></div>'+
       '<div class="f"><label>Статус</label><select id="niStatus">'+stOpts+'</select></div>'+
       '<div class="f"><label>Відповідальний</label><input type="text" id="niResp" placeholder="Позивний або ПІБ"></div>'+
       '<div class="f"><label>Примітка</label><input type="text" id="niNote"></div>'+
-      '<button class="btn btn-green" id="niBtn" onclick="invDoAddItem()">➕ Додати предмет</button>'
+      '<button class="btn btn-green" id="niBtn" onclick="invDoAddItem()">➕ Додати</button>'
     );
     setTimeout(function(){ var i = $('niName'); if (i) i.focus(); }, 60);
+    invUpdateIdPreview();
   }
   if (_formData) { show(_formData); return; }
   rpc('getFormData', [], function(fd){ _formData = fd || {}; show(_formData); });
 }
 
+function invQtyStep(step) {
+  var i = $('niQty');
+  if (!i) return;
+  i.value = Math.min(20, Math.max(1, (parseInt(i.value, 10) || 1) + step));
+  invUpdateIdPreview();
+}
+
+// Прев'ю наступного ID + діапазону наклейок (як в AddForm)
+var _niPrevReq = 0;
+function invUpdateIdPreview() {
+  var t = $('niType');
+  if (!t || !t.value) return;
+  var code = String(t.value).split(' ')[0];
+  var qty = Math.min(20, Math.max(1, parseInt(($('niQty')||{}).value, 10) || 1));
+  var req = ++_niPrevReq;
+  rpc('getNextIdNum', [code], function(n){
+    if (req !== _niPrevReq) return; // відповідь застаріла (тип уже змінили)
+    var el = $('niPreview');
+    if (!el) return;
+    function pad(x){ return ('0000' + x).slice(-4); }
+    $('niPrevShort').textContent = code + '-' + pad(n);
+    $('niPrevRange').textContent = qty > 1
+      ? code + '-' + pad(n) + ' … ' + code + '-' + pad(n + qty - 1) + ' (' + qty + ' шт)'
+      : '';
+    el.style.display = 'block';
+  }, function(){});
+}
+
 function invDoAddItem() {
+  var qty = Math.min(20, Math.max(1, parseInt(($('niQty')||{}).value, 10) || 1));
   var d = {
     name: $('niName').value.trim(), type: $('niType').value,
     assignment: $('niAsg').value, status: $('niStatus').value,
-    responsible: $('niResp').value.trim(), note: $('niNote').value.trim()
+    responsible: $('niResp').value.trim(), note: $('niNote').value.trim(),
+    qty: qty
   };
   if (!d.name) { toast('⚠ Вкажи назву предмета', true); return; }
   var btn = $('niBtn');
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
   rpc('webAddInventoryItem', [d], function(res){
-    toast('➕ '+(res && res.shortId ? res.shortId+' — ' : '')+d.name+' додано');
-    closeModal();
+    var list = Array.isArray(res) ? res : (res ? [res] : []);
     loadAll();
+    // Наклейки для маркування — як в AddForm
+    openModal('✅ Додано: ' + list.length + ' шт',
+      '<div class="hint" style="margin-bottom:8px">Наклейки для маркування (короткий ID):</div>'+
+      '<div class="sticker-list">'+
+        list.map(function(x){
+          return '<div class="sticker-row">'+
+            '<span class="sticker-id">'+esc(x.fullId)+'<br>'+esc(x.name || '')+'</span>'+
+            '<span class="sticker">'+esc(x.shortId)+'</span>'+
+          '</div>';
+        }).join('')+
+      '</div>'+
+      '<div class="btn-row" style="margin-top:12px">'+
+        '<button class="btn btn-green" onclick="invAddItemModal()">➕ Додати ще</button>'+
+        '<button class="btn btn-sec" onclick="closeModal()">Закрити</button>'+
+      '</div>'
+    );
   }, function(e){
-    if (btn) { btn.disabled = false; btn.textContent = '➕ Додати предмет'; }
+    if (btn) { btn.disabled = false; btn.textContent = '➕ Додати'; }
     toast('❌ '+e.message, true);
   });
 }
