@@ -208,8 +208,6 @@ textarea { height: 54px; resize: vertical; }
 .table-wrap { overflow: auto; border: 1px solid var(--line); max-height: 62vh; }
 .filter-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
 .filter-row input, .filter-row select { width: auto; min-width: 160px; flex: 0 1 auto; }
-.inv-search-wrap { margin: 0 0 12px; }
-.inv-search-wrap input { width: 100%; max-width: 420px; }
 .type-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 /* Додавання предметів: прев'ю ID, кількість, наклейки */
 .id-preview { background: var(--panel-2); border: 1px solid var(--accent); padding: 8px 10px; text-align: center; margin-bottom: 12px; font-family: var(--font-data); }
@@ -458,7 +456,6 @@ textarea { height: 54px; resize: vertical; }
   .inv-crew-bar select, .filter-row input { width: 100% !important; min-width: 0 !important; }
   .filter-row .inv-mode, .inv-crew-bar .inv-mode { margin-left: 0; display: flex; }
   .filter-row .inv-mode-btn, .inv-crew-bar .inv-mode-btn { flex: 1; }
-  .inv-search-wrap input { max-width: none; }
 }
 </style>
 </head>
@@ -1988,7 +1985,7 @@ function renderInventory(c) {
     return;
   }
 
-  var searchInput = '<input type="text" id="invSearch" class="inv-search" placeholder="Пошук: ID, назва, відповідальний…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderInvTable()">';
+  var searchInput = '<input type="text" id="invSearch" placeholder="Пошук: ID, назва, відповідальний…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderInvTable()" style="width:220px">';
 
   // Єдина панель інструментів (як у вкладці екіпажів): все в один рядок
   var toolbar;
@@ -2024,9 +2021,11 @@ function renderInventory(c) {
     '</div>';
   }
 
-  c.innerHTML = '<div class="view-title">Інвентар <span class="accent">підрозділу</span></div>'+
-    '<div class="view-sub">'+sub+'</div>'+
-    '<div class="inv-search-wrap">'+searchInput+'</div>'+
+  c.innerHTML = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
+    '<div><div class="view-title">Інвентар <span class="accent">підрозділу</span></div>'+
+    '<div class="view-sub">'+sub+'</div></div>'+
+    '<div style="margin-bottom:12px">'+searchInput+'</div>'+
+  '</div>'+
     '<div class="stat-row">'+
       '<div class="stat-tile green click'+(invFilter.status==='Робочий'?' active':'')+'" onclick="invStatFilter(\'Робочий\')" title="Фільтр: Робочі"><div class="stat-num" id="stW">'+(stats['Робочий']||0)+'</div><div class="stat-lbl">Робочі</div></div>'+
       '<div class="stat-tile click'+(invFilter.status==='Ремонт'?' active':'')+'" onclick="invStatFilter(\'Ремонт\')" title="Фільтр: В ремонті"><div class="stat-num" id="stR">'+(stats['Ремонт']||0)+'</div><div class="stat-lbl">В ремонті</div></div>'+
@@ -2206,9 +2205,11 @@ function renderConsTab(c, tabs) {
       'onclick="consCompatF=this.dataset.c;renderView()">'+(t==='all'?'ВСІ':esc(t))+'</button>';
   }).join('');
 
-  c.innerHTML = '<div class="view-title">Інвентар <span class="accent">підрозділу</span></div>'+
-    '<div class="view-sub">'+sub+'</div>'+
-    '<div class="inv-search-wrap"><input type="text" id="invSearch" placeholder="Пошук: назва, категорія, сумісність…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderConsTable()"></div>'+
+  c.innerHTML = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
+    '<div><div class="view-title">Інвентар <span class="accent">підрозділу</span></div>'+
+    '<div class="view-sub">'+sub+'</div></div>'+
+    '<div style="margin-bottom:12px"><input type="text" id="invSearch" placeholder="Пошук: назва, категорія, сумісність…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderConsTable()" style="width:220px"></div>'+
+  '</div>'+
     tiles + tabs +
     '<div class="filter-row"><div class="type-chips">'+compatChips+'</div><div class="staff-actions">'+modeToggle+addBtn+'</div></div>'+
     (S.cons
