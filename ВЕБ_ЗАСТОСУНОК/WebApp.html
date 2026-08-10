@@ -2144,15 +2144,28 @@ function invDoAddItem() {
 
 /* ═══ ВКЛАДКА «ВИТРАТНИКИ» ═══ */
 var consStatusF = 'all';
+var consCompatF = 'all';
 var CONS_STATUSES = ['Багато', 'Достатньо', 'Мало', 'Критично'];
 function consChip(st) {
   st = String(st||'').trim();
   var cls = st==='Багато' ? 'st-green' : st==='Достатньо' ? 'st-blue' : st==='Мало' ? 'st-orange' : st==='Критично' ? 'st-red' : 'st-grey';
   return '<span class="st-chip '+cls+'">'+esc(st||'—')+'</span>';
 }
+// Токени сумісності запису: 'FPV, GNST' → ['FPV','GNST']
+function consCompatTokens(x) {
+  return String(x.compat || '').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+}
 function consList() {
   var q = invFilter.q.toLowerCase();
   return (S.cons || []).filter(function(x){
+    if (consCompatF !== 'all') {
+      var toks = consCompatTokens(x);
+      // «Універсальне» пасує будь-якому фільтру типу; чіп «Універсальне» — тільки універсальні
+      var pass = consCompatF === 'Універсальне'
+        ? toks.indexOf('Універсальне') !== -1
+        : (toks.indexOf(consCompatF) !== -1 || toks.indexOf('Універсальне') !== -1);
+      if (!pass) return false;
+    }
     if (q && (x.id+' '+x.name+' '+x.category+' '+x.compat+' '+x.note).toLowerCase().indexOf(q) === -1) return false;
     return true;
   });
@@ -2185,11 +2198,19 @@ function renderConsTab(c, tabs) {
       '<div class="stat-num">'+(stats[t.st]||0)+'</div><div class="stat-lbl">'+t.st+'</div></div>';
   }).join('')+'</div>';
 
+  // Чіпи сумісності — з реальних значень у даних (як чіпи типів у загальному)
+  var compatSet = {};
+  (S.cons || []).forEach(function(x){ consCompatTokens(x).forEach(function(t){ compatSet[t] = 1; }); });
+  var compatChips = ['all'].concat(Object.keys(compatSet).sort()).map(function(t){
+    return '<button class="filter-chip'+(consCompatF===t?' active':'')+'" data-c="'+esc(t)+'" '+
+      'onclick="consCompatF=this.dataset.c;renderView()">'+(t==='all'?'ВСІ':esc(t))+'</button>';
+  }).join('');
+
   c.innerHTML = '<div class="view-title">Інвентар <span class="accent">підрозділу</span></div>'+
     '<div class="view-sub">'+sub+'</div>'+
     '<div class="inv-search-wrap"><input type="text" id="invSearch" placeholder="Пошук: назва, категорія, сумісність…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderConsTable()"></div>'+
     tiles + tabs +
-    '<div class="filter-row"><div class="staff-actions">'+modeToggle+addBtn+'</div></div>'+
+    '<div class="filter-row"><div class="type-chips">'+compatChips+'</div><div class="staff-actions">'+modeToggle+addBtn+'</div></div>'+
     (S.cons
       ? '<div class="table-wrap"><table class="data-table" id="consTable"></table></div>'
       : '<div class="loading-view"><span class="pulse-dot"></span>Завантаження витратників…</div>');
