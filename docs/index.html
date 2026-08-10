@@ -218,7 +218,8 @@ textarea { height: 54px; resize: vertical; }
 .table-wrap { overflow: auto; border: 1px solid var(--line); max-height: 62vh; }
 .filter-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
 .filter-row input, .filter-row select { width: auto; min-width: 160px; flex: 0 1 auto; }
-.inv-search { flex: 1 1 180px !important; min-width: 140px !important; }
+.inv-search-wrap { margin: 0 0 12px; }
+.inv-search-wrap input { width: 100%; max-width: 420px; }
 .type-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .filter-chip { padding: 5px 10px; font-family: var(--font-data); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; background: var(--panel); border: 1px solid var(--line-2); color: var(--muted); cursor: pointer; }
 .filter-chip.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
@@ -451,9 +452,10 @@ textarea { height: 54px; resize: vertical; }
 
   /* Панелі інструментів інвентаря: стовпчиком, на всю ширину */
   .inv-crew-bar, .filter-row { flex-direction: column; align-items: stretch; gap: 8px; }
-  .inv-crew-bar select, .filter-row input, .inv-search { width: 100% !important; min-width: 0 !important; }
+  .inv-crew-bar select, .filter-row input { width: 100% !important; min-width: 0 !important; }
   .filter-row .inv-mode, .inv-crew-bar .inv-mode { margin-left: 0; display: flex; }
   .filter-row .inv-mode-btn, .inv-crew-bar .inv-mode-btn { flex: 1; }
+  .inv-search-wrap input { max-width: none; }
 }
 </style>
 </head>
@@ -1981,7 +1983,6 @@ function renderInventory(c) {
       (crews.length
         ? '<select onchange="invCrewSel=this.value;renderView()">'+crewOpts+'</select>'
         : '<span class="hint">'+(S.auth && !S.auth.crewId ? 'Ти не привʼязаний до екіпажу' : 'Немає активних екіпажів')+'</span>')+
-      searchInput+
       modeToggle+
       addDroneBtn+
     '</div>';
@@ -1990,7 +1991,6 @@ function renderInventory(c) {
     var addItemBtn = invIsAdmin()
       ? '<button class="btn btn-mini btn-green" title="Додати предмет в інвентар" onclick="invAddItemModal()">➕</button>' : '';
     toolbar = '<div class="filter-row">'+
-      searchInput+
       '<div class="type-chips">'+typeChips+'</div>'+
       modeToggle+
       addItemBtn+
@@ -1999,6 +1999,7 @@ function renderInventory(c) {
 
   c.innerHTML = '<div class="view-title">Інвентар <span class="accent">підрозділу</span></div>'+
     '<div class="view-sub">'+sub+'</div>'+
+    '<div class="inv-search-wrap">'+searchInput+'</div>'+
     '<div class="stat-row">'+
       '<div class="stat-tile green click'+(invFilter.status==='Робочий'?' active':'')+'" onclick="invStatFilter(\'Робочий\')" title="Фільтр: Робочі"><div class="stat-num" id="stW">'+(stats['Робочий']||0)+'</div><div class="stat-lbl">Робочі</div></div>'+
       '<div class="stat-tile click'+(invFilter.status==='Ремонт'?' active':'')+'" onclick="invStatFilter(\'Ремонт\')" title="Фільтр: В ремонті"><div class="stat-num" id="stR">'+(stats['Ремонт']||0)+'</div><div class="stat-lbl">В ремонті</div></div>'+
