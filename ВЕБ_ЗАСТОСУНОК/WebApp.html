@@ -1778,21 +1778,23 @@ var TRK_STATUSES = ['Робочий', 'Зламаний', 'Втрачений'];
 var SIM_STATUSES = ['Активна', 'Заблокована', 'Втрачена', 'Невідомо'];
 
 function trkCanEdit() { return invIsAdmin() || !!(S.auth && S.auth.isMain); }
-function trkStatTile(st) {
-  trkTab = 'trk';
+// Перемикання фільтра плиткою в межах поточної вкладки (повторний клік скидає)
+function trkTile(st) {
   trkFilter.status = trkFilter.status === st ? 'all' : st;
   renderView();
 }
-function trkSimFreeTile() {
-  trkTab = 'sim';
-  trkFilter.status = trkFilter.status === 'free' ? 'all' : 'free';
-  renderView();
+// Вільний трекер = робочий і не зайнятий жодним активним екіпажем
+function trkIsFree(t) {
+  return String(t.status||'').trim() === 'Робочий' && !invTrackerCrew(t.id);
 }
 
 function renderTrackers(c) {
   var canEdit = trkCanEdit();
   var stats = {};
   S.trackers.forEach(function(t){ var s = String(t.status||'').trim(); stats[s] = (stats[s]||0)+1; });
+  var freeTrks = S.trackers.filter(trkIsFree).length;
+  var simStats = {};
+  S.sims.forEach(function(s){ var x = String(s.status||'').trim(); simStats[x] = (simStats[x]||0)+1; });
   var freeSims = S.sims.filter(function(s){ return !s.binding; }).length;
 
   var sub = S.trackers.length + ' трекерів · ' + S.sims.length + ' SIM · ' +
@@ -1813,12 +1815,20 @@ function renderTrackers(c) {
     '<div class="view-sub">'+sub+'</div></div>'+
     '<div style="margin-bottom:12px"><input type="text" id="trkSearch" placeholder="Пошук: IMEI, модель, SIM, борт…" value="'+esc(trkFilter.q)+'" oninput="trkFilter.q=this.value;renderTrkTable()" style="width:220px"></div>'+
   '</div>'+
-    '<div class="stat-row">'+
-      '<div class="stat-tile green click'+(trkTab==='trk'&&trkFilter.status==='Робочий'?' active':'')+'" onclick="trkStatTile(\'Робочий\')"><div class="stat-num">'+(stats['Робочий']||0)+'</div><div class="stat-lbl">Робочі</div></div>'+
-      '<div class="stat-tile click'+(trkTab==='trk'&&trkFilter.status==='Зламаний'?' active':'')+'" onclick="trkStatTile(\'Зламаний\')"><div class="stat-num">'+(stats['Зламаний']||0)+'</div><div class="stat-lbl">Зламані</div></div>'+
-      '<div class="stat-tile red click'+(trkTab==='trk'&&trkFilter.status==='Втрачений'?' active':'')+'" onclick="trkStatTile(\'Втрачений\')"><div class="stat-num">'+(stats['Втрачений']||0)+'</div><div class="stat-lbl">Втрачені</div></div>'+
-      '<div class="stat-tile blue click'+(trkTab==='sim'&&trkFilter.status==='free'?' active':'')+'" onclick="trkSimFreeTile()"><div class="stat-num">'+freeSims+'</div><div class="stat-lbl">Вільні SIM</div></div>'+
-    '</div>'+
+    // Плитки-фільтри — незалежні для кожної вкладки
+    (trkTab === 'trk'
+      ? '<div class="stat-row">'+
+          '<div class="stat-tile green click'+(trkFilter.status==='Робочий'?' active':'')+'" onclick="trkTile(\'Робочий\')"><div class="stat-num">'+(stats['Робочий']||0)+'</div><div class="stat-lbl">Робочі</div></div>'+
+          '<div class="stat-tile click'+(trkFilter.status==='Зламаний'?' active':'')+'" onclick="trkTile(\'Зламаний\')"><div class="stat-num">'+(stats['Зламаний']||0)+'</div><div class="stat-lbl">Зламані</div></div>'+
+          '<div class="stat-tile red click'+(trkFilter.status==='Втрачений'?' active':'')+'" onclick="trkTile(\'Втрачений\')"><div class="stat-num">'+(stats['Втрачений']||0)+'</div><div class="stat-lbl">Втрачені</div></div>'+
+          '<div class="stat-tile blue click'+(trkFilter.status==='freeTrk'?' active':'')+'" onclick="trkTile(\'freeTrk\')" title="Робочі, не зайняті екіпажем"><div class="stat-num">'+freeTrks+'</div><div class="stat-lbl">Вільні трекери</div></div>'+
+        '</div>'
+      : '<div class="stat-row">'+
+          '<div class="stat-tile green click'+(trkFilter.status==='Активна'?' active':'')+'" onclick="trkTile(\'Активна\')"><div class="stat-num">'+(simStats['Активна']||0)+'</div><div class="stat-lbl">Активні</div></div>'+
+          '<div class="stat-tile click'+(trkFilter.status==='Невідомо'?' active':'')+'" onclick="trkTile(\'Невідомо\')"><div class="stat-num">'+(simStats['Невідомо']||0)+'</div><div class="stat-lbl">Невідомо</div></div>'+
+          '<div class="stat-tile red click'+(trkFilter.status==='blocked'?' active':'')+'" onclick="trkTile(\'blocked\')"><div class="stat-num">'+((simStats['Втрачена']||0)+(simStats['Заблокована']||0))+'</div><div class="stat-lbl">Втрачені + заблоковані</div></div>'+
+          '<div class="stat-tile blue click'+(trkFilter.status==='free'?' active':'')+'" onclick="trkTile(\'free\')"><div class="stat-num">'+freeSims+'</div><div class="stat-lbl">Вільні SIM</div></div>'+
+        '</div>')+
     '<div class="inv-tabs">'+
       '<button class="inv-tab'+(trkTab==='trk'?' active':'')+'" onclick="trkTab=\'trk\';trkFilter.status=\'all\';renderView()">Трекери</button>'+
       '<button class="inv-tab'+(trkTab==='sim'?' active':'')+'" onclick="trkTab=\'sim\';trkFilter.status=\'all\';renderView()">SIM-карти</button>'+
@@ -1837,7 +1847,8 @@ function renderTrkTable() {
 
   if (trkTab === 'trk') {
     var list = S.trackers.filter(function(t){
-      if (trkFilter.status !== 'all' && String(t.status||'').trim() !== trkFilter.status) return false;
+      if (trkFilter.status === 'freeTrk') { if (!trkIsFree(t)) return false; }
+      else if (trkFilter.status !== 'all' && String(t.status||'').trim() !== trkFilter.status) return false;
       if (q && ((t.imei||'')+' '+t.id+' '+(t.model||'')+' '+(t.simContact||'')+' '+(t.simNumber||'')+' '+(t.binding||'')).toLowerCase().indexOf(q) === -1) return false;
       return true;
     });
@@ -1870,8 +1881,10 @@ function renderTrkTable() {
     el.innerHTML = head + '<tbody>'+(rows || '<tr><td colspan="7" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
   } else {
     var slist = S.sims.filter(function(s){
-      if (trkFilter.status === 'free' && s.binding) return false;
-      if (trkFilter.status !== 'all' && trkFilter.status !== 'free' && String(s.status||'').trim() !== trkFilter.status) return false;
+      var st = String(s.status||'').trim();
+      if (trkFilter.status === 'free') { if (s.binding) return false; }
+      else if (trkFilter.status === 'blocked') { if (st !== 'Втрачена' && st !== 'Заблокована') return false; }
+      else if (trkFilter.status !== 'all' && st !== trkFilter.status) return false;
       if (q && (s.id+' '+(s.contact||'')+' '+(s.number||'')+' '+(s.binding||'')).toLowerCase().indexOf(q) === -1) return false;
       return true;
     });
