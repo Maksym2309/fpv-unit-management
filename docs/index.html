@@ -2488,11 +2488,15 @@ function invItemCrew(id) {
 }
 
 // Хто може приймати обладнання: адмін — будь-яке, головний — предмети свого екіпажу
+// Прийняття — парафія ГОЛОВНОГО екіпажу, якому записане обладнання.
+// Адмін без екіпажу (напр. ремонтник) кнопок прийняття не бачить — вони
+// йому не потрібні й лише заважають. Обладнання поза екіпажем не
+// приймається ніким (нема кому). Адмін, який водночас головний свого
+// екіпажу, приймає своє обладнання як звичайний головний.
 function invCanAccept(it) {
-  if (isAdminUser()) return true;
-  if (!(S.auth && S.auth.isMain)) return false;
   var c = invItemCrew(it.id);
-  return !!(c && c.id === S.auth.crewId);
+  if (!c) return false;
+  return !!(S.auth && S.auth.isMain && c.id === S.auth.crewId);
 }
 
 function invActionsHtml(it) {
