@@ -651,6 +651,17 @@ var DEMO_DATA = {
     today: '2026-08-09'
   },
   getNextIdNum: function(code){ return 12; },
+  getConsumablesList: [
+    {id:'CONS-001', name:'Стяжки 200мм', category:'Кріплення', compat:'Універсальне', trackType:'Кількісний', qty:150, minQty:50, status:'Достатньо', note:''},
+    {id:'CONS-002', name:'Пропелери 7"', category:'Пропелери', compat:'FPV', trackType:'Кількісний', qty:12, minQty:20, status:'Критично', note:'замовити терміново'},
+    {id:'CONS-003', name:'Ізолента', category:'Витратні', compat:'Універсальне', trackType:'Статусний', qty:'', minQty:'', status:'Багато', note:''},
+    {id:'CONS-004', name:'Термозбіжка 8мм', category:'Електрика', compat:'FPV, GNST', trackType:'Кількісний', qty:45, minQty:15, status:'Мало', note:''}
+  ],
+  getCompatOptions: ['FPV', 'STNG', 'WING', 'RMT', 'TX', 'GNST', 'TRK', 'ANT', 'VRX', 'GGL', 'PC', 'Універсальне'],
+  webUpdateConsumable: function(d){ return { id: d.id, status: d.status || 'Достатньо' }; },
+  webAddConsumable: function(d){ return 'CONS-005'; },
+  webWriteOffConsumable: function(d){ return { id: d.id, written: d.qty, left: 10, status: 'Мало' }; },
+  webDeleteConsumable: function(){ return { ok: true }; },
   webAddInventoryItem: function(d){
     var out = [], q = Math.min(20, Math.max(1, parseInt(d.qty, 10) || 1));
     var code = String(d.type).split(' ')[0];
@@ -1954,11 +1965,15 @@ function renderInventory(c) {
       '</div>'
     : '';
 
-  // Вкладки: загальний інвентар / інвентар екіпажу
+  // Вкладки: загальний інвентар / інвентар екіпажу / витратники
   var tabs = '<div class="inv-tabs">'+
     '<button class="inv-tab'+(invTab==='all'?' active':'')+'" onclick="invSetTab(\'all\')">Загальний інвентар</button>'+
     '<button class="inv-tab'+(invTab==='crew'?' active':'')+'" onclick="invSetTab(\'crew\')">Інвентар екіпажу</button>'+
+    '<button class="inv-tab'+(invTab==='cons'?' active':'')+'" onclick="invSetTab(\'cons\')">Витратники</button>'+
   '</div>';
+
+  // Вкладка «Витратники» — власний рендер
+  if (invTab === 'cons') { renderConsTab(c, tabs); return; }
 
   // Вкладка «Інвентар екіпажу» без входу — тільки кнопка входу
   if (invTab === 'crew' && !isAdminUser() && !S.auth) {
@@ -1967,6 +1982,7 @@ function renderInventory(c) {
       '<div class="inv-tabs">'+
         '<button class="inv-tab" onclick="invSetTab(\'all\')">Загальний інвентар</button>'+
         '<button class="inv-tab active">Інвентар екіпажу</button>'+
+        '<button class="inv-tab" onclick="invSetTab(\'cons\')">Витратники</button>'+
       '</div>'+
       loginGateHtml('Інвентар екіпажу');
     return;
@@ -2126,8 +2142,239 @@ function invDoAddItem() {
   });
 }
 
+/* ═══ ВКЛАДКА «ВИТРАТНИКИ» ═══ */
+var consStatusF = 'all';
+var CONS_STATUSES = ['Багато', 'Достатньо', 'Мало', 'Критично'];
+function consChip(st) {
+  st = String(st||'').trim();
+  var cls = st==='Багато' ? 'st-green' : st==='Достатньо' ? 'st-blue' : st==='Мало' ? 'st-orange' : st==='Критично' ? 'st-red' : 'st-grey';
+  return '<span class="st-chip '+cls+'">'+esc(st||'—')+'</span>';
+}
+function consList() {
+  var q = invFilter.q.toLowerCase();
+  return (S.cons || []).filter(function(x){
+    if (q && (x.id+' '+x.name+' '+x.category+' '+x.compat+' '+x.note).toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  });
+}
+
+function renderConsTab(c, tabs) {
+  var canEdit = invIsAdmin();
+  var list = consList();
+  var stats = {};
+  list.forEach(function(x){ var s = String(x.status||'').trim(); stats[s] = (stats[s]||0)+1; });
+
+  var sub = (S.cons ? S.cons.length : '…') + ' позицій · ' +
+    (canEdit ? (invMode==='edit' ? 'редагування: кількість, стан, списання' : 'перегляд') : 'перегляд');
+
+  var modeToggle = canEdit
+    ? '<div class="inv-mode">'+
+        '<button class="inv-mode-btn'+(invMode!=='edit'?' active':'')+'" onclick="invSetMode(\'view\')">Перегляд</button>'+
+        '<button class="inv-mode-btn'+(invMode==='edit'?' active':'')+'" onclick="invSetMode(\'edit\')">Редагування</button>'+
+      '</div>'
+    : '';
+  var addBtn = (canEdit && invMode==='edit')
+    ? '<button class="icon-btn" title="Додати витратник" style="background:var(--accent);color:var(--on-accent)" onclick="consAddModal()">'+svgIcon('plus')+'</button>' : '';
+
+  var tileDefs = [
+    { st: 'Багато', cls: 'green' }, { st: 'Достатньо', cls: 'blue' },
+    { st: 'Мало', cls: '' }, { st: 'Критично', cls: 'red' }
+  ];
+  var tiles = '<div class="stat-row">'+tileDefs.map(function(t){
+    return '<div class="stat-tile '+t.cls+' click'+(consStatusF===t.st?' active':'')+'" onclick="consStatusF = consStatusF===\''+t.st+'\' ? \'all\' : \''+t.st+'\'; renderView()">'+
+      '<div class="stat-num">'+(stats[t.st]||0)+'</div><div class="stat-lbl">'+t.st+'</div></div>';
+  }).join('')+'</div>';
+
+  c.innerHTML = '<div class="view-title">Інвентар <span class="accent">підрозділу</span></div>'+
+    '<div class="view-sub">'+sub+'</div>'+
+    '<div class="inv-search-wrap"><input type="text" id="invSearch" placeholder="Пошук: назва, категорія, сумісність…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderConsTable()"></div>'+
+    tiles + tabs +
+    '<div class="filter-row"><div class="staff-actions">'+modeToggle+addBtn+'</div></div>'+
+    (S.cons
+      ? '<div class="table-wrap"><table class="data-table" id="consTable"></table></div>'
+      : '<div class="loading-view"><span class="pulse-dot"></span>Завантаження витратників…</div>');
+  if (S.cons) renderConsTable();
+}
+
+function renderConsTable() {
+  var el = $('consTable');
+  if (!el) return;
+  var edit = invIsAdmin() && invMode === 'edit';
+  var list = consList().filter(function(x){
+    return consStatusF === 'all' || String(x.status||'').trim() === consStatusF;
+  });
+  var rows = list.map(function(x){
+    var isQty = x.trackType === 'Кількісний';
+    var qtyCell;
+    if (isQty) {
+      qtyCell = edit
+        ? '<input type="number" value="'+esc(x.qty)+'" min="0" style="width:70px;text-align:center" data-id="'+esc(x.id)+'" onchange="consSetQty(this)">'+
+          '<span class="hint"> мін '+esc(x.minQty)+'</span>'
+        : '<span class="mono">'+esc(x.qty)+'</span><span class="hint"> / мін '+esc(x.minQty)+'</span>';
+    } else {
+      qtyCell = '<span class="hint">статусний</span>';
+    }
+    var stCell = (!isQty && edit)
+      ? '<select class="inv-status-sel" data-id="'+esc(x.id)+'" onchange="consSetStatus(this)">'+
+          CONS_STATUSES.map(function(s){ return '<option value="'+s+'"'+(String(x.status).trim()===s?' selected':'')+'>'+s+'</option>'; }).join('')+
+        '</select>'
+      : consChip(x.status);
+    var acts = '';
+    if (edit) {
+      acts = '<div class="inv-acts">'+
+        (isQty ? '<button class="inv-act" title="Списати (з журналом)" data-id="'+esc(x.id)+'" onclick="consWriteOffModal(this.dataset.id)">−</button>' : '')+
+        '<button class="inv-act inv-act--del" title="Видалити" data-id="'+esc(x.id)+'" onclick="consDelete(this.dataset.id)">'+svgIcon('trash')+'</button>'+
+      '</div>';
+    }
+    return '<tr>'+
+      '<td class="mono">'+esc(x.id)+acts+'</td>'+
+      '<td>'+esc(x.name)+'</td>'+
+      '<td>'+esc(x.category||'—')+'</td>'+
+      '<td class="mono">'+esc(x.compat||'—')+'</td>'+
+      '<td>'+qtyCell+'</td>'+
+      '<td>'+stCell+'</td>'+
+      '<td class="mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(x.note||'')+'">'+esc(x.note||'')+'</td>'+
+    '</tr>';
+  }).join('');
+  el.innerHTML = '<thead><tr><th>ID / дії</th><th>Назва</th><th>Категорія</th><th>Сумісність</th><th>Кількість</th><th>Стан</th><th>Примітка</th></tr></thead>'+
+    '<tbody>'+(rows || '<tr><td colspan="7" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
+}
+
+function consSetQty(inp) {
+  var id = inp.dataset.id, v = Number(inp.value);
+  if (isNaN(v) || v < 0) { toast('⚠ Некоректна кількість', true); return; }
+  rpc('webUpdateConsumable', [{ id: id, qty: v }], function(res){
+    toast('💾 '+id+': кількість '+v+(res && res.status ? ' → '+res.status : ''));
+    consLoad();
+  });
+}
+function consSetStatus(sel) {
+  var id = sel.dataset.id;
+  rpc('webUpdateConsumable', [{ id: id, status: sel.value }], function(){
+    toast('💾 '+id+' → '+sel.value);
+    consLoad();
+  });
+}
+function consWriteOffModal(id) {
+  var x = (S.cons||[]).find(function(i){ return i.id === id; });
+  if (!x) return;
+  openModal('📉 Списати: '+esc(x.name),
+    '<div class="tcard-meta mono" style="margin-bottom:10px">Зараз: '+esc(x.qty)+' шт (мін '+esc(x.minQty)+')</div>'+
+    '<div class="f"><label>Скільки списати *</label><input type="number" id="woQty" min="1" max="'+esc(x.qty)+'" value="1"></div>'+
+    '<div class="f"><label>Призначення / кому</label><input type="text" id="woPurpose" placeholder="Напр. екіпаж Alfa"></div>'+
+    '<div class="f"><label>Причина</label><input type="text" id="woReason" placeholder="Напр. витрачено на вильоті"></div>'+
+    '<button class="btn btn-red" id="woBtn" onclick="consDoWriteOff(\''+esc(id)+'\')">📉 Списати</button>'
+  );
+}
+function consDoWriteOff(id) {
+  var qty = Number($('woQty').value);
+  if (!qty || qty <= 0) { toast('⚠ Вкажи кількість', true); return; }
+  var btn = $('woBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('webWriteOffConsumable', [{ id: id, qty: qty, purpose: $('woPurpose').value.trim(), reason: $('woReason').value.trim() }], function(res){
+    toast('📉 '+id+': списано '+qty+', лишилось '+(res ? res.left : '?'));
+    closeModal(); consLoad();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '📉 Списати'; }
+    toast('❌ '+e.message, true);
+  });
+}
+function consDelete(id) {
+  var x = (S.cons||[]).find(function(i){ return i.id === id; });
+  if (!x) return;
+  var reason = prompt('🗑 Видалити «'+x.name+'» ('+id+')?\nПричина (запишеться в журнал Списання):', '');
+  if (reason === null) return;
+  rpc('webDeleteConsumable', [id, reason], function(){
+    toast('🗑 '+id+' видалено');
+    consLoad();
+  });
+}
+
+// ── Додавання витратника (адмін) ──
+var _compatOpts = null;
+var _consAddSel = { trackType: 'Статусний', compat: [] };
+function consAddModal() {
+  function show(opts) {
+    _consAddSel = { trackType: 'Статусний', compat: [] };
+    openModal('➕ Новий витратник',
+      '<div class="f"><label>Назва *</label><input type="text" id="ncName" placeholder="Напр. Стяжки 200мм"></div>'+
+      '<div class="f"><label>Категорія</label><input type="text" id="ncCat" placeholder="Напр. Кріплення"></div>'+
+      '<div class="f"><label>Тип обліку</label><div class="inv-mode" style="margin-left:0">'+
+        '<button class="inv-mode-btn active" id="ncTtS" onclick="consAddTrack(\'Статусний\')">Статусний</button>'+
+        '<button class="inv-mode-btn" id="ncTtQ" onclick="consAddTrack(\'Кількісний\')">Кількісний</button>'+
+      '</div></div>'+
+      '<div class="f" id="ncQtyBlock" style="display:none"><label>Кількість / мінімум</label><div class="qty-row">'+
+        '<input type="number" id="ncQty" value="0" min="0" placeholder="кількість">'+
+        '<input type="number" id="ncMin" value="0" min="0" placeholder="мінімум">'+
+      '</div><div class="hint">Стан рахується сам: ≤мін — Критично, ≤2×мін — Мало…</div></div>'+
+      '<div class="f" id="ncStBlock"><label>Стан</label><select id="ncStatus">'+
+        CONS_STATUSES.map(function(s){ return '<option value="'+s+'"'+(s==='Достатньо'?' selected':'')+'>'+s+'</option>'; }).join('')+
+      '</select></div>'+
+      '<div class="f"><label>Сумісність (можна кілька)</label><div class="type-chips" id="ncCompat">'+
+        (opts||[]).map(function(o){ return '<button class="filter-chip" data-c="'+esc(o)+'" onclick="consAddCompat(this)">'+esc(o)+'</button>'; }).join('')+
+      '</div></div>'+
+      '<div class="f"><label>Примітка</label><input type="text" id="ncNote"></div>'+
+      '<button class="btn btn-green" id="ncBtn" onclick="consDoAdd()">➕ Додати витратник</button>'
+    );
+    setTimeout(function(){ var i = $('ncName'); if (i) i.focus(); }, 60);
+  }
+  if (_compatOpts) { show(_compatOpts); return; }
+  rpc('getCompatOptions', [], function(v){ _compatOpts = Array.isArray(v) ? v : []; show(_compatOpts); });
+}
+function consAddTrack(t) {
+  _consAddSel.trackType = t;
+  $('ncTtS').classList.toggle('active', t === 'Статусний');
+  $('ncTtQ').classList.toggle('active', t === 'Кількісний');
+  $('ncQtyBlock').style.display = t === 'Кількісний' ? '' : 'none';
+  $('ncStBlock').style.display = t === 'Статусний' ? '' : 'none';
+}
+function consAddCompat(btn) {
+  var c = btn.dataset.c;
+  var i = _consAddSel.compat.indexOf(c);
+  if (i === -1) _consAddSel.compat.push(c); else _consAddSel.compat.splice(i, 1);
+  btn.classList.toggle('active', i === -1);
+}
+function consDoAdd() {
+  var d = {
+    name: $('ncName').value.trim(),
+    category: $('ncCat').value.trim(),
+    trackType: _consAddSel.trackType,
+    qty: Number($('ncQty').value) || 0,
+    minQty: Number($('ncMin').value) || 0,
+    status: $('ncStatus').value,
+    compat: _consAddSel.compat.length ? _consAddSel.compat.join(', ') : 'Універсальне',
+    note: $('ncNote').value.trim()
+  };
+  if (!d.name) { toast('⚠ Вкажи назву', true); return; }
+  var btn = $('ncBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('webAddConsumable', [d], function(newId){
+    toast('➕ '+(newId || '')+' — '+d.name+' додано');
+    closeModal(); consLoad();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '➕ Додати витратник'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
 function invSetMode(m) { invMode = m; renderView(); }
-function invSetTab(t) { invTab = t; renderView(); }
+function invSetTab(t) {
+  invTab = t;
+  if (t === 'cons' && !S.cons) consLoad();
+  renderView();
+}
+
+// ── Витратники: завантаження списку ──
+function consLoad() {
+  rpc('getConsumablesList', [], function(v){
+    S.cons = Array.isArray(v) ? v : [];
+    if (S.view === 'inventory' && invTab === 'cons') renderView();
+  }, function(e){
+    S.cons = [];
+    toast('❌ Витратники: ' + e.message, true);
+    if (S.view === 'inventory' && invTab === 'cons') renderView();
+  });
+}
 
 // Клік по плитці дашборду — фільтр за статусом (повторний клік скидає)
 function invStatFilter(st) {

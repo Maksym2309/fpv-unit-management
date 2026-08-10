@@ -37,6 +37,9 @@ const API_FUNCTIONS = [
   // інвентар
   'acceptItem', 'updateItemStatusById', 'webDeleteInventoryItem',
   'webAddInventoryItem', 'getFormData', 'getNextIdNum',
+  // витратники
+  'getConsumablesList', 'getCompatOptions', 'webUpdateConsumable',
+  'webAddConsumable', 'webWriteOffConsumable', 'webDeleteConsumable',
 ];
 
 // Контекст поточного API-виклику (на час одного виконання doPost)

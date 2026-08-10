@@ -1374,6 +1374,16 @@ function webAddInventoryItem(d) {
   });
 }
 
+// ── Витратники з веб-застосунку (редагування — тільки адмін) ──
+function webConsGuard_() {
+  const email = apiUserEmail_() || '';
+  if (!isAdmin(email)) throw new Error('Редагувати витратники може тільки адміністратор');
+}
+function webUpdateConsumable(data) { webConsGuard_(); return updateConsumable(data); }
+function webAddConsumable(data) { webConsGuard_(); return addConsumableFromForm(data); }
+function webWriteOffConsumable(data) { webConsGuard_(); return writeOffConsumableById(data); }
+function webDeleteConsumable(id, reason) { webConsGuard_(); return deleteConsumableById(id, reason); }
+
 // Виконати передачу
 function executeMovement(data) {
   const ss  = SpreadsheetApp.getActiveSpreadsheet();
