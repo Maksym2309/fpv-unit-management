@@ -1966,24 +1966,23 @@ function renderInventory(c) {
     var crewOpts = crews.map(function(cr){
       return '<option value="'+esc(cr.id)+'"'+(cr.id===invCrewSel?' selected':'')+'>'+esc(cr.crewName || cr.id)+(cr.bind?' ['+esc(cr.bind)+']':'')+'</option>';
     }).join('');
+    // Жовтий квадрат «+» — як на сторінці екіпажів: лише в режимі редагування
     var addDroneBtn = (invMode==='edit' && canEdit && invIsAdmin() && invCrewSel)
-      ? '<button class="btn btn-mini btn-green" title="Додати обладнання в екіпаж" onclick="invAddDroneToCrewModal()">➕</button>' : '';
+      ? '<button class="icon-btn" title="Додати обладнання в екіпаж" style="background:var(--accent);color:var(--on-accent)" onclick="invAddDroneToCrewModal()">'+svgIcon('plus')+'</button>' : '';
     toolbar = '<div class="inv-crew-bar">'+
       '<label>Підрозділ:</label>'+
       (crews.length
         ? '<select onchange="invCrewSel=this.value;renderView()">'+crewOpts+'</select>'
         : '<span class="hint">'+(S.auth && !S.auth.crewId ? 'Ти не привʼязаний до екіпажу' : 'Немає активних екіпажів')+'</span>')+
-      modeToggle+
-      addDroneBtn+
+      '<div class="staff-actions">'+modeToggle+addDroneBtn+'</div>'+
     '</div>';
   } else {
-    // Загальний інвентар: пошук + типи + режим + «➕» для адміна
-    var addItemBtn = invIsAdmin()
-      ? '<button class="btn btn-mini btn-green" title="Додати предмет в інвентар" onclick="invAddItemModal()">➕</button>' : '';
+    // Загальний інвентар: «+» для адміна — лише в режимі редагування
+    var addItemBtn = (invIsAdmin() && invMode==='edit')
+      ? '<button class="icon-btn" title="Додати предмет в інвентар" style="background:var(--accent);color:var(--on-accent)" onclick="invAddItemModal()">'+svgIcon('plus')+'</button>' : '';
     toolbar = '<div class="filter-row">'+
       '<div class="type-chips">'+typeChips+'</div>'+
-      modeToggle+
-      addItemBtn+
+      '<div class="staff-actions">'+modeToggle+addItemBtn+'</div>'+
     '</div>';
   }
 
