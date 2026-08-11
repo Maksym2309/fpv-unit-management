@@ -3199,7 +3199,7 @@ var crewForm = { drones: [], trackers: [], reserves: [], editId: null };
 var crewPageTab = 'staff';  // 'staff' — загальний О.С. | 'links' — активні з'єднання
 var crewPageSel = '';       // екіпаж основної таблиці (тулбар вкладки зʼєднань)
 var sideCrewSel = '';       // окремий вибір у боковій панелі — лише для перегляду складу
-var sidePanelOpen = { list: true, comp: false }; // склад за замовчуванням згорнутий
+var sidePanelOpen = { list: true, comp: false, freqs: false }; // склад/частоти за замовчуванням згорнуті
 
 // Чи можна вибрати екіпаж у боковому переліку (свій/вибраний — ні, щоб не дублювати)
 function sideCrewClickable(id) {
@@ -3296,8 +3296,9 @@ function renderCrews(c) {
     html += '</div>';
   }
   html += '</div>';
-  // Бічна панель: склад вибраного екіпажу
+  // Бічна панель: склад вибраного екіпажу + частоти
   html += renderCrewComposition();
+  html += renderCrewFreqPanel();
   html += '</div></div>';
 
   c.innerHTML = html;
@@ -3510,6 +3511,268 @@ function renderCrewComposition() {
   });
   h += '</div></div>';
   return h;
+}
+
+/* ══ ЧАСТОТИ ЕКІПАЖУ: налаштування + рекомендації ══
+   Кольори/позначення — ті самі, що на карті частот:
+   🟢 вільна · ⭐ рекомендована · 🟠 поряд (Δ20–40) · 🟡 IMD3 ·
+   🔴 конфлікт/зайнята (Δ<20) · ⚠ нерекомендована. Оптимум — 1–3 частоти
+   на екіпаж: так спектр ділиться на максимум безконфліктних екіпажів. */
+
+// Частоти екіпажу списком: [{code, label, freq, kind:'main'|'res'}]
+function crewFreqList(cr) {
+  var out = [];
+  function parse(str, kind) {
+    if (!str) return;
+    var m = String(str).match(/\((\d+)\)/);
+    out.push({ code: cleanCode(str), label: String(str), freq: m ? Number(m[1]) : 0, kind: kind });
+  }
+  parse(cr.freq, 'main');
+  (cr.reserves||'').split('|').filter(Boolean).forEach(function(r){ parse(r, 'res'); });
+  return out;
+}
+
+// Зайняті частоти всіх, КРІМ цього екіпажу (активні + резервні + чужі підрозділи)
+function occupiedFreqsExcept(cr) {
+  var d = S.freq || {};
+  var self = [String(cr.id), String(cr.crewName || '')];
+  function other(who) { return self.indexOf(String(who || '')) === -1; }
+  var out = [];
+  (d.active || []).forEach(function(a){
+    if (a.freq && other(a.crew)) out.push({ freq: a.freq, who: a.crew, res: false });
+  });
+  (d.reserves || []).forEach(function(r){
+    if (r.freq && other(r.crew)) out.push({ freq: r.freq, who: r.crew, res: true });
+  });
+  return out;
+}
+
+// Класифікація частоти відносно зайнятих (логіка карти частот: Δ<20 / Δ20–40 / IMD3)
+function classifyFreq(f, occ, warningFreqs) {
+  var hit = null;
+  occ.forEach(function(o){ var d = Math.abs(o.freq - f); if (d < 20 && (!hit || d < hit.d)) hit = { o: o, d: d }; });
+  if (hit) return { lvl: 'busy', mark: '🔴', who: hit.o.who + (hit.o.res ? ' (резерв)' : ''), d: hit.d };
+  occ.forEach(function(o){ var d = Math.abs(o.freq - f); if (d >= 20 && d < 40 && (!hit || d < hit.d)) hit = { o: o, d: d }; });
+  if (hit) return { lvl: 'near', mark: '🟠', who: hit.o.who, d: hit.d };
+  for (var i = 0; i < occ.length; i++)
+    for (var j = 0; j < occ.length; j++)
+      if (i !== j && Math.abs(f - (2 * occ[i].freq - occ[j].freq)) < 10)
+        return { lvl: 'imd', mark: '🟡', who: occ[i].who, d: 0 };
+  if (warningFreqs && warningFreqs[f]) return { lvl: 'warn', mark: '⚠', who: '', d: 0 };
+  return { lvl: 'free', mark: '🟢', who: '', d: 0 };
+}
+function freqMinDist(f, occ) {
+  var m = 9999;
+  occ.forEach(function(o){ m = Math.min(m, Math.abs(o.freq - f)); });
+  return m;
+}
+// Група діапазону за МГц: 5.8 / 5.0 / 3.3 (як фільтр на карті частот)
+function freqGroupOf(f) { return f >= 5600 ? '5.8' : (f >= 4900 ? '5.0' : '3.3'); }
+
+// Рекомендовані вільні частоти: максимальний запас відстані до зайнятих →
+// лишає найбільше місця для наступних екіпажів (унікальні за МГц).
+// Тримаємось діапазону поточних частот екіпажу (аналог на 5.8 не
+// відправляємо в 3.3 ГГц); якщо частот немає — розглядаємо всі.
+function recommendFreqs(cr, limit) {
+  var d = S.freq || {};
+  var bands = d.bands || BANDS;
+  var order = (d.bandOrder || Object.keys(bands)).filter(function(b){ return bands[b]; });
+  var occ = occupiedFreqsExcept(cr);
+  var myList = crewFreqList(cr);
+  var mine = myList.map(function(x){ return x.code; });
+  var targetGroup = myList.length && myList[0].freq ? freqGroupOf(myList[0].freq) : '';
+  var items = [];
+  order.forEach(function(band){
+    bands[band].forEach(function(f, i){
+      var code = band + (i + 1);
+      if (mine.indexOf(code) !== -1) return;
+      var c = classifyFreq(f, occ, d.warningFreqs);
+      if (c.lvl === 'free') items.push({ code: code, freq: f, dist: freqMinDist(f, occ), grp: freqGroupOf(f) });
+    });
+  });
+  var pool = targetGroup ? items.filter(function(x){ return x.grp === targetGroup; }) : items;
+  if (!pool.length) pool = items;
+  pool.sort(function(a, b){ return b.dist - a.dist; });
+  var seen = {}, recs = [];
+  pool.forEach(function(x){
+    if (!seen[x.freq] && recs.length < (limit || 5)) { seen[x.freq] = 1; recs.push(x); }
+  });
+  return recs;
+}
+
+function renderCrewFreqPanel() {
+  // Пріоритет: вибраний у боковому переліку → вибраний у тулбарі (links) → свій екіпаж
+  var selId = sideCrewSel || (crewPageTab === 'links' ? crewPageSel : '') || (S.auth && S.auth.crewId) || '';
+  var cr = selId ? crewById(selId) : null;
+  var h = '<div class="side-panel">'+sidePanelHead('freqs', '📻 Частоти екіпажу'+(cr ? ' ('+esc(cr.crewName || cr.id)+')' : ''));
+  if (!sidePanelOpen.freqs) return h + '</div>';
+  h += '<div class="side-panel-body">';
+  if (!cr) return h + '<div class="empty">Оберіть екіпаж у переліку вище</div></div></div>';
+
+  var canMg = canManageCrew(cr.id);
+  var occ = occupiedFreqsExcept(cr);
+  var list = crewFreqList(cr);
+  var d = S.freq || {};
+  var conflicts = [];
+
+  if (!list.length) {
+    h += '<div class="hint" style="margin-bottom:8px">Частот не задано</div>';
+  }
+  list.forEach(function(x){
+    var c = classifyFreq(x.freq, occ, d.warningFreqs);
+    if (c.lvl === 'busy' || c.lvl === 'near') conflicts.push({ x: x, c: c });
+    h += '<div class="member-row">'+
+      '<div style="flex:1"><div class="member-cs">'+(x.kind === 'main' ? '⭐ ' : '🔄 ')+
+        '<span class="mono" style="color:var(--accent-soft)">'+esc(x.code)+'</span> '+
+        '<span class="hint">'+esc(x.freq)+' МГц</span></div>'+
+      '<div class="member-name">'+c.mark+' '+(c.lvl==='free' ? 'без конфліктів'
+        : c.lvl==='busy' ? 'конфлікт з '+esc(c.who)+' (Δ'+c.d+')'
+        : c.lvl==='near' ? 'поряд із '+esc(c.who)+' (Δ'+c.d+')'
+        : c.lvl==='imd' ? 'IMD3-інтермодуляція'
+        : 'нерекомендована частота')+'</div></div>'+
+      (canMg
+        ? '<div class="inv-acts">'+
+            '<button class="inv-act" title="Змінити" data-k="'+x.kind+'" data-c="'+esc(x.code)+'" onclick="crewFreqPickModal(\''+esc(cr.id)+'\', this.dataset.k, this.dataset.c)">'+svgIcon('edit')+'</button>'+
+            '<button class="inv-act inv-act--del" title="Видалити частоту" data-k="'+x.kind+'" data-c="'+esc(x.code)+'" onclick="crewRemoveFreq(\''+esc(cr.id)+'\', this.dataset.k, this.dataset.c)">'+svgIcon('x')+'</button>'+
+          '</div>'
+        : '')+
+    '</div>';
+  });
+
+  // Оптимум 1–3 частоти
+  if (list.length) {
+    h += list.length <= 3
+      ? '<div class="hint" style="color:var(--green);margin-top:6px">✓ '+list.length+' част. — оптимально (1–3)</div>'
+      : '<div class="warn" style="margin-top:6px">⚠ '+list.length+' частот — понад оптимум. Кожна зайва частота звужує вільний спектр і зменшує кількість екіпажів, які можна розмістити без конфліктів.</div>';
+  }
+
+  // Конфлікти → рекомендації заміни
+  if (conflicts.length) {
+    var recs = recommendFreqs(cr, 3);
+    h += '<div class="warn" style="margin-top:6px">⚠ Є конфліктні частоти. Рекомендовані вільні: '+
+      (recs.length ? recs.map(function(r){ return '<b class="mono">'+esc(r.code)+' ('+r.freq+')</b>'; }).join(', ') : '—')+
+      (canMg ? '<br><span class="hint">Натисни ✎ біля конфліктної частоти і обери зі списку «⭐ Рекомендовані»</span>' : '')+
+    '</div>';
+  }
+
+  if (canMg) {
+    h += '<div class="btn-row" style="margin-top:10px">'+
+      (!cr.freq ? '<button class="btn btn-mini btn-green" onclick="crewFreqPickModal(\''+esc(cr.id)+'\', \'main\', \'\')">⭐ Основна</button>' : '')+
+      '<button class="btn btn-mini btn-sec" onclick="crewFreqPickModal(\''+esc(cr.id)+'\', \'res\', \'\')">➕ Резервна</button>'+
+    '</div>';
+  }
+  h += '</div></div>';
+  return h;
+}
+
+// Модалка вибору частоти: групи як на карті частот + рекомендації
+function crewFreqPickModal(crewId, kind, replaceCode) {
+  var cr = crewById(crewId);
+  if (!cr) return;
+  var d = S.freq || {};
+  var bands = d.bands || BANDS;
+  var order = (d.bandOrder || Object.keys(bands)).filter(function(b){ return bands[b]; });
+  var occ = occupiedFreqsExcept(cr);
+  var mine = crewFreqList(cr).map(function(x){ return x.code; });
+
+  var items = [];
+  order.forEach(function(band){
+    bands[band].forEach(function(f, i){
+      var code = band + (i + 1);
+      if (mine.indexOf(code) !== -1 && code !== replaceCode) return;
+      items.push({ code: code, freq: f, c: classifyFreq(f, occ, d.warningFreqs), dist: freqMinDist(f, occ) });
+    });
+  });
+  var recSet = {};
+  recommendFreqs(cr, 5).forEach(function(r){ recSet[r.code] = 1; });
+
+  function opts(arr) {
+    return arr.map(function(x){
+      var lbl = (recSet[x.code] ? '⭐ ' : x.c.mark + ' ') + x.code + ' — ' + x.freq + ' МГц' +
+        (x.c.who ? ' · ' + x.c.who : '') + (x.c.d ? ' (Δ' + x.c.d + ')' : '');
+      return '<option value="'+esc(x.code)+' ('+x.freq+')">'+esc(lbl)+'</option>';
+    }).join('');
+  }
+  var gRec  = items.filter(function(x){ return recSet[x.code]; });
+  var gFree = items.filter(function(x){ return x.c.lvl === 'free' && !recSet[x.code]; });
+  var gImd  = items.filter(function(x){ return x.c.lvl === 'imd'; });
+  var gNear = items.filter(function(x){ return x.c.lvl === 'near'; });
+  var gWarn = items.filter(function(x){ return x.c.lvl === 'warn'; });
+  var gBusy = items.filter(function(x){ return x.c.lvl === 'busy'; });
+
+  var selHtml = '<select id="cfpSel">'+
+    '<option value="">— оберіть частоту —</option>'+
+    (gRec.length  ? '<optgroup label="⭐ Рекомендовані (максимальний запас)">'+opts(gRec)+'</optgroup>' : '')+
+    (gFree.length ? '<optgroup label="🟢 Вільні">'+opts(gFree)+'</optgroup>' : '')+
+    (gImd.length  ? '<optgroup label="🟡 IMD3-інтермодуляція">'+opts(gImd)+'</optgroup>' : '')+
+    (gNear.length ? '<optgroup label="🟠 Поряд із зайнятими (Δ20–40)">'+opts(gNear)+'</optgroup>' : '')+
+    (gWarn.length ? '<optgroup label="⚠ Нерекомендовані">'+opts(gWarn)+'</optgroup>' : '')+
+    (gBusy.length ? '<optgroup label="🔴 Конфліктні / зайняті (Δ<20)">'+opts(gBusy)+'</optgroup>' : '')+
+  '</select>';
+
+  openModal((kind === 'main' ? '⭐ Основна частота' : '🔄 Резервна частота') + ' · ' + esc(cr.crewName || cr.id),
+    (replaceCode ? '<div class="hint" style="margin-bottom:8px">Заміна частоти <b class="mono">'+esc(replaceCode)+'</b></div>' : '')+
+    '<div class="f"><label>Частота</label>'+selHtml+'</div>'+
+    '<div class="hint" style="margin-bottom:10px">🟢 вільна · ⭐ рекомендована (лишає максимум місця іншим екіпажам) · 🟡 IMD3 · 🟠 поряд · 🔴 конфлікт · ⚠ нерекомендована</div>'+
+    '<button class="btn btn-green" id="cfpBtn" onclick="crewApplyFreq(\''+esc(crewId)+'\', \''+esc(kind)+'\', \''+esc(replaceCode||'')+'\')">💾 Зберегти</button>'
+  );
+}
+
+function crewApplyFreq(crewId, kind, replaceCode) {
+  var v = $('cfpSel').value;
+  if (!v) { toast('⚠ Обери частоту', true); return; }
+  var cr = crewById(crewId);
+  if (!cr) return;
+  var m = v.match(/\((\d+)\)/);
+  var f = m ? Number(m[1]) : 0;
+  var c = classifyFreq(f, occupiedFreqsExcept(cr), (S.freq||{}).warningFreqs);
+  if (c.lvl === 'busy' && !confirm('🔴 '+v+' конфліктує з '+c.who+' (Δ'+c.d+' МГц). Взяти все одно?')) return;
+  if (c.lvl === 'near' && !confirm('🟠 '+v+' близько до '+c.who+' (Δ'+c.d+' МГц). Взяти все одно?')) return;
+  if (c.lvl === 'warn' && !confirm('⚠ '+v+' — нерекомендована частота. Взяти все одно?')) return;
+
+  var patch;
+  if (kind === 'main') {
+    patch = { freq: v };
+  } else {
+    var arr = (cr.reserves||'').split('|').filter(Boolean);
+    if (replaceCode) arr = arr.map(function(r){ return cleanCode(r) === replaceCode ? v : r; });
+    else arr.push(v);
+    patch = { reserves: arr.join('|') };
+  }
+  // Оптимум 1–3: попередження, якщо стає більше
+  var mainCnt = (patch.freq !== undefined ? patch.freq : cr.freq) ? 1 : 0;
+  var resCnt = String(patch.reserves !== undefined ? patch.reserves : (cr.reserves||'')).split('|').filter(Boolean).length;
+  if (mainCnt + resCnt > 3 && !confirm('⚠ У екіпажу стане '+(mainCnt+resCnt)+' частот (оптимально 1–3).\nНадлишкові частоти звужують спектр і заважають безконфліктному розміщенню інших екіпажів. Продовжити?')) return;
+
+  var btn = $('cfpBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('updateCrew', [crewId, patch, crewToken() || undefined], function(){
+    if (patch.freq !== undefined) cr.freq = patch.freq;
+    if (patch.reserves !== undefined) cr.reserves = patch.reserves;
+    toast('📻 '+(cr.crewName || crewId)+': '+(kind==='main' ? 'основна → ' : 'резервні: ')+v);
+    closeModal();
+    renderView();
+    reloadFreq();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+function crewRemoveFreq(crewId, kind, code) {
+  var cr = crewById(crewId);
+  if (!cr) return;
+  if (!confirm('✕ Видалити '+(kind==='main' ? 'основну' : 'резервну')+' частоту '+code+' у '+(cr.crewName || crewId)+'?')) return;
+  var patch;
+  if (kind === 'main') patch = { freq: '' };
+  else patch = { reserves: (cr.reserves||'').split('|').filter(Boolean).filter(function(r){ return cleanCode(r) !== code; }).join('|') };
+  rpc('updateCrew', [crewId, patch, crewToken() || undefined], function(){
+    if (patch.freq !== undefined) cr.freq = patch.freq;
+    if (patch.reserves !== undefined) cr.reserves = patch.reserves;
+    toast('✕ '+code+' видалено');
+    renderView();
+    reloadFreq();
+  });
 }
 
 // ── Операції зі складом ──
