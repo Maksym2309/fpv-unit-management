@@ -401,6 +401,10 @@ textarea { height: 54px; resize: vertical; }
 
 /* ── Тост ── */
 #toast { position: fixed; top: 66px; right: 20px; z-index: 500; display: flex; flex-direction: column; gap: 8px; }
+/* Спливашка дії знизу-праворуч (уточнення причини зміни статусу) */
+#actionToast { position: fixed; bottom: 20px; right: 20px; z-index: 500; display: flex; flex-direction: column; gap: 8px; }
+.atoast { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent); padding: 10px 12px; font-family: var(--font-data); font-size: 12px; color: var(--text); box-shadow: 0 6px 20px rgba(0,0,0,.6); max-width: 360px; display: flex; align-items: center; gap: 12px; }
+.atoast .af-btn { width: auto; padding: 6px 10px; flex-shrink: 0; }
 .toast-item { padding: 10px 14px; font-family: var(--font-data); font-size: 12px; border-left: 4px solid var(--green); background: var(--panel); border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--text); box-shadow: 0 6px 20px rgba(0,0,0,.6); max-width: 380px; }
 .toast-item.err { border-left-color: var(--red); color: var(--red-soft); }
 
@@ -436,6 +440,8 @@ textarea { height: 54px; resize: vertical; }
   /* Тости й модалки — в межах екрана */
   #toast { left: 12px; right: 12px; }
   .toast-item { max-width: none; }
+  #actionToast { left: 12px; right: 12px; bottom: 12px; }
+  .atoast { max-width: none; justify-content: space-between; }
   #modalBg { padding: 16px 8px; }
   .modal, .modal.wide { width: 100%; }
 
@@ -511,6 +517,7 @@ textarea { height: 54px; resize: vertical; }
 </div>
 <div id="modalBg" onclick="if(event.target===this)closeModal()"><div class="modal" id="modalBox"></div></div>
 <div id="toast"></div>
+<div id="actionToast"></div>
 
 <script>
 /* ═══════════ ДАНІ ТА КОНСТАНТИ ═══════════ */
@@ -653,6 +660,17 @@ var DEMO_DATA = {
     if (it) it.assignment = a;
     return { id: id, assignment: a };
   },
+  webSetItemNote: function(id, n){
+    var it = DEMO_DATA.getInventoryList.find(function(x){ return x.id === id; });
+    if (it) it.note = n;
+    return { id: id, note: n };
+  },
+  webSetTrackerNote: function(id, n){
+    var t = DEMO_DATA.getSinotrackList.find(function(x){ return x.id === id || x.imei === id; });
+    if (t) t.note = n;
+    return { id: id, note: n };
+  },
+  webLogStatusChange: function(){ return { ok: true }; },
   getConsumablesList: [
     {id:'CONS-001', name:'Стяжки 200мм', category:'Кріплення', compat:'Універсальне', trackType:'Кількісний', qty:150, minQty:50, status:'Достатньо', note:''},
     {id:'CONS-002', name:'Пропелери 7"', category:'Пропелери', compat:'FPV', trackType:'Кількісний', qty:12, minQty:20, status:'Критично', note:'замовити терміново'},
@@ -752,6 +770,89 @@ function toast(txt, isErr) {
   el.textContent = txt;
   $('toast').appendChild(el);
   setTimeout(function(){ el.style.opacity = '0'; el.style.transition = 'opacity .4s'; setTimeout(function(){ el.remove(); }, 400); }, 4200);
+}
+
+/* ── Уточнення причини зміни статусу ─────────────────────────
+   Статус міняється одразу; знизу-праворуч зʼявляється спливашка
+   з кнопкою «Уточнити причину» → модалка «Коментар до зміни» →
+   запис у Журнал руху. Ігноруєш спливашку — зміна без причини. */
+function showStatusToast(kind, id, fromSt, toSt) {
+  var host = $('actionToast');
+  if (!host) return;
+  var el = document.createElement('div');
+  el.className = 'atoast';
+  el.innerHTML = '<span>'+esc(id)+': '+esc(fromSt)+' → '+esc(toSt)+'</span>'+
+    '<button class="af-btn">📝 Уточнити причину</button>';
+  el.querySelector('button').onclick = function(){
+    el.remove();
+    openStatusCommentModal(kind, id, fromSt, toSt);
+  };
+  host.appendChild(el);
+  setTimeout(function(){
+    if (el.parentNode) {
+      el.style.opacity = '0'; el.style.transition = 'opacity .4s';
+      setTimeout(function(){ el.remove(); }, 400);
+    }
+  }, 12000);
+}
+function openStatusCommentModal(kind, id, fromSt, toSt) {
+  openModal('📝 Коментар до зміни',
+    '<div class="tcard-meta mono" style="margin-bottom:10px">'+esc(id)+': '+esc(fromSt)+' → '+esc(toSt)+'</div>'+
+    '<div class="f"><label>Причина / коментар *</label><textarea id="scComment" placeholder="напр. пошкодження після жорсткої посадки"></textarea></div>'+
+    '<div class="hint" style="margin-bottom:8px">Запишеться в Журнал руху таблиці</div>'+
+    '<button class="btn btn-green" id="scBtn" onclick="doStatusComment(\''+esc(kind)+'\',\''+esc(id)+'\',\''+esc(fromSt)+'\',\''+esc(toSt)+'\')">💾 Зберегти</button>'
+  );
+  setTimeout(function(){ var i = $('scComment'); if (i) i.focus(); }, 60);
+}
+function doStatusComment(kind, id, fromSt, toSt) {
+  var c = $('scComment').value.trim();
+  if (!c) { toast('⚠ Порожній коментар', true); return; }
+  var btn = $('scBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('webLogStatusChange', [kind, id, fromSt, toSt, c], function(){
+    toast('📝 Причину записано в Журнал руху');
+    closeModal();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+/* ── Редагування приміток (інвентар і трекери) ── */
+function noteCellHtml(kind, id, note, edit) {
+  var txt = '<span title="'+esc(note||'')+'">'+esc(note||'')+'</span>';
+  if (!edit) return txt;
+  return '<div style="display:flex;align-items:center;gap:6px;justify-content:space-between">'+txt+
+    '<button class="inv-act" title="Редагувати примітку" data-id="'+esc(id)+'" data-k="'+esc(kind)+'" '+
+    'onclick="openNoteModal(this.dataset.k, this.dataset.id)">'+svgIcon('edit')+'</button></div>';
+}
+function openNoteModal(kind, id) {
+  var obj = kind === 'trk'
+    ? S.trackers.find(function(x){ return x.id === id || x.imei === id; })
+    : S.items.find(function(x){ return x.id === id; });
+  if (!obj) return;
+  openModal('📝 Примітка: '+esc(id),
+    '<div class="f"><label>Примітка (порожньо — очистити)</label><textarea id="nmText">'+esc(obj.note||'')+'</textarea></div>'+
+    '<button class="btn btn-green" id="nmBtn" onclick="doSetNote(\''+esc(kind)+'\',\''+esc(obj.id)+'\')">💾 Зберегти</button>'
+  );
+  setTimeout(function(){ var i = $('nmText'); if (i) i.focus(); }, 60);
+}
+function doSetNote(kind, id) {
+  var v = $('nmText').value.trim();
+  var btn = $('nmBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc(kind === 'trk' ? 'webSetTrackerNote' : 'webSetItemNote', [id, v, crewToken() || null], function(){
+    var obj = kind === 'trk'
+      ? S.trackers.find(function(x){ return x.id === id; })
+      : S.items.find(function(x){ return x.id === id; });
+    if (obj) obj.note = v;
+    toast('📝 '+id+': примітку збережено');
+    closeModal();
+    renderView();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
+    toast('❌ '+e.message, true);
+  });
 }
 function isMine(f) {
   if (!f.creatorEmail) return true;
@@ -1875,7 +1976,7 @@ function renderTrkTable() {
         '<td class="mono">'+esc(t.binding||'—')+'</td>'+
         '<td class="mono">'+(crew ? esc(crew.crewName || crew.id) : '—')+'</td>'+
         '<td>'+stCell+'</td>'+
-        '<td class="mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(t.note||'')+'">'+esc(t.note||'')+'</td>'+
+        '<td class="mono" style="max-width:200px">'+noteCellHtml('trk', t.id, t.note, edit)+'</td>'+
       '</tr>';
     }).join('');
     el.innerHTML = head + '<tbody>'+(rows || '<tr><td colspan="7" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
@@ -1908,10 +2009,14 @@ function renderTrkTable() {
 }
 function doTrkStatus(id, st) {
   if (st === 'Втрачений' && !confirm('❗ Позначити трекер '+id+' ВТРАЧЕНИМ? Це незворотньо, SIM теж стане втраченою.')) { renderTrkTable(); return; }
-  rpc('updateSinotrackStatus', [id, st, ''], function(){ toast('📡 '+id+' → '+st); loadAll(); });
+  var t = S.trackers.find(function(x){ return x.id === id; });
+  var oldSt = t ? String(t.status||'').trim() : '—';
+  rpc('updateSinotrackStatus', [id, st, ''], function(){ showStatusToast('trk', id, oldSt, st); loadAll(); });
 }
 function doSimStatus(id, st) {
-  rpc('updateSimStatus', [id, st], function(){ toast('📱 '+id+' → '+st); loadAll(); });
+  var s = S.sims.find(function(x){ return x.id === id; });
+  var oldSt = s ? String(s.status||'').trim() : '—';
+  rpc('updateSimStatus', [id, st], function(){ showStatusToast('sim', id, oldSt, st); loadAll(); });
 }
 function openAddTracker() {
   var simOpts = S.sims.filter(function(s){ return !s.binding; }).map(function(s){
@@ -2761,7 +2866,7 @@ function invTrkChangeStatus(sel) {
   rpc('updateSinotrackStatus', [id, newSt, ''], function(){
     t.status = newSt;
     delete invBusy[id];
-    toast('📡 '+id+': '+oldSt+' → '+newSt);
+    showStatusToast('trk', id, oldSt, newSt);
     renderInvTable();
   }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
 }
@@ -2797,7 +2902,7 @@ function renderInvTable() {
       '<td>'+esc(it.responsible)+'</td>'+
       '<td class="mono">'+esc(it.date||'')+'</td>'+
       '<td class="mono">'+esc(it.kit)+'</td>'+
-      '<td class="mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(it.note||'')+'">'+esc(it.note||'')+'</td>'+
+      '<td class="mono" style="max-width:200px">'+noteCellHtml('item', it.id, it.note, edit)+'</td>'+
     '</tr>';
   }).join('');
 
@@ -2824,7 +2929,7 @@ function renderInvTable() {
         '<td></td>'+
         '<td class="mono"></td>'+
         '<td class="mono">'+esc(t.simContact||'')+'</td>'+
-        '<td class="mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(t.note||'')+'">'+esc(t.note||'')+'</td>'+
+        '<td class="mono" style="max-width:200px">'+noteCellHtml('trk', t.id, t.note, edit)+'</td>'+
       '</tr>';
     }).join('');
   }
@@ -2848,7 +2953,7 @@ function invChangeStatus(sel) {
     it.status = newSt;
     if (newSt === 'Списаний') it.responsible = '';
     delete invBusy[id];
-    toast('✅ '+id+': '+oldSt+' → '+newSt);
+    showStatusToast('item', id, oldSt, newSt);
     renderView();
   }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
 }

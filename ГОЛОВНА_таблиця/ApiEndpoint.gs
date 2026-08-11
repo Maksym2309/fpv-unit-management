@@ -37,6 +37,7 @@ const API_FUNCTIONS = [
   // інвентар
   'acceptItem', 'updateItemStatusById', 'webDeleteInventoryItem',
   'webAddInventoryItem', 'getFormData', 'getNextIdNum', 'webSetItemAssignment',
+  'webSetItemNote', 'webSetTrackerNote', 'webLogStatusChange',
   // витратники
   'getConsumablesList', 'getCompatOptions', 'webUpdateConsumable',
   'webAddConsumable', 'webWriteOffConsumable', 'webDeleteConsumable',

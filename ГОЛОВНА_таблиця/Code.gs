@@ -1398,6 +1398,91 @@ function webSetItemAssignment(id, assignment) {
   return { id: id, assignment: assignment };
 }
 
+// ── Примітки з веб-застосунку (адмін або головний екіпажу) ──
+function webNoteGuard_(token) {
+  const email = apiUserEmail_() || '';
+  if (isAdmin(email)) return;
+  if (token) {
+    const p = authSession(token);
+    if (p) {
+      const crew = findPersonCrew(p.id);
+      if (crew && crew.isMain) return;
+    }
+  }
+  throw new Error('Немає прав змінювати примітку');
+}
+
+function webSetItemNote(id, note, token) {
+  webNoteGuard_(token);
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const inv = getSheet(ss, 'Інвентар');
+  if (!inv) throw new Error('Інвентар не знайдено');
+  const ids = inv.getRange(3, COLS.ID, inv.getLastRow() - 2, 1).getValues().flat().map(String);
+  const i = ids.indexOf(String(id));
+  if (i === -1) throw new Error('ID не знайдено: ' + id);
+  inv.getRange(i + 3, COLS.NOTE).setValue(String(note || ''));
+  return { id: id, note: String(note || '') };
+}
+
+function webSetTrackerNote(id, note, token) {
+  webNoteGuard_(token);
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const snt = getSheet(ss, 'Sinotrack');
+  if (!snt || snt.getLastRow() < 3) throw new Error('Аркуш Sinotrack не знайдено');
+  const rows = snt.getRange(3, 1, snt.getLastRow() - 2, 8).getValues();
+  let idx = rows.findIndex(r => String(r[0]).trim() === String(id));
+  if (idx === -1) idx = rows.findIndex(r => String(r[6]).trim() === String(id)); // за IMEI
+  if (idx === -1) throw new Error('Трекер не знайдено: ' + id);
+  const row = idx + 3;
+  snt.getRange(row, 8).setValue(String(note || ''));
+  touchSinotrack(snt, row);
+  return { id: id, note: String(note || '') };
+}
+
+// Уточнення причини зміни статусу (після факту) → Журнал руху.
+// kind: 'item' | 'trk' | 'sim'. Для інвентаря коментар дублюється
+// нотаткою на клітинку статусу (як робить updateItemStatusById).
+function webLogStatusChange(kind, id, fromSt, toSt, comment) {
+  comment = String(comment || '').trim();
+  if (!comment) throw new Error('Порожній коментар');
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const log = getSheet(ss, 'Журнал руху');
+  if (!log) throw new Error('Журнал руху не знайдено');
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const email = apiUserEmail_() || '—';
+  let name = '';
+  if (kind === 'trk') {
+    const snt = getSheet(ss, 'Sinotrack');
+    if (snt && snt.getLastRow() >= 3) {
+      const r = snt.getRange(3, 1, snt.getLastRow() - 2, 8).getValues()
+        .find(x => String(x[0]).trim() === String(id) || String(x[6]).trim() === String(id));
+      if (r) name = String(r[1] || '');
+    }
+  } else if (kind === 'sim') {
+    const sim = getSheet(ss, 'SIM-карти');
+    if (sim && sim.getLastRow() >= 3) {
+      const r = sim.getRange(3, 1, sim.getLastRow() - 2, 3).getValues()
+        .find(x => String(x[0]).trim() === String(id));
+      if (r) name = String(r[1] || '');
+    }
+  } else {
+    const inv = getSheet(ss, 'Інвентар');
+    if (inv && inv.getLastRow() >= 3) {
+      const ids = inv.getRange(3, COLS.ID, inv.getLastRow() - 2, 1).getValues().flat().map(String);
+      const i = ids.indexOf(String(id));
+      if (i !== -1) {
+        const row = i + 3;
+        name = String(inv.getRange(row, COLS.NAME).getValue());
+        const prev = inv.getRange(row, COLS.STATUS).getNote() || '';
+        const note = today + ' [' + fromSt + '→' + toSt + ']: ' + comment + (prev ? '\n─────\n' + prev : '');
+        inv.getRange(row, COLS.STATUS).setNote(note);
+      }
+    }
+  }
+  log.appendRow([today, id, name, 'Зміна статусу', fromSt || '—', toSt || '—', email, '', comment]);
+  return { ok: true };
+}
+
 // ── Витратники з веб-застосунку (редагування — тільки адмін) ──
 function webConsGuard_() {
   const email = apiUserEmail_() || '';
