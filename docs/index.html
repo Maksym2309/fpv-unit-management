@@ -3579,6 +3579,16 @@ function freqMinDist(f, occ) {
 // Група діапазону за МГц: 5.8 / 5.0 / 3.3 (як фільтр на карті частот)
 function freqGroupOf(f) { return f >= 5600 ? '5.8' : (f >= 4900 ? '5.0' : '3.3'); }
 
+// Чи дозволений бенд для відеосистеми екіпажу (правило sidebar-форм):
+// Hornet Vision — ТІЛЬКИ HV-бенди; інші відомі системи — все, крім HV;
+// система не вказана — без обмежень
+function systemAllowsBand(system, band) {
+  var isHV = String(band).indexOf('HV-') === 0;
+  if (system === 'Hornet Vision') return isHV;
+  if (system) return !isHV;
+  return true;
+}
+
 // Рекомендовані вільні частоти: максимальний запас відстані до зайнятих →
 // лишає найбільше місця для наступних екіпажів (унікальні за МГц).
 // Тримаємось діапазону поточних частот екіпажу (аналог на 5.8 не
@@ -3593,6 +3603,7 @@ function recommendFreqs(cr, limit) {
   var targetGroup = myList.length && myList[0].freq ? freqGroupOf(myList[0].freq) : '';
   var items = [];
   order.forEach(function(band){
+    if (!systemAllowsBand(cr.system, band)) return; // цифра/HV — тільки свої бенди
     bands[band].forEach(function(f, i){
       var code = band + (i + 1);
       if (mine.indexOf(code) !== -1) return;
@@ -3600,7 +3611,10 @@ function recommendFreqs(cr, limit) {
       if (c.lvl === 'free') items.push({ code: code, freq: f, dist: freqMinDist(f, occ), grp: freqGroupOf(f) });
     });
   });
-  var pool = targetGroup ? items.filter(function(x){ return x.grp === targetGroup; }) : items;
+  // Група 5.8/5.0/3.3 — вторинний фільтр; для Hornet Vision не застосовуємо
+  // (його дозволений набір і так малий та розкиданий по групах)
+  var pool = (targetGroup && cr.system !== 'Hornet Vision')
+    ? items.filter(function(x){ return x.grp === targetGroup; }) : items;
   if (!pool.length) pool = items;
   pool.sort(function(a, b){ return b.dist - a.dist; });
   var seen = {}, recs = [];
@@ -3611,15 +3625,28 @@ function recommendFreqs(cr, limit) {
 }
 
 function renderCrewFreqPanel() {
-  // Пріоритет: вибраний у боковому переліку → вибраний у тулбарі (links) → свій екіпаж
-  var selId = sideCrewSel || (crewPageTab === 'links' ? crewPageSel : '') || (S.auth && S.auth.crewId) || '';
+  var isLinks = crewPageTab === 'links';
+  var editOn = isLinks && (typeof crewEdit !== 'undefined' && crewEdit);
+  // Який екіпаж показувати:
+  // - користувач у режимі редагування — примусово СВІЙ екіпаж (тільки його
+  //   він і може редагувати; у боковому переліку свій не вибирається)
+  // - інакше: боковий перелік → вибраний у тулбарі (links) → свій
+  var selId;
+  if (editOn && !isAdminUser() && S.auth && S.auth.crewId) {
+    selId = S.auth.crewId;
+  } else {
+    selId = sideCrewSel || (isLinks ? crewPageSel : '') || (S.auth && S.auth.crewId) || '';
+  }
   var cr = selId ? crewById(selId) : null;
   var h = '<div class="side-panel">'+sidePanelHead('freqs', '📻 Частоти екіпажу'+(cr ? ' ('+esc(cr.crewName || cr.id)+')' : ''));
   if (!sidePanelOpen.freqs) return h + '</div>';
   h += '<div class="side-panel-body">';
   if (!cr) return h + '<div class="empty">Оберіть екіпаж у переліку вище</div></div></div>';
 
-  var canMg = canManageCrew(cr.id);
+  // Кнопки редагування — ТІЛЬКИ на «Активних зʼєднаннях» у режимі
+  // «Редагування» (синхронно з перемикачем) і лише для свого/адміна.
+  // «Загальний О.С.» і режим «Перегляд» — суто інформаційний показ.
+  var canMg = editOn && canManageCrew(cr.id);
   var occ = occupiedFreqsExcept(cr);
   var list = crewFreqList(cr);
   var d = S.freq || {};
@@ -3687,6 +3714,7 @@ function crewFreqPickModal(crewId, kind, replaceCode) {
 
   var items = [];
   order.forEach(function(band){
+    if (!systemAllowsBand(cr.system, band)) return; // тільки бенди відеосистеми екіпажу
     bands[band].forEach(function(f, i){
       var code = band + (i + 1);
       if (mine.indexOf(code) !== -1 && code !== replaceCode) return;
@@ -3721,6 +3749,7 @@ function crewFreqPickModal(crewId, kind, replaceCode) {
   '</select>';
 
   openModal((kind === 'main' ? '⭐ Основна частота' : '🔄 Резервна частота') + ' · ' + esc(cr.crewName || cr.id),
+    (cr.system ? '<div class="hint" style="margin-bottom:6px">📹 '+esc(cr.system)+' — показано лише сумісні бенди</div>' : '')+
     (replaceCode ? '<div class="hint" style="margin-bottom:8px">Заміна частоти <b class="mono">'+esc(replaceCode)+'</b></div>' : '')+
     '<div class="f"><label>Частота</label>'+selHtml+'</div>'+
     '<div class="hint" style="margin-bottom:10px">🟢 вільна · ⭐ рекомендована (лишає максимум місця іншим екіпажам) · 🟡 IMD3 · 🟠 поряд · 🔴 конфлікт · ⚠ нерекомендована</div>'+
