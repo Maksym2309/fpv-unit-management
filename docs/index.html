@@ -3213,12 +3213,10 @@ var sidePanelOpen = { list: true, comp: false, freqs: false }; // склад/ч�
 
 // Чи можна вибрати екіпаж у боковому переліку (свій/вибраний — ні, щоб не дублювати)
 function sideCrewClickable(id) {
-  // Користувач у режимі редагування на «Активних зʼєднаннях»: перелік
-  // повністю заблоковано — редагується лише СВІЙ екіпаж, чужі частоти
-  // захищені від випадкового вибору
+  // Єдиний лок: користувач у режимі редагування на «Активних зʼєднаннях» —
+  // перелік заблоковано (редагується лише свій екіпаж, чужі частоти захищені).
+  // У перегляді все вільно для всіх; адміна нічого не обмежує.
   if (!isAdminUser() && crewPageTab === 'links' && (typeof crewEdit !== 'undefined' && crewEdit)) return false;
-  if (S.auth && !isAdminUser() && S.auth.crewId === id) return false;                 // «мій» оператора
-  if (isAdminUser() && crewPageTab === 'links' && crewPageSel === id) return false;   // «вибраний» адміна
   return true;
 }
 function sideCrewBadge(id) {
@@ -3328,7 +3326,8 @@ function renderStaffMain() {
           '<button class="inv-mode-btn'+(staffEdit?' active':'')+'" onclick="staffEdit=true;renderView()">Редагування</button>'+
         '</div>'+
         (staffEdit
-          ? '<button class="icon-btn" title="Додати особу" style="background:var(--accent);color:var(--on-accent)" onclick="admEditPerson(\'\')">'+svgIcon('personAdd')+'</button>'
+          ? '<button class="icon-btn" title="Додати особу" style="background:var(--accent);color:var(--on-accent)" onclick="admEditPerson(\'\')">'+svgIcon('personAdd')+'</button>'+
+            '<button class="icon-btn" title="Створити екіпаж" style="background:var(--accent);color:var(--on-accent)" onclick="openCrewForm(\'\')">'+svgIcon('plus')+'</button>'
           : '')+
       '</div>'
     : '';
@@ -3446,13 +3445,14 @@ function renderLinksMain() {
             '<button class="inv-mode-btn'+(crewEdit?' active':'')+'" onclick="crewEdit=true;renderView()">Редагування</button>'+
           '</div>'
         : '')+
-      (isAdminUser() && crewEdit
-        ? '<button class="icon-btn" title="Створити екіпаж" style="background:var(--accent);color:var(--on-accent)" onclick="openCrewForm(\'\')">'+svgIcon('plus')+'</button>'
+      // «+» тут = додати особу в ЦЕЙ екіпаж (створення екіпажу — на «Загальному О.С.»)
+      (crewEdit && cr && (isAdminUser() || canMg)
+        ? '<button class="icon-btn" title="Додати особу до екіпажу '+esc(cr.crewName || cr.id)+'" style="background:var(--accent);color:var(--on-accent)" onclick="crewAddMemberModal()">'+svgIcon('personAdd')+'</button>'
         : '')+
     '</div>'+
   '</div>';
 
-  if (!cr) return h + '<div class="empty">Оберіть екіпаж</div>';
+  if (!cr) return h + '<div class="empty">Оберіть екіпаж'+(isAdminUser() ? ' (створити новий — вкладка «Загальний О.С.» → редагування → «+»)' : '')+'</div>';
 
   // Таблиця членів вибраного екіпажу
   var ids = (cr.main ? [cr.main] : []).concat(crewMembersArr(cr));
