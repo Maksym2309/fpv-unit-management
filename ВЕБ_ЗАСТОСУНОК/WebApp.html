@@ -3282,17 +3282,26 @@ function renderCrews(c) {
   html += '<div class="side-panel">'+sidePanelHead('list', '🗂 Перелік екіпажів');
   if (sidePanelOpen.list) {
     html += '<div class="side-panel-body">';
+    // Адмін у режимі редагування: ✎ перейменувати / ✕ завершити екіпаж
+    var listEdit = isAdminUser() &&
+      ((crewPageTab === 'links' && crewEdit) || (crewPageTab === 'staff' && staffEdit));
     html += crews.length ? crews.map(function(cr){
       var n = (cr.main ? 1 : 0) + (cr.members||'').split('|').filter(Boolean).length;
       var clickable = sideCrewClickable(cr.id);
       var badge = sideCrewBadge(cr.id);
+      var acts = listEdit
+        ? '<span class="inv-acts" style="margin:0;flex-shrink:0">'+
+            '<button class="inv-act" title="Перейменувати екіпаж" data-id="'+esc(cr.id)+'" onclick="event.stopPropagation();crewRenameModal(this.dataset.id)">'+svgIcon('edit')+'</button>'+
+            '<button class="inv-act inv-act--del" title="Завершити екіпаж" data-id="'+esc(cr.id)+'" onclick="event.stopPropagation();doCloseCrew(this.dataset.id)">'+svgIcon('x')+'</button>'+
+          '</span>'
+        : '';
       return '<div class="crew-pick'+(cr.id===sideCrewSel?' active':'')+'"'+
         (clickable
           ? ' onclick="sideCrewPick(\''+esc(cr.id)+'\')"'
           : ' style="cursor:default;opacity:.85"')+'>'+
         '<div><div class="cp-name">'+esc(cr.crewName || cr.id)+' '+badge+'</div>'+
         '<div class="cp-sub">'+esc(cr.id)+' · 👤 '+(cr.main ? esc(personLabel(cr.main)) : 'без головного')+'</div></div>'+
-        '<span class="cp-sub">'+n+' оп.</span>'+
+        '<span style="display:flex;align-items:center;gap:8px"><span class="cp-sub">'+n+' оп.</span>'+acts+'</span>'+
       '</div>';
     }).join('') : '<div class="empty">Активних екіпажів немає</div>';
     html += '</div>';
@@ -4151,8 +4160,37 @@ function doSaveCrew() {
 function doCloseCrew(crewId) {
   var act = activeFlights().filter(function(f){ return f.crew===crewId; });
   if (act.length) { toast('⚠ Спочатку заверши вильоти: '+act.map(function(f){return f.id;}).join(', '), true); return; }
-  if (!confirm('🔴 Завершити екіпаж '+crewId+'?')) return;
+  var cr = crewById(crewId);
+  if (!confirm('🔴 Завершити екіпаж '+((cr && cr.crewName) ? cr.crewName+' ('+crewId+')' : crewId)+'?\nЗ\'єднання стане неактивним, люди й інвентар звільняться.')) return;
   rpc('endFlight', [crewId, [], 'Екіпаж завершено'], function(){ toast('🔴 '+crewId+' завершено'); loadAll(); });
+}
+
+// ── Перейменування екіпажу (адмін, режим редагування) ──
+function crewRenameModal(crewId) {
+  var cr = crewById(crewId);
+  if (!cr) return;
+  openModal('✏️ Назва екіпажу · '+esc(crewId),
+    '<div class="f"><label>Назва</label><input type="text" id="cnName" value="'+esc(cr.crewName||'')+'" placeholder="напр. Alfa" onkeydown="if(event.key===\'Enter\')doCrewRename(\''+esc(crewId)+'\')"></div>'+
+    '<button class="btn btn-green" id="cnBtn" onclick="doCrewRename(\''+esc(crewId)+'\')">💾 Зберегти</button>'
+  );
+  setTimeout(function(){ var i = $('cnName'); if (i) { i.focus(); i.select(); } }, 60);
+}
+function doCrewRename(crewId) {
+  var v = $('cnName').value.trim();
+  if (!v) { toast('⚠ Вкажи назву', true); return; }
+  var btn = $('cnBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('updateCrew', [crewId, { crewName: v }, crewToken() || undefined], function(){
+    var cr = crewById(crewId);
+    if (cr) cr.crewName = v;
+    refreshPersonnelCrewLinks();
+    toast('✏️ '+crewId+' → «'+v+'»');
+    closeModal();
+    renderView();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
+    toast('❌ '+e.message, true);
+  });
 }
 
 /* ═══════════ МОДАЛКИ ═══════════ */
