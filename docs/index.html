@@ -2695,20 +2695,28 @@ function invCanAccept(it) {
 
 function invActionsHtml(it) {
   if (invBusy[it.id]) return '<div class="inv-acts"><span class="hint">⏳</span></div>';
-  // Дії під ID, однакові на обох вкладках. Списання — через статус «Списаний».
+  // Дії під ID — різні для вкладок, щоб не нагромаджувати:
+  //   «Інвентар екіпажу»: прийняти ✓ / не прийняти ✗(оранж.) / прибрати з екіпажу ✕(черв.)
+  //   «Загальний»: додати в екіпаж + / прибрати з екіпажу ✕(черв.) / видалити з обліку 🗑(черв.)
+  // Списання — через статус «Списаний».
   var h = '<div class="inv-acts">';
-  // Прийняття обладнання головним відповідальним / адміном
-  if (invCanAccept(it)) {
+  // Прийняття обладнання — тільки у вкладці екіпажу (парафія головного)
+  if (invTab === 'crew' && invCanAccept(it)) {
     h += '<button class="inv-act inv-act--ok" title="Прийняти обладнання" onclick="invAcceptEquip(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('check')+'</button>';
     h += '<button class="inv-act" style="color:var(--orange);border-color:var(--orange)" title="Не прийняти (причина + статус)" onclick="invRejectModal(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('x')+'</button>';
   }
   if (invIsAdmin()) {
-    // Одна кнопка-перемикач: в екіпажі → прибрати (✕), поза екіпажем → додати (+)
     var inCrew = invItemCrew(it.id);
-    h += inCrew
-      ? '<button class="inv-act inv-act--crew" title="Прибрати з екіпажу '+esc(inCrew.id)+'" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('x')+'</button>'
-      : '<button class="inv-act inv-act--crew" title="Додати до екіпажу" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('plus')+'</button>';
-    h += '<button class="inv-act inv-act--del" title="Видалити з обліку" onclick="invDelete(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('trash')+'</button>';
+    if (inCrew) {
+      // Червоний ✕ — контрастний до помаранчевого «не прийняти»
+      h += '<button class="inv-act inv-act--del" title="Прибрати з екіпажу '+esc(inCrew.id)+'" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('x')+'</button>';
+    } else if (invTab === 'all') {
+      h += '<button class="inv-act inv-act--crew" title="Додати до екіпажу" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('plus')+'</button>';
+    }
+    // Видалення з обліку — лише в загальному інвентарі
+    if (invTab === 'all') {
+      h += '<button class="inv-act inv-act--del" title="Видалити з обліку" onclick="invDelete(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('trash')+'</button>';
+    }
   }
   return h + '</div>';
 }
@@ -2931,7 +2939,7 @@ function renderInvTable() {
       if (showActs && invIsAdmin()) {
         trkActs = invBusy[t.id]
           ? '<span class="hint">⏳</span>'
-          : '<div class="inv-acts"><button class="inv-act inv-act--crew" title="Прибрати трекер з екіпажу" onclick="invRemoveTrkFromCrew(this.dataset.id)" data-id="'+esc(t.id)+'">'+svgIcon('x')+'</button></div>';
+          : '<div class="inv-acts"><button class="inv-act inv-act--del" title="Прибрати трекер з екіпажу" onclick="invRemoveTrkFromCrew(this.dataset.id)" data-id="'+esc(t.id)+'">'+svgIcon('x')+'</button></div>';
       }
       return '<tr><td class="mono accent">'+esc(t.imei||t.id)+trkActs+'</td><td>'+esc(t.model||'')+'</td><td class="mono">GPS Трекер</td>'+
         '<td>'+esc(bind)+'</td>'+
