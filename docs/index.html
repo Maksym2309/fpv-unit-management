@@ -3213,6 +3213,10 @@ var sidePanelOpen = { list: true, comp: false, freqs: false }; // склад/ч�
 
 // Чи можна вибрати екіпаж у боковому переліку (свій/вибраний — ні, щоб не дублювати)
 function sideCrewClickable(id) {
+  // Користувач у режимі редагування на «Активних зʼєднаннях»: перелік
+  // повністю заблоковано — редагується лише СВІЙ екіпаж, чужі частоти
+  // захищені від випадкового вибору
+  if (!isAdminUser() && crewPageTab === 'links' && (typeof crewEdit !== 'undefined' && crewEdit)) return false;
   if (S.auth && !isAdminUser() && S.auth.crewId === id) return false;                 // «мій» оператора
   if (isAdminUser() && crewPageTab === 'links' && crewPageSel === id) return false;   // «вибраний» адміна
   return true;
