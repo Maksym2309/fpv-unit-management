@@ -2140,6 +2140,16 @@ function invBaseList() {
   });
 }
 
+// Компактне подання таблиць: ховає другорядні стовпці після «Назви»
+// (інвентар: Тип+Закріплення; витратники: Категорія+Сумісність), щоб
+// статус/кількість читались одразу. На вузьких екранах — типово.
+var invCompact = window.innerWidth < 900;
+function invCompactBtn() {
+  return '<button class="icon-btn" title="'+(invCompact ? 'Показати всі стовпці' : 'Компактне подання (сховати другорядні стовпці)')+'" '+
+    'style="border:1px solid var(--line-2);font-family:var(--font-data);font-weight:700" '+
+    'onclick="invCompact=!invCompact;renderView()">'+(invCompact ? '»' : '«')+'</button>';
+}
+
 function renderInventory(c) {
   var types = {};
   S.items.forEach(function(it){ var t = invTypeCode(it.type); if (t) types[t] = 1; });
@@ -2218,7 +2228,7 @@ function renderInventory(c) {
       (crews.length
         ? '<select onchange="invCrewSel=this.value;renderView()">'+crewOpts+'</select>'
         : '<span class="hint">'+(S.auth && !S.auth.crewId ? 'Ти не привʼязаний до екіпажу' : 'Немає активних екіпажів')+'</span>')+
-      '<div class="staff-actions">'+modeToggle+addDroneBtn+'</div>'+
+      '<div class="staff-actions">'+invCompactBtn()+modeToggle+addDroneBtn+'</div>'+
     '</div>';
   } else {
     // Загальний інвентар: «+» для адміна — лише в режимі редагування
@@ -2226,7 +2236,7 @@ function renderInventory(c) {
       ? '<button class="icon-btn" title="Додати предмет в інвентар" style="background:var(--accent);color:var(--on-accent)" onclick="invAddItemModal()">'+svgIcon('plus')+'</button>' : '';
     toolbar = '<div class="filter-row">'+
       '<div class="type-chips">'+typeChips+'</div>'+
-      '<div class="staff-actions">'+modeToggle+addItemBtn+'</div>'+
+      '<div class="staff-actions">'+invCompactBtn()+modeToggle+addItemBtn+'</div>'+
     '</div>';
   }
 
@@ -2420,7 +2430,7 @@ function renderConsTab(c, tabs) {
     '<div style="margin-bottom:12px"><input type="text" id="invSearch" placeholder="Пошук: назва, категорія, сумісність…" value="'+esc(invFilter.q)+'" oninput="invFilter.q=this.value;renderConsTable()" style="width:220px"></div>'+
   '</div>'+
     tiles + tabs +
-    '<div class="filter-row"><div class="type-chips">'+compatChips+'</div><div class="staff-actions">'+modeToggle+addBtn+'</div></div>'+
+    '<div class="filter-row"><div class="type-chips">'+compatChips+'</div><div class="staff-actions">'+invCompactBtn()+modeToggle+addBtn+'</div></div>'+
     (S.cons
       ? '<div class="table-wrap"><table class="data-table" id="consTable"></table></div>'
       : '<div class="loading-view"><span class="pulse-dot"></span>Завантаження витратників…</div>');
@@ -2460,15 +2470,18 @@ function renderConsTable() {
     return '<tr>'+
       '<td class="mono">'+esc(x.id)+acts+'</td>'+
       '<td>'+esc(x.name)+'</td>'+
+      (invCompact ? '' :
       '<td>'+esc(x.category||'—')+'</td>'+
-      '<td class="mono">'+esc(x.compat||'—')+'</td>'+
+      '<td class="mono">'+esc(x.compat||'—')+'</td>')+
       '<td>'+qtyCell+'</td>'+
       '<td>'+stCell+'</td>'+
       '<td class="mono" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(x.note||'')+'">'+esc(x.note||'')+'</td>'+
     '</tr>';
   }).join('');
-  el.innerHTML = '<thead><tr><th>ID / дії</th><th>Назва</th><th>Категорія</th><th>Сумісність</th><th>Кількість</th><th>Стан</th><th>Примітка</th></tr></thead>'+
-    '<tbody>'+(rows || '<tr><td colspan="7" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
+  el.innerHTML = '<thead><tr><th>ID / дії</th><th>Назва</th>'+
+    (invCompact ? '' : '<th>Категорія</th><th>Сумісність</th>')+
+    '<th>Кількість</th><th>Стан</th><th>Примітка</th></tr></thead>'+
+    '<tbody>'+(rows || '<tr><td colspan="'+(invCompact ? 5 : 7)+'" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
 }
 
 function consSetQty(inp) {
@@ -2905,13 +2918,17 @@ function renderInvTable() {
   var edit = invMode === 'edit' && !!S.invCaps;
   var showActs = edit;
 
-  var head = '<thead><tr><th>ID'+(showActs?' / дії':'')+'</th><th>Назва</th><th>Тип</th><th>Закріплення</th><th>Статус</th><th>Відповідальний</th><th>Дата</th><th>Компл.</th><th>Примітка</th></tr></thead>';
-  var cols = 9;
+  var head = '<thead><tr><th>ID'+(showActs?' / дії':'')+'</th><th>Назва</th>'+
+    (invCompact ? '' : '<th>Тип</th><th>Закріплення</th>')+
+    '<th>Статус</th><th>Відповідальний</th><th>Дата</th><th>Компл.</th><th>Примітка</th></tr></thead>';
+  var cols = invCompact ? 7 : 9;
 
   var rows = list.map(function(it){
     return '<tr><td class="mono accent">'+esc(it.id)+(showActs ? invActionsHtml(it) : '')+'</td>'+
-      '<td>'+esc(it.name)+'</td><td class="mono">'+esc(it.type)+'</td>'+
-      '<td>'+((edit && invIsAdmin()) ? invAsgSelectHtml(it) : esc(it.assignment))+'</td>'+
+      '<td>'+esc(it.name)+'</td>'+
+      (invCompact ? '' :
+      '<td class="mono">'+esc(it.type)+'</td>'+
+      '<td>'+((edit && invIsAdmin()) ? invAsgSelectHtml(it) : esc(it.assignment))+'</td>')+
       '<td>'+(edit ? invStatusSelectHtml(it) : statusChip(it.status))+
         (it.accepted === 'Не прийнято'
           ? '<div class="accept-badge accept-no" title="'+esc(it.acceptReason||'')+'">НЕ ПРИЙНЯТИЙ'+(it.acceptReason?': '+esc(it.acceptReason):'')+'</div>'
@@ -2941,8 +2958,8 @@ function renderInvTable() {
           ? '<span class="hint">⏳</span>'
           : '<div class="inv-acts"><button class="inv-act inv-act--del" title="Прибрати трекер з екіпажу" onclick="invRemoveTrkFromCrew(this.dataset.id)" data-id="'+esc(t.id)+'">'+svgIcon('x')+'</button></div>';
       }
-      return '<tr><td class="mono accent">'+esc(t.imei||t.id)+trkActs+'</td><td>'+esc(t.model||'')+'</td><td class="mono">GPS Трекер</td>'+
-        '<td>'+esc(bind)+'</td>'+
+      return '<tr><td class="mono accent">'+esc(t.imei||t.id)+trkActs+'</td><td>'+esc(t.model||'')+'</td>'+
+        (invCompact ? '' : '<td class="mono">GPS Трекер</td><td>'+esc(bind)+'</td>')+
         '<td>'+(edit ? invTrkStatusSelectHtml(t) : statusChip(t.status))+'</td>'+
         '<td></td>'+
         '<td class="mono"></td>'+
