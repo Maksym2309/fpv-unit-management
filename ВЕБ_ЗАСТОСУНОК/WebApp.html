@@ -671,6 +671,17 @@ var DEMO_DATA = {
     return { id: id, note: n };
   },
   webLogStatusChange: function(){ return { ok: true }; },
+  getLostMapData: [
+    { kind:'drone', id:'FPV-102', name:'Hornet 7"', lat:48.1235, lng:37.4562, link:'',
+      note:'⚠️ ВТРАЧЕНО 2026-07-22\n📍 48.1235, 37.4562\n📋 зенітний вогонь, падіння за посадкою' },
+    { kind:'tracker', id:'SNT-004', name:'ST-901', imei:'', binding:'',
+      lat:48.2011, lng:37.3005, link:'https://maps.google.com/?q=48.2011,37.3005',
+      note:'⚠️ ВТРАЧЕНО 2026-08-01\n📍 48.2011, 37.3005\n📋 політ без задокументованого вильоту, імовірно борт FPV-099' },
+    { kind:'tracker', id:'SNT-003', name:'ST-907', imei:'8641290099944', binding:'FPV-205',
+      lat:48.0502, lng:37.6120, link:'', note:'⚠️ ВТРАЧЕНО 2026-08-05\n📍 48.0502, 37.6120' },
+    { kind:'drone', id:'FPV-050', name:'Sting AD', lat:null, lng:null, link:'',
+      note:'⚠️ ВТРАЧЕНО 2026-06-10 (координати не визначені)' }
+  ],
   getConsumablesList: [
     {id:'CONS-001', name:'Стяжки 200мм', category:'Кріплення', compat:'Універсальне', trackType:'Кількісний', qty:150, minQty:50, status:'Достатньо', note:''},
     {id:'CONS-002', name:'Пропелери 7"', category:'Пропелери', compat:'FPV', trackType:'Кількісний', qty:12, minQty:20, status:'Критично', note:'замовити терміново'},
@@ -1907,7 +1918,7 @@ function renderTrackers(c) {
         '<button class="inv-mode-btn'+(trkMode==='edit'?' active':'')+'" onclick="trkMode=\'edit\';renderView()">Редагування</button>'+
       '</div>'
     : '';
-  var addBtn = (canEdit && trkMode==='edit')
+  var addBtn = (canEdit && trkMode==='edit' && trkTab !== 'map')
     ? '<button class="icon-btn" title="'+(trkTab==='sim'?'Додати SIM-карту':'Додати трекер')+'" style="background:var(--accent);color:var(--on-accent)" onclick="'+(trkTab==='sim'?'openAddSim()':'openAddTracker()')+'">'+svgIcon('plus')+'</button>'
     : '';
 
@@ -1933,10 +1944,15 @@ function renderTrackers(c) {
     '<div class="inv-tabs">'+
       '<button class="inv-tab'+(trkTab==='trk'?' active':'')+'" onclick="trkTab=\'trk\';trkFilter.status=\'all\';renderView()">Трекери</button>'+
       '<button class="inv-tab'+(trkTab==='sim'?' active':'')+'" onclick="trkTab=\'sim\';trkFilter.status=\'all\';renderView()">SIM-карти</button>'+
+      '<button class="inv-tab'+(trkTab==='map'?' active':'')+'" onclick="trkTab=\'map\';renderView()">🗺 Карта втрат</button>'+
     '</div>'+
-    '<div class="filter-row"><div class="staff-actions">'+modeToggle+addBtn+'</div></div>'+
-    '<div class="table-wrap"><table class="data-table" id="trkTable"></table></div>';
-  renderTrkTable();
+    (trkTab === 'map'
+      ? '<div id="lostMap" style="height:56vh;border:1px solid var(--line);background:var(--panel-2)"></div>'+
+        '<div id="lostList" style="margin-top:10px"></div>'
+      : '<div class="filter-row"><div class="staff-actions">'+(trkTab==='trk' ? invCompactBtn() : '')+modeToggle+addBtn+'</div></div>'+
+        '<div class="table-wrap"><table class="data-table" id="trkTable"></table></div>');
+  if (trkTab === 'map') renderTrkMap();
+  else renderTrkTable();
 }
 
 function renderTrkTable() {
@@ -1953,7 +1969,11 @@ function renderTrkTable() {
       if (q && ((t.imei||'')+' '+t.id+' '+(t.model||'')+' '+(t.simContact||'')+' '+(t.simNumber||'')+' '+(t.binding||'')).toLowerCase().indexOf(q) === -1) return false;
       return true;
     });
-    head = '<thead><tr><th>ID'+(edit?' / дії':'')+'</th><th>Модель</th><th>SIM</th><th>Борт</th><th>Екіпаж</th><th>Статус</th><th>Примітка</th></tr></thead>';
+    head = '<thead><tr><th>ID'+(edit?' / дії':'')+'</th>'+
+      (invCompact ? '' : '<th>Модель</th>')+
+      '<th>SIM</th>'+
+      (invCompact ? '' : '<th>Борт</th><th>Екіпаж</th>')+
+      '<th>Статус</th><th>Примітка</th></tr></thead>';
     rows = list.map(function(t){
       var crew = invTrackerCrew(t.id);
       var acts = '';
@@ -1971,15 +1991,16 @@ function renderTrkTable() {
         : statusChip(t.status);
       return '<tr>'+
         '<td class="mono accent">'+esc(t.imei||t.id)+(t.imei?'<div class="hint">'+esc(t.id)+'</div>':'')+acts+'</td>'+
-        '<td class="mono">'+esc(t.model||'')+'</td>'+
+        (invCompact ? '' : '<td class="mono">'+esc(t.model||'')+'</td>')+
         '<td class="mono">'+(t.simContact ? esc(t.simContact)+'<div class="hint">'+esc(t.simNumber||'')+'</div>' : '<span class="hint">— без SIM</span>')+'</td>'+
+        (invCompact ? '' :
         '<td class="mono">'+esc(t.binding||'—')+'</td>'+
-        '<td class="mono">'+(crew ? esc(crew.crewName || crew.id) : '—')+'</td>'+
+        '<td class="mono">'+(crew ? esc(crew.crewName || crew.id) : '—')+'</td>')+
         '<td>'+stCell+'</td>'+
         '<td class="mono" style="max-width:200px">'+noteCellHtml('trk', t.id, t.note, edit)+'</td>'+
       '</tr>';
     }).join('');
-    el.innerHTML = head + '<tbody>'+(rows || '<tr><td colspan="7" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
+    el.innerHTML = head + '<tbody>'+(rows || '<tr><td colspan="'+(invCompact ? 4 : 7)+'" class="empty">Нічого не знайдено</td></tr>')+'</tbody>';
   } else {
     var slist = S.sims.filter(function(s){
       var st = String(s.status||'').trim();
@@ -2008,10 +2029,136 @@ function renderTrkTable() {
   }
 }
 function doTrkStatus(id, st) {
-  if (st === 'Втрачений' && !confirm('❗ Позначити трекер '+id+' ВТРАЧЕНИМ? Це незворотньо, SIM теж стане втраченою.')) { renderTrkTable(); return; }
+  if (st === 'Втрачений') { renderTrkTable(); trkLostModal(id); return; }
   var t = S.trackers.find(function(x){ return x.id === id; });
   var oldSt = t ? String(t.status||'').trim() : '—';
   rpc('updateSinotrackStatus', [id, st, ''], function(){ showStatusToast('trk', id, oldSt, st); loadAll(); });
+}
+
+/* ── Карта втрат (Leaflet + OSM, вантажиться ліниво при відкритті) ── */
+var _leafletLoading = false;
+var _lostMapObj = null;
+function ensureLeaflet(cb) {
+  if (window.L) { cb(); return; }
+  if (_leafletLoading) { setTimeout(function(){ ensureLeaflet(cb); }, 250); return; }
+  _leafletLoading = true;
+  var css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+  document.head.appendChild(css);
+  var s = document.createElement('script');
+  s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  s.onload = function(){ cb(); };
+  s.onerror = function(){
+    _leafletLoading = false;
+    var el = $('lostMap');
+    if (el) el.innerHTML = '<div class="empty" style="padding-top:24vh">❌ Не вдалося завантажити бібліотеку карти (перевір інтернет)</div>';
+  };
+  document.head.appendChild(s);
+}
+
+function renderTrkMap() {
+  var mapEl = $('lostMap');
+  if (!mapEl) return;
+  function draw(data) {
+    var listEl = $('lostList');
+    var withCoords = data.filter(function(x){ return x.lat && x.lng; });
+    var noCoords = data.filter(function(x){ return !(x.lat && x.lng); });
+
+    // Список без координат + легенда
+    if (listEl) {
+      var legend = '<div class="freq-legend" style="margin-bottom:8px">'+
+        '<div class="li"><span class="lg-sq" style="background:#e74c3c;border-radius:50%"></span>Втрачений борт</div>'+
+        '<div class="li"><span class="lg-sq" style="background:#f39c12;border-radius:50%"></span>Трекер із бортом</div>'+
+        '<div class="li"><span class="lg-sq" style="background:#9b59b6;border-radius:50%"></span>Трекер (борт не задокументовано)</div>'+
+      '</div>';
+      listEl.innerHTML = legend + (noCoords.length
+        ? '<div class="panel"><div class="panel-title red">Без координат ('+noCoords.length+')</div>'+
+          noCoords.map(function(x){
+            return '<div class="conflict-item">'+(x.kind==='drone'?'🛸':'📡')+' <b class="mono">'+esc(x.imei||x.id)+'</b> '+esc(x.name||'')+
+              (x.note ? '<div class="detail">'+esc(String(x.note).split('\n').join(' · ')).slice(0, 160)+'</div>' : '')+
+            '</div>';
+          }).join('')+'</div>'
+        : '');
+    }
+
+    ensureLeaflet(function(){
+      if (_lostMapObj) { try { _lostMapObj.remove(); } catch(e) {} _lostMapObj = null; }
+      var el = $('lostMap');
+      if (!el) return;
+      var map = L.map(el);
+      _lostMapObj = map;
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18, attribution: '© OpenStreetMap'
+      }).addTo(map);
+      var pts = [];
+      withCoords.forEach(function(x){
+        var col = x.kind === 'drone' ? '#e74c3c' : (x.binding ? '#f39c12' : '#9b59b6');
+        var kindLbl = x.kind === 'drone' ? '🛸 Втрачений борт' : (x.binding ? '📡 Трекер (борт '+esc(x.binding)+')' : '📡 Трекер');
+        var popup = '<div style="font-family:monospace;font-size:12px;min-width:180px">'+
+          '<b>'+kindLbl+'</b><br><b>'+esc(x.imei||x.id)+'</b>'+(x.name ? ' — '+esc(x.name) : '')+
+          (x.note ? '<hr style="margin:6px 0;border-color:#ddd">'+esc(x.note).replace(/\n/g, '<br>') : '')+
+          (x.link ? '<br><a href="'+esc(x.link)+'" target="_blank">🗺 відкрити посилання</a>' : '')+
+          '<br><span style="color:#888">'+x.lat.toFixed(5)+', '+x.lng.toFixed(5)+'</span>'+
+        '</div>';
+        L.circleMarker([x.lat, x.lng], {
+          radius: 9, color: col, fillColor: col, fillOpacity: .75, weight: 2
+        }).addTo(map).bindPopup(popup);
+        pts.push([x.lat, x.lng]);
+      });
+      if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 14 });
+      else {
+        map.setView([48.5, 35.0], 6); // центр України
+        var hint = $('lostList');
+        if (hint && !withCoords.length && !data.length) hint.innerHTML = '<div class="empty">Втрат немає — і добре 🍀</div>';
+      }
+      setTimeout(function(){ map.invalidateSize(); }, 150);
+    });
+  }
+  if (S.lostMap) { draw(S.lostMap); return; }
+  mapEl.innerHTML = '<div class="loading-view" style="padding-top:22vh"><span class="pulse-dot"></span>Завантаження точок втрат…</div>';
+  rpc('getLostMapData', [], function(v){
+    S.lostMap = Array.isArray(v) ? v : [];
+    draw(S.lostMap);
+  }, function(e){
+    mapEl.innerHTML = '<div class="empty" style="padding-top:24vh">❌ '+esc(e.message)+'</div>';
+  });
+}
+
+// ── Втрата трекера поодинці: деталі як у сценарії вильоту ──
+function trkLostModal(id) {
+  var t = S.trackers.find(function(x){ return x.id === id; });
+  openModal('❌ Втрата трекера: '+esc((t && t.imei) || id),
+    '<div class="f"><label>📍 Координати</label><input type="text" id="tlCoords" placeholder="напр. 48.123, 35.456"></div>'+
+    '<div class="f"><label>🗺 Посилання з трекера / карти</label><input type="text" id="tlLink" placeholder="необов\'язково"></div>'+
+    '<div class="f"><label>📋 Обставини / який борт міг летіти</label><input type="text" id="tlCirc" placeholder="напр. політ без задокументованого вильоту, імовірно FPV-099"></div>'+
+    '<div class="hint">⚠️ SIM трекера теж стане втраченою. Деталі потраплять у примітку трекера, Журнал руху і на Карту втрат</div>'+
+    '<button class="btn btn-red" id="tlBtn" onclick="doTrkMarkLost(\''+esc(id)+'\')" style="margin-top:8px">❌ Підтвердити втрату</button>'
+  );
+  setTimeout(function(){ var i = $('tlCoords'); if (i) i.focus(); }, 60);
+}
+function doTrkMarkLost(id) {
+  var btn = $('tlBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Запис…'; }
+  var coords = $('tlCoords').value.trim(), link = $('tlLink').value.trim(), circ = $('tlCirc').value.trim();
+  var today = new Date().toISOString().slice(0, 10);
+  var note = '⚠️ ВТРАЧЕНО ' + today +
+    (coords ? '\n📍 ' + coords : '') +
+    (link ? '\n🗺️ ' + link : '') +
+    (circ ? '\n📋 ' + circ : '');
+  var t = S.trackers.find(function(x){ return x.id === id; });
+  var oldSt = t ? String(t.status||'').trim() : '—';
+  rpc('updateSinotrackStatus', [id, 'Втрачений', note], function(){
+    // Причина одразу в Журнал руху (без окремої спливашки)
+    var comment = [coords, link, circ].filter(Boolean).join(' | ') || 'без деталей';
+    rpc('webLogStatusChange', ['trk', id, oldSt, 'Втрачений', comment], function(){}, function(){});
+    S.lostMap = null; // кеш карти втрат застарів
+    toast('❌ '+id+' позначено втраченим');
+    closeModal(); loadAll();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '❌ Підтвердити втрату'; }
+    toast('❌ '+e.message, true);
+  });
 }
 function doSimStatus(id, st) {
   var s = S.sims.find(function(x){ return x.id === id; });
@@ -2882,7 +3029,7 @@ function invTrkChangeStatus(sel) {
   var newSt = sel.value;
   var oldSt = String(t.status||'').trim();
   if (newSt === oldSt) return;
-  if (newSt === 'Втрачений' && !confirm('❗ Трекер '+id+' — ВТРАЧЕНИЙ? Це незворотньо, SIM теж стане втраченою.')) { sel.value = oldSt; return; }
+  if (newSt === 'Втрачений') { sel.value = oldSt; trkLostModal(id); return; }
   invBusy[id] = true; renderInvTable();
   rpc('updateSinotrackStatus', [id, newSt, ''], function(){
     t.status = newSt;
@@ -3000,6 +3147,7 @@ function doMarkLost(id) {
   rpc('updateItemStatusById', [{ id:id, status:'Втрачений', lostData: lost }], function(){
     var it = S.items.find(function(x){ return x.id === id; });
     if (it) it.status = 'Втрачений';
+    S.lostMap = null; // кеш карти втрат застарів
     toast('❌ '+id+' позначено втраченим');
     closeModal(); loadAll();
   }, function(e){

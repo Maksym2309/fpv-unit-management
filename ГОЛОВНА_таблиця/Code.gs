@@ -1483,6 +1483,44 @@ function webLogStatusChange(kind, id, fromSt, toSt, comment) {
   return { ok: true };
 }
 
+// ── Карта втрат: втрачені борти й трекери з координатами з нотаток ──
+// Координати беруться з деталей втрати (📍 у нотатці на клітинці ID
+// інвентаря / у примітці трекера). Повертає і записи без координат —
+// вони показуються списком під картою.
+function getLostMapData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const out = [];
+  function parseLoss(text) {
+    text = String(text || '');
+    const m = text.match(/(-?\d{1,2}\.\d{3,})[,;\s]+(-?\d{1,3}\.\d{3,})/);
+    const link = (text.match(/https?:\/\/\S+/) || [null])[0];
+    return { lat: m ? Number(m[1]) : null, lng: m ? Number(m[2]) : null, link: link };
+  }
+  const inv = getSheet(ss, 'Інвентар');
+  if (inv && inv.getLastRow() >= 3) {
+    const rows = inv.getRange(3, 1, inv.getLastRow() - 2, COLS.STATUS).getValues();
+    rows.forEach(function(r, i) {
+      if (String(r[COLS.STATUS - 1]).trim() !== 'Втрачений') return;
+      const note = inv.getRange(3 + i, COLS.ID).getNote() || '';
+      const p = parseLoss(note);
+      out.push({ kind: 'drone', id: String(r[0]), name: String(r[COLS.NAME - 1] || ''),
+        lat: p.lat, lng: p.lng, link: p.link, note: note });
+    });
+  }
+  const snt = getSheet(ss, 'Sinotrack');
+  if (snt && snt.getLastRow() >= 3) {
+    snt.getRange(3, 1, snt.getLastRow() - 2, 8).getValues().forEach(function(r) {
+      if (String(r[2]).trim() !== 'Втрачений') return;
+      const note = String(r[7] || '');
+      const p = parseLoss(note);
+      out.push({ kind: 'tracker', id: String(r[0]), name: String(r[1] || ''),
+        imei: String(r[6] || ''), binding: String(r[5] || ''),
+        lat: p.lat, lng: p.lng, link: p.link, note: note });
+    });
+  }
+  return out;
+}
+
 // ── Витратники з веб-застосунку (редагування — тільки адмін) ──
 function webConsGuard_() {
   const email = apiUserEmail_() || '';
