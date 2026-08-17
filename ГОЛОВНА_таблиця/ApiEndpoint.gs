@@ -38,6 +38,7 @@ const API_FUNCTIONS = [
   'acceptItem', 'updateItemStatusById', 'webDeleteInventoryItem',
   'webAddInventoryItem', 'getFormData', 'getNextIdNum', 'webSetItemAssignment',
   'webSetItemNote', 'webSetTrackerNote', 'webLogStatusChange', 'getLostMapData',
+  'webUpdateLossRecord',
   // витратники
   'getConsumablesList', 'getCompatOptions', 'webUpdateConsumable',
   'webAddConsumable', 'webWriteOffConsumable', 'webDeleteConsumable',

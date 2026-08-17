@@ -409,6 +409,20 @@ textarea { height: 54px; resize: vertical; }
 .accept-no { background: var(--orange-bg); color: var(--orange); border: 1px solid var(--orange); }
 .accept-yes { color: var(--green); }
 
+/* ── Карта втрат: ізольований stacking context (isolation) — внутрішні
+   z-index Leaflet (тайли 200 / маркери 400 / спливашки 700 / контроли 1000)
+   лишаються як є, але назовні вся карта = z-index 0 → сайдбар (60) і
+   шапка (40) завжди зверху, а спливашки всередині карти не ховаються ── */
+#lostMap { position: relative; z-index: 0; isolation: isolate; }
+.map-layer-btn { display: flex; }
+.map-layer-btn button { padding: 4px 8px; font-family: var(--font-data); font-size: 10px; font-weight: 700; text-transform: uppercase; background: var(--panel); border: 1px solid var(--line-2); color: var(--muted); cursor: pointer; }
+.map-layer-btn button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.leaflet-popup-content-wrapper { background: #1a1a1a; color: var(--text); border: 1px solid var(--blue); border-radius: 0; }
+.leaflet-popup-tip { background: #1a1a1a; }
+.leaflet-popup-content a { color: var(--accent); }
+.leaflet-tooltip { background: #1a1a1a; color: var(--text); border: 1px solid var(--accent); border-radius: 0; font-family: var(--font-data); font-size: 11px; padding: 3px 7px; }
+.leaflet-tooltip-top:before { border-top-color: var(--accent); }
+
 /* ── Тост ── */
 #toast { position: fixed; top: 66px; right: 20px; z-index: 500; display: flex; flex-direction: column; gap: 8px; }
 /* Спливашка дії знизу-праворуч (уточнення причини зміни статусу) */
@@ -682,16 +696,21 @@ var DEMO_DATA = {
   },
   webLogStatusChange: function(){ return { ok: true }; },
   getLostMapData: [
-    { kind:'drone', id:'FPV-102', name:'Hornet 7"', lat:48.1235, lng:37.4562, link:'',
-      note:'⚠️ ВТРАЧЕНО 2026-07-22\n📍 48.1235, 37.4562\n📋 зенітний вогонь, падіння за посадкою' },
-    { kind:'tracker', id:'SNT-004', name:'ST-901', imei:'', binding:'',
-      lat:48.2011, lng:37.3005, link:'https://maps.google.com/?q=48.2011,37.3005',
-      note:'⚠️ ВТРАЧЕНО 2026-08-01\n📍 48.2011, 37.3005\n📋 політ без задокументованого вильоту, імовірно борт FPV-099' },
-    { kind:'tracker', id:'SNT-003', name:'ST-907', imei:'8641290099944', binding:'FPV-205',
-      lat:48.0502, lng:37.6120, link:'', note:'⚠️ ВТРАЧЕНО 2026-08-05\n📍 48.0502, 37.6120' },
-    { kind:'drone', id:'FPV-050', name:'Sting AD', lat:null, lng:null, link:'',
-      note:'⚠️ ВТРАЧЕНО 2026-06-10 (координати не визначені)' }
+    { kind:'drone', id:'FPV-102', name:'Hornet 7"', date:'2026-07-22', lat:48.1235, lng:37.4562, link:'',
+      conditions:'зенітний вогонь, падіння за посадкою', note:'⚠️ ВТРАЧЕНО 2026-07-22\n📍 48.1235, 37.4562\n📋 зенітний вогонь, падіння за посадкою' },
+    { kind:'drone', id:'STNG-0777-20260101', name:'Sting HVD', date:'2026-05-21', lat:48.3311, lng:37.2404,
+      link:'http://maps.google.com/maps?q=+48.3311,+37.2404', trackerRef:'7000000000',
+      conditions:'демо: втрачений під час тестового польоту', note:'(демо-нотатка формату sidebar)' },
+    { kind:'tracker', id:'SNT-004', name:'ST-901', imei:'', binding:'', probableDrone:'FPV-099', date:'2026-08-01',
+      lat:48.2011, lng:37.3005, link:'https://maps.google.com/?q=48.2011,37.3005', conditions:'політ без задокументованого вильоту',
+      note:'⚠️ ВТРАЧЕНО 2026-08-01\n📍 48.2011, 37.3005\n📋 політ без задокументованого вильоту\n🛸 імовірно борт: FPV-099' },
+    { kind:'tracker', id:'SNT-003', name:'ST-907', imei:'8641290099944', binding:'FPV-205', date:'2026-08-05',
+      lat:48.0502, lng:37.6120, link:'', conditions:'', note:'⚠️ ВТРАЧЕНО 2026-08-05\n📍 48.0502, 37.6120' },
+    { kind:'tracker', id:'SNT-009', name:'ST-903', imei:'7000000009', binding:'', date:'', lat:null, lng:null, link:'', conditions:'', note:'Працює, але повільно' },
+    { kind:'drone', id:'FPV-050', name:'Sting AD', date:'2026-06-10', lat:null, lng:null, link:'', conditions:'координати не визначені',
+      note:'⚠️ ВТРАЧЕНО 2026-06-10\n📋 координати не визначені' }
   ],
+  webUpdateLossRecord: function(d){ return { ok: true }; },
   getConsumablesList: [
     {id:'CONS-001', name:'Стяжки 200мм', category:'Кріплення', compat:'Універсальне', trackType:'Кількісний', qty:150, minQty:50, status:'Достатньо', note:''},
     {id:'CONS-002', name:'Пропелери 7"', category:'Пропелери', compat:'FPV', trackType:'Кількісний', qty:12, minQty:20, status:'Критично', note:'замовити терміново'},
@@ -2042,7 +2061,7 @@ function doTrkStatus(id, st) {
   if (st === 'Втрачений') { renderTrkTable(); trkLostModal(id); return; }
   var t = S.trackers.find(function(x){ return x.id === id; });
   var oldSt = t ? String(t.status||'').trim() : '—';
-  rpc('updateSinotrackStatus', [id, st, ''], function(){ showStatusToast('trk', id, oldSt, st); loadAll(); });
+  rpc('updateSinotrackStatus', [id, st, ''], function(){ S.lostMap = null; showStatusToast('trk', id, oldSt, st); loadAll(); });
 }
 
 /* ── Карта втрат (Leaflet + OSM, вантажиться ліниво при відкритті) ── */
@@ -2067,71 +2086,172 @@ function ensureLeaflet(cb) {
   document.head.appendChild(s);
 }
 
+var mapLayer = 'osm';   // osm | sat
+var lossTab = 'nocoord'; // nocoord | trkdrone | trkonly | drones
+var lossEdit = false;
+
+function lossKindOf(x) {
+  if (x.kind === 'drone') return 'drones';
+  return (x.binding || x.probableDrone) ? 'trkdrone' : 'trkonly';
+}
+function lossColor(x) { return x.kind === 'drone' ? '#e74c3c' : ((x.binding || x.probableDrone) ? '#f39c12' : '#9b59b6'); }
+
 function renderTrkMap() {
   var mapEl = $('lostMap');
   if (!mapEl) return;
   function draw(data) {
-    var listEl = $('lostList');
-    var withCoords = data.filter(function(x){ return x.lat && x.lng; });
-    var noCoords = data.filter(function(x){ return !(x.lat && x.lng); });
-
-    // Список без координат + легенда
-    if (listEl) {
-      var legend = '<div class="freq-legend" style="margin-bottom:8px">'+
-        '<div class="li"><span class="lg-sq" style="background:#e74c3c;border-radius:50%"></span>Втрачений борт</div>'+
-        '<div class="li"><span class="lg-sq" style="background:#f39c12;border-radius:50%"></span>Трекер із бортом</div>'+
-        '<div class="li"><span class="lg-sq" style="background:#9b59b6;border-radius:50%"></span>Трекер (борт не задокументовано)</div>'+
-      '</div>';
-      listEl.innerHTML = legend + (noCoords.length
-        ? '<div class="panel"><div class="panel-title red">Без координат ('+noCoords.length+')</div>'+
-          noCoords.map(function(x){
-            return '<div class="conflict-item">'+(x.kind==='drone'?'🛸':'📡')+' <b class="mono">'+esc(x.imei||x.id)+'</b> '+esc(x.name||'')+
-              (x.note ? '<div class="detail">'+esc(String(x.note).split('\n').join(' · ')).slice(0, 160)+'</div>' : '')+
-            '</div>';
-          }).join('')+'</div>'
-        : '');
-    }
-
+    renderLossTables(data);
     ensureLeaflet(function(){
       if (_lostMapObj) { try { _lostMapObj.remove(); } catch(e) {} _lostMapObj = null; }
       var el = $('lostMap');
       if (!el) return;
-      var map = L.map(el);
+      el.innerHTML = '';
+      var map = L.map(el, { zoomControl: true });
       _lostMapObj = map;
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18, attribution: '© OpenStreetMap'
-      }).addTo(map);
+      var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
+      var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri' });
+      (mapLayer === 'sat' ? sat : osm).addTo(map);
+      // Перемикач шару — свій, у стилі застосунку
+      var ctl = L.control({ position: 'topright' });
+      ctl.onAdd = function(){
+        var d = L.DomUtil.create('div', 'map-layer-btn');
+        d.style.position = 'static';
+        d.innerHTML = '<button class="'+(mapLayer==='osm'?'active':'')+'" data-l="osm">Карта</button>'+
+          '<button class="'+(mapLayer==='sat'?'active':'')+'" data-l="sat">Супутник</button>';
+        L.DomEvent.disableClickPropagation(d);
+        d.querySelectorAll('button').forEach(function(b){
+          b.onclick = function(){
+            mapLayer = b.dataset.l;
+            if (mapLayer === 'sat') { map.removeLayer(osm); sat.addTo(map); } else { map.removeLayer(sat); osm.addTo(map); }
+            d.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x.dataset.l === mapLayer); });
+          };
+        });
+        return d;
+      };
+      ctl.addTo(map);
+
       var pts = [];
-      withCoords.forEach(function(x){
-        var col = x.kind === 'drone' ? '#e74c3c' : (x.binding ? '#f39c12' : '#9b59b6');
-        var kindLbl = x.kind === 'drone' ? '🛸 Втрачений борт' : (x.binding ? '📡 Трекер (борт '+esc(x.binding)+')' : '📡 Трекер');
-        var popup = '<div style="font-family:monospace;font-size:12px;min-width:180px">'+
+      data.filter(function(x){ return x.lat && x.lng; }).forEach(function(x){
+        var col = lossColor(x);
+        var kindLbl = x.kind === 'drone' ? '🛸 Втрачений борт'
+          : (x.binding ? '📡 Трекер · борт '+esc(x.binding)
+          : (x.probableDrone ? '📡 Трекер · імовірно '+esc(x.probableDrone) : '📡 Трекер (борт не задокументовано)'));
+        var popup = '<div style="font-family:monospace;font-size:12px;min-width:200px">'+
           '<b>'+kindLbl+'</b><br><b>'+esc(x.imei||x.id)+'</b>'+(x.name ? ' — '+esc(x.name) : '')+
-          (x.note ? '<hr style="margin:6px 0;border-color:#ddd">'+esc(x.note).replace(/\n/g, '<br>') : '')+
+          (x.date ? '<br>📅 '+esc(x.date) : '')+
+          (x.conditions ? '<br>📋 '+esc(x.conditions) : '')+
           (x.link ? '<br><a href="'+esc(x.link)+'" target="_blank">🗺 відкрити посилання</a>' : '')+
           '<br><span style="color:#888">'+x.lat.toFixed(5)+', '+x.lng.toFixed(5)+'</span>'+
+          (lossEdit ? '<br><a href="#" onclick="lossEditModal(\''+esc(x.kind)+'\',\''+esc(x.id)+'\');return false">✎ редагувати</a>' : '')+
         '</div>';
-        L.circleMarker([x.lat, x.lng], {
-          radius: 9, color: col, fillColor: col, fillOpacity: .75, weight: 2
-        }).addTo(map).bindPopup(popup);
+        var tip = (x.kind === 'drone' ? '🛸 ' : '📡 ') + (x.imei || x.id) + (x.name ? ' — ' + x.name : '') + (x.date ? ' · ' + x.date : '');
+        L.circleMarker([x.lat, x.lng], { radius: 9, color: col, fillColor: col, fillOpacity: .75, weight: 2 })
+          .addTo(map)
+          .bindTooltip(tip, { direction: 'top', offset: [0, -8] })   // при наведенні
+          .bindPopup(popup);                                            // повна картка при кліку
         pts.push([x.lat, x.lng]);
       });
       if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 14 });
-      else {
-        map.setView([48.5, 35.0], 6); // центр України
-        var hint = $('lostList');
-        if (hint && !withCoords.length && !data.length) hint.innerHTML = '<div class="empty">Втрат немає — і добре 🍀</div>';
-      }
+      else map.setView([48.5, 35.0], 6);
       setTimeout(function(){ map.invalidateSize(); }, 150);
     });
   }
-  if (S.lostMap) { draw(S.lostMap); return; }
+  // Дані втрат тягнемо щоразу при відкритті вкладки — джерело правди
+  // таблиця; кеш використовуємо лише для миттєвої перемальовки підвкладок
   mapEl.innerHTML = '<div class="loading-view" style="padding-top:22vh"><span class="pulse-dot"></span>Завантаження точок втрат…</div>';
   rpc('getLostMapData', [], function(v){
     S.lostMap = Array.isArray(v) ? v : [];
+    var backendV = S.lostMap.length && S.lostMap[0]._v ? S.lostMap[0]._v : (S.lostMap.length ? 1 : 0);
+    S.lostMapV = backendV;
     draw(S.lostMap);
   }, function(e){
     mapEl.innerHTML = '<div class="empty" style="padding-top:24vh">❌ '+esc(e.message)+'</div>';
+  });
+}
+
+// Таблиці під картою: 4 підвкладки + перегляд/редагування
+function renderLossTables(data) {
+  var el = $('lostList');
+  if (!el) return;
+  var groups = {
+    nocoord:  data.filter(function(x){ return !(x.lat && x.lng); }),
+    trkdrone: data.filter(function(x){ return lossKindOf(x) === 'trkdrone'; }),
+    trkonly:  data.filter(function(x){ return lossKindOf(x) === 'trkonly'; }),
+    drones:   data.filter(function(x){ return lossKindOf(x) === 'drones'; })
+  };
+  var canEdit = invIsAdmin() || !!(S.auth && S.auth.isMain);
+  var tabs = [['nocoord','Без координат'],['drones','🔴 Втрачені борти'],['trkdrone','🟠 Трекер із бортом'],['trkonly','🟣 Трекер (борт не задокументовано)']];
+  var h = '<div class="inv-tabs" style="margin-top:12px">'+tabs.map(function(t){
+    return '<button class="inv-tab'+(lossTab===t[0]?' active':'')+'" onclick="lossTab=\''+t[0]+'\';renderLossTables(S.lostMap||[])">'+t[1]+' ('+groups[t[0]].length+')</button>';
+  }).join('')+'</div>';
+  // Бекенд старої версії (без _v) не вміє читати нотатки sidebar-форм
+  var oldBackend = MODE !== 'demo' && data.length && !(S.lostMapV >= 3);
+  h += '<div class="filter-row">'+
+    (oldBackend ? '<div class="warn" style="margin:0;flex:1">⚠ Бекенд таблиці застарілий — оновіть Код.gs (parseLossNote_/getLostMapData) і зробіть нову версію деплою, інакше нотатки зі старих sidebar-форм не читаються</div>' : '')+
+    '<div class="staff-actions">'+
+      '<button class="icon-btn" title="Оновити точки з таблиці" style="border:1px solid var(--line-2)" onclick="S.lostMap=null;renderView()">⟳</button>'+
+      (canEdit ? '<div class="inv-mode">'+
+        '<button class="inv-mode-btn'+(!lossEdit?' active':'')+'" onclick="lossEdit=false;renderView()">Перегляд</button>'+
+        '<button class="inv-mode-btn'+(lossEdit?' active':'')+'" onclick="lossEdit=true;renderView()">Редагування</button>'+
+      '</div>' : '')+
+    '</div></div>';
+  var list = groups[lossTab] || [];
+  var rows = list.map(function(x){
+    var acts = (lossEdit && canEdit)
+      ? '<div class="inv-acts"><button class="inv-act" title="Редагувати запис втрати" data-k="'+esc(x.kind)+'" data-id="'+esc(x.id)+'" onclick="lossEditModal(this.dataset.k, this.dataset.id)">'+svgIcon('edit')+'</button></div>'
+      : '';
+    // Координати — гіперпосилання: на карту з нотатки, або на Google Maps за lat,lng
+    var coordCell;
+    if (x.lat && x.lng) {
+      var href = x.link || ('https://maps.google.com/?q=' + x.lat + ',' + x.lng);
+      coordCell = '<a href="'+esc(href)+'" target="_blank" title="Відкрити в картах" style="color:var(--accent);text-decoration:underline dotted">'+x.lat.toFixed(4)+', '+x.lng.toFixed(4)+'</a>';
+    } else if (x.link) {
+      coordCell = '<a href="'+esc(x.link)+'" target="_blank" style="color:var(--accent)">🗺 посилання</a>';
+    } else coordCell = '<span class="hint">—</span>';
+    // Борт: для трекера — привʼязаний/імовірний; для борта — згаданий у нотатці трекер
+    var refCell = x.kind==='tracker' ? esc(x.binding || x.probableDrone || '—')
+      : (x.trackerRef ? '<span class="hint" title="трекер, згаданий у нотатці">📡 '+esc(x.trackerRef)+'</span>' : '');
+    return '<tr>'+
+      '<td class="mono accent">'+(x.kind==='drone'?'🛸 ':'📡 ')+esc(x.imei||x.id)+(x.imei?'<div class="hint">'+esc(x.id)+'</div>':'')+acts+'</td>'+
+      '<td>'+esc(x.name||'')+'</td>'+
+      '<td class="mono">'+esc(x.date||'—')+'</td>'+
+      '<td class="mono">'+coordCell+'</td>'+
+      '<td class="mono">'+refCell+'</td>'+
+      '<td style="max-width:320px;white-space:normal;line-height:1.4">'+esc(x.conditions||'')+'</td>'+
+    '</tr>';
+  }).join('');
+  h += '<div class="table-wrap" style="max-height:40vh"><table class="data-table"><thead><tr><th>ID'+(lossEdit&&canEdit?' / дії':'')+'</th><th>Назва</th><th>Дата втрати</th><th>Координати</th><th>Борт</th><th>Обставини</th></tr></thead>'+
+    '<tbody>'+(rows || '<tr><td colspan="6" class="empty">Порожньо</td></tr>')+'</tbody></table></div>';
+  el.innerHTML = h;
+}
+
+// Редагування запису втрати (дата, координати, посилання, обставини, імовірний борт)
+function lossEditModal(kind, id) {
+  var x = (S.lostMap||[]).find(function(i){ return i.kind === kind && i.id === id; });
+  if (!x) return;
+  var today = new Date().toISOString().slice(0, 10);
+  openModal('✎ Запис втрати · '+esc(x.imei||x.id),
+    '<div class="f"><label>📅 Дата втрати</label><input type="date" id="leDate" value="'+esc(x.date||today)+'"></div>'+
+    '<div class="f"><label>📍 Координати (lat, lng)</label><input type="text" id="leCoords" value="'+(x.lat&&x.lng ? x.lat+', '+x.lng : '')+'" placeholder="48.1234, 37.5678"></div>'+
+    '<div class="f"><label>🗺 Посилання (карта / трекер)</label><input type="text" id="leLink" value="'+esc(x.link||'')+'" placeholder="координати з Google Maps підтягнуться самі"></div>'+
+    (kind === 'tracker' ? '<div class="f"><label>🛸 Імовірний борт (якщо не задокументовано)</label><input type="text" id="leDrone" value="'+esc(x.probableDrone||x.binding||'')+'" placeholder="напр. STNG-0099"></div>' : '')+
+    '<div class="f"><label>📋 Обставини</label><textarea id="leCond">'+esc(x.conditions||'')+'</textarea></div>'+
+    '<div class="hint" style="margin-bottom:8px">Перезапише нотатку втрати у стандартному форматі; статус не змінюється</div>'+
+    '<button class="btn btn-green" id="leBtn" onclick="doLossSave(\''+esc(kind)+'\',\''+esc(id)+'\')">💾 Зберегти</button>'
+  );
+}
+function doLossSave(kind, id) {
+  var d = { kind: kind, id: id, date: $('leDate').value, coords: $('leCoords').value.trim(),
+    link: $('leLink').value.trim(), conditions: $('leCond').value.trim(),
+    probableDrone: $('leDrone') ? $('leDrone').value.trim() : '' };
+  var btn = $('leBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('webUpdateLossRecord', [d, crewToken() || null], function(){
+    toast('💾 Запис втрати '+id+' оновлено');
+    S.lostMap = null; closeModal(); renderView();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
+    toast('❌ '+e.message, true);
   });
 }
 
@@ -2139,9 +2259,11 @@ function renderTrkMap() {
 function trkLostModal(id) {
   var t = S.trackers.find(function(x){ return x.id === id; });
   openModal('❌ Втрата трекера: '+esc((t && t.imei) || id),
+    '<div class="f"><label>📅 Дата втрати</label><input type="date" id="tlDate" value="'+new Date().toISOString().slice(0,10)+'"></div>'+
     '<div class="f"><label>📍 Координати</label><input type="text" id="tlCoords" placeholder="напр. 48.123, 35.456"></div>'+
     '<div class="f"><label>🗺 Посилання з трекера / карти</label><input type="text" id="tlLink" placeholder="необов\'язково"></div>'+
-    '<div class="f"><label>📋 Обставини / який борт міг летіти</label><input type="text" id="tlCirc" placeholder="напр. політ без задокументованого вильоту, імовірно FPV-099"></div>'+
+    '<div class="f"><label>🛸 Втрачений борт (якщо не задокументовано вильотом)</label><input type="text" id="tlDrone" placeholder="напр. STNG-0099" value="'+esc((t && t.binding) || '')+'"></div>'+
+    '<div class="f"><label>📋 Обставини</label><input type="text" id="tlCirc" placeholder="напр. політ без задокументованого вильоту"></div>'+
     '<div class="hint">⚠️ SIM трекера теж стане втраченою. Деталі потраплять у примітку трекера, Журнал руху і на Карту втрат</div>'+
     '<button class="btn btn-red" id="tlBtn" onclick="doTrkMarkLost(\''+esc(id)+'\')" style="margin-top:8px">❌ Підтвердити втрату</button>'
   );
@@ -2151,11 +2273,13 @@ function doTrkMarkLost(id) {
   var btn = $('tlBtn');
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Запис…'; }
   var coords = $('tlCoords').value.trim(), link = $('tlLink').value.trim(), circ = $('tlCirc').value.trim();
-  var today = new Date().toISOString().slice(0, 10);
-  var note = '⚠️ ВТРАЧЕНО ' + today +
+  var drone = $('tlDrone') ? $('tlDrone').value.trim() : '';
+  var lostDate = ($('tlDate') && $('tlDate').value) || new Date().toISOString().slice(0, 10);
+  var note = '⚠️ ВТРАЧЕНО ' + lostDate +
     (coords ? '\n📍 ' + coords : '') +
     (link ? '\n🗺️ ' + link : '') +
-    (circ ? '\n📋 ' + circ : '');
+    (circ ? '\n📋 ' + circ : '') +
+    (drone ? '\n🛸 імовірно борт: ' + drone : '');
   var t = S.trackers.find(function(x){ return x.id === id; });
   var oldSt = t ? String(t.status||'').trim() : '—';
   rpc('updateSinotrackStatus', [id, 'Втрачений', note], function(){
@@ -3044,6 +3168,7 @@ function invTrkChangeStatus(sel) {
   rpc('updateSinotrackStatus', [id, newSt, ''], function(){
     t.status = newSt;
     delete invBusy[id];
+    S.lostMap = null;
     showStatusToast('trk', id, oldSt, newSt);
     renderInvTable();
   }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
@@ -3135,6 +3260,7 @@ function invChangeStatus(sel) {
     it.status = newSt;
     if (newSt === 'Списаний') it.responsible = '';
     delete invBusy[id];
+    S.lostMap = null; // статус змінився — карта втрат перечитається
     showStatusToast('item', id, oldSt, newSt);
     renderView();
   }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
@@ -3143,6 +3269,7 @@ function invChangeStatus(sel) {
 // ── Втрата: модалка з деталями ──
 function openLostModal(id) {
   openModal('❌ Втрата: '+esc(id),
+    '<div class="f"><label>📅 Дата втрати</label><input type="date" id="lmDate" value="'+new Date().toISOString().slice(0,10)+'"></div>'+
     '<div class="f"><label>📍 Координати</label><input type="text" id="lmCoords" placeholder="напр. 48.123, 35.456"></div>'+
     '<div class="f"><label>🗺 Посилання з трекера</label><input type="text" id="lmLink" placeholder="необов\'язково"></div>'+
     '<div class="f"><label>📋 Обставини втрати</label><input type="text" id="lmCirc" placeholder="необов\'язково"></div>'+
@@ -3154,10 +3281,15 @@ function doMarkLost(id) {
   var btn = $('lmBtn');
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Запис…'; }
   var lost = { coords: $('lmCoords').value.trim(), mapsLink: $('lmLink').value.trim(), conditions: $('lmCirc').value.trim() };
+  var lostDate = $('lmDate') ? $('lmDate').value : '';
   rpc('updateItemStatusById', [{ id:id, status:'Втрачений', lostData: lost }], function(){
     var it = S.items.find(function(x){ return x.id === id; });
     if (it) it.status = 'Втрачений';
     S.lostMap = null; // кеш карти втрат застарів
+    // Дата втрати відмінна від сьогодні → перезаписати нотатку з правильною датою
+    if (lostDate && lostDate !== new Date().toISOString().slice(0,10)) {
+      rpc('webUpdateLossRecord', [{ kind:'drone', id:id, date:lostDate, coords:lost.coords, link:lost.mapsLink, conditions:lost.conditions }, crewToken() || null], function(){}, function(){});
+    }
     toast('❌ '+id+' позначено втраченим');
     closeModal(); loadAll();
   }, function(e){
@@ -4401,7 +4533,17 @@ if (MODE === 'api' && !authToken()) {
   loadAll();
 }
 authInit();
-setInterval(function(){ if (!document.hidden && (MODE !== 'api' || authToken())) loadAll(); }, 90000);
+// Автооновлення: НЕ чіпаємо, поки відкрита модалка або користувач щось
+// друкує — інакше перемальовка збиває заповнення форми
+function userIsBusy() {
+  if ($('modalBg') && $('modalBg').classList.contains('open')) return true;
+  var a = document.activeElement;
+  return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'));
+}
+setInterval(function(){
+  if (document.hidden || (MODE === 'api' && !authToken()) || userIsBusy()) return;
+  loadAll();
+}, 90000);
 </script>
 </body>
 </html>

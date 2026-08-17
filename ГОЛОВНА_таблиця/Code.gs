@@ -568,9 +568,21 @@ function statusPriority(st) {
 // Порівняти два статуси з урахуванням timestamp
 // Повертає статус який треба зберегти в основній таблиці
 function resolveStatus(mainSt, mainTs, opSt, opTs) {
-  // "Втрачений" незворотній — завжди перемагає
-  if (mainSt === 'Втрачений') return null; // не міняти
-  if (opSt   === 'Втрачений') return opSt;
+  // «Втрачений» — пріоритетний, але НЕ поза часом: якщо в головній
+  // ПІЗНІШЕ свідомо поставили інший статус (Знайдений/Списаний/Робочий),
+  // операторська зі старим «Втрачений» не має його відкочувати.
+  // Раніше тут було безумовне «return opSt» — і борт після списання
+  // в PWA повертався у «Втрачений» на кожному синку.
+  if (mainSt === 'Втрачений' && opSt === 'Втрачений') return null;
+  if (opSt === 'Втрачений') {
+    if (mainTs && opTs && new Date(mainTs).getTime() > new Date(opTs).getTime()) return null; // головна новіша
+    return opSt;
+  }
+  if (mainSt === 'Втрачений') {
+    // Операторська хоче зняти «Втрачений» — тільки якщо вона новіша
+    if (mainTs && opTs && new Date(opTs).getTime() > new Date(mainTs).getTime()) return opSt;
+    return null;
+  }
 
   // Якщо є обидва timestamp — беремо новіший
   if (mainTs && opTs) {
@@ -1487,24 +1499,85 @@ function webLogStatusChange(kind, id, fromSt, toSt, comment) {
 // Координати беруться з деталей втрати (📍 у нотатці на клітинці ID
 // інвентаря / у примітці трекера). Повертає і записи без координат —
 // вони показуються списком під картою.
+// Розбір нотатки втрати: дата, координати (у тексті або в URL Google Maps),
+// посилання, обставини, імовірний борт (для трекерів)
+function parseLossNote_(text) {
+  text = String(text || '');
+  const dateM = text.match(/ВТРАЧЕНО\s+(\d{4}-\d{2}-\d{2}|\d{2}\.\d{2}\.\d{4})/i);
+  let date = dateM ? dateM[1] : '';
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(date)) date = date.split('.').reverse().join('-');
+
+  // Посилання: у нотатках таблиці URL часто розірваний переносом рядка
+  // (".../maps?\nq=+50.6,+30.6") — склеюємо переноси всередині URL
+  let link = '';
+  const lm = text.match(/https?:\/\/[^\s]+(?:\s*\n\s*[^\s]+)*/);
+  if (lm) {
+    const cut = lm[0].replace(/\s*\n\s*/g, '');
+    // обрізаємо хвіст, що явно не URL (кирилиця/емодзі після пробілу)
+    link = (cut.match(/https?:\/\/[A-Za-z0-9\-._~:\/?#\[\]@!$&'()*+,;=%]+/) || [''])[0];
+  }
+
+  // Координати: 1) явні lat lng у тексті — через кому, крапку з комою АБО
+  // просто пробіл («GPS: 48.1234 37.5678»), з опційним «+»; 2) з URL
+  // (?q=lat,lng / @lat,lng / ll= / query=)
+  const coordReStrict = /\+?(-?\d{1,2}\.\d{3,})\s*[,;\s]\s*\+?(-?\d{1,3}\.\d{3,})/;
+  const noUrl = text.replace(/https?:\/\/[^\s]+/g, ' ');
+  let m = noUrl.match(coordReStrict);
+  if (!m && link) m = decodeURIComponent(link.replace(/\+/g, ' ')).match(coordReStrict);
+  if (!m) m = text.replace(/\n/g, ' ').match(coordReStrict); // останній шанс — весь текст
+  // Захист від хибного збігу з датою («2026.05 25.06» тощо): lat 44–53, lng 22–41 — Україна
+  if (m) {
+    const la = Number(m[1]), lo = Number(m[2]);
+    if (!(la >= 44 && la <= 53 && lo >= 22 && lo <= 41)) {
+      // спробувати знайти інший збіг далі в тексті
+      const all = [];
+      const g = new RegExp(coordReStrict.source, 'g');
+      let mm; while ((mm = g.exec(text.replace(/\n/g, ' '))) !== null) all.push(mm);
+      m = all.find(x => { const a = Number(x[1]), b = Number(x[2]); return a >= 44 && a <= 53 && b >= 22 && b <= 41; }) || null;
+    }
+  }
+
+  // Обставини: «📋 ...», «Умови: ...», «Обставини: ...» — до кінця рядка
+  const cm = text.match(/(?:📋|Умови|Обставини)\s*:?\s*([^\n]+)/i);
+  const cond = cm ? cm[1].replace(/^(?:Умови|Обставини)\s*:?\s*/i, '').trim() : '';
+
+  // Імовірний борт: «імовірно борт: X», «борт X», ID виду STNG-0099(-дата)
+  const probable = (text.match(/(?:борт|імовірно)\s*:?\s*([A-ZА-Я]{2,5}-\d{3,4}(?:-\d{8})?)/i) || ['', ''])[1];
+
+  // Згаданий трекер у нотатці борта: «ID:7000000000» / «(ID: 7000…)»
+  const trk = (text.match(/ID\s*:?\s*(\d{9,12})/i) || ['', ''])[1];
+
+  return {
+    date: date, lat: m ? Number(m[1]) : null, lng: m ? Number(m[2]) : null,
+    link: link, conditions: cond, probableDrone: probable, trackerRef: trk
+  };
+}
+
+// ── Карта втрат: втрачені борти й трекери з координатами з нотаток ──
 function getLostMapData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const out = [];
-  function parseLoss(text) {
-    text = String(text || '');
-    const m = text.match(/(-?\d{1,2}\.\d{3,})[,;\s]+(-?\d{1,3}\.\d{3,})/);
-    const link = (text.match(/https?:\/\/\S+/) || [null])[0];
-    return { lat: m ? Number(m[1]) : null, lng: m ? Number(m[2]) : null, link: link };
-  }
   const inv = getSheet(ss, 'Інвентар');
   if (inv && inv.getLastRow() >= 3) {
     const rows = inv.getRange(3, 1, inv.getLastRow() - 2, COLS.STATUS).getValues();
     rows.forEach(function(r, i) {
       if (String(r[COLS.STATUS - 1]).trim() !== 'Втрачений') return;
-      const note = inv.getRange(3 + i, COLS.ID).getNote() || '';
-      const p = parseLoss(note);
+      // Деталі втрати могли писатись у РІЗНІ місця різними версіями sidebar:
+      // нотатка на ID, нотатка на Статусі, коментар на Статусі, нотатка на
+      // Примітці, сама Примітка. Беремо всі непорожні й склеюємо.
+      const rowN = 3 + i;
+      const parts = [
+        inv.getRange(rowN, COLS.ID).getNote(),
+        inv.getRange(rowN, COLS.STATUS).getNote(),
+        inv.getRange(rowN, COLS.STATUS).getComment(),
+        inv.getRange(rowN, COLS.NOTE).getNote(),
+        String(inv.getRange(rowN, COLS.NOTE).getValue() || '')
+      ].map(function(s){ return String(s || '').trim(); }).filter(Boolean);
+      const note = parts.join('\n');
+      const p = parseLossNote_(note);
       out.push({ kind: 'drone', id: String(r[0]), name: String(r[COLS.NAME - 1] || ''),
-        lat: p.lat, lng: p.lng, link: p.link, note: note });
+        date: p.date, lat: p.lat, lng: p.lng, link: p.link, conditions: p.conditions,
+        trackerRef: p.trackerRef, note: note, _v: 3 });
     });
   }
   const snt = getSheet(ss, 'Sinotrack');
@@ -1512,13 +1585,66 @@ function getLostMapData() {
     snt.getRange(3, 1, snt.getLastRow() - 2, 8).getValues().forEach(function(r) {
       if (String(r[2]).trim() !== 'Втрачений') return;
       const note = String(r[7] || '');
-      const p = parseLoss(note);
+      const p = parseLossNote_(note);
       out.push({ kind: 'tracker', id: String(r[0]), name: String(r[1] || ''),
         imei: String(r[6] || ''), binding: String(r[5] || ''),
-        lat: p.lat, lng: p.lng, link: p.link, note: note });
+        date: p.date, lat: p.lat, lng: p.lng, link: p.link, conditions: p.conditions,
+        probableDrone: p.probableDrone, note: note });
     });
   }
   return out;
+}
+
+// ДІАГНОСТИКА (запусти з редактора → Журнал виконання): що парсер бачить
+// у кожного втраченого борта і чому запис без координат
+function diagLossNotes() {
+  const data = getLostMapData().filter(x => x.kind === 'drone');
+  Logger.log('Втрачених бортів: %s, з координатами: %s', data.length, data.filter(x => x.lat && x.lng).length);
+  data.forEach(x => {
+    Logger.log('%s | date=%s | %s,%s | link=%s | raw=%s', x.id, x.date || '—',
+      x.lat, x.lng, (x.link || '—').slice(0, 60), JSON.stringify((x.note || '').slice(0, 160)));
+  });
+}
+
+// Редагувати запис втрати (адмін або головний екіпажу): перезаписує нотатку
+// втрати у стандартному форматі. d = {kind, id, date, coords, link, conditions,
+// probableDrone?}. Не змінює статус — лише деталі. Пише в Журнал руху.
+function webUpdateLossRecord(d, token) {
+  webNoteGuard_(token);
+  if (!d || !d.id) throw new Error('Немає ID');
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const date = String(d.date || '').trim() || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  let note = '⚠️ ВТРАЧЕНО ' + date;
+  if (d.coords)     note += '\n📍 ' + String(d.coords).trim();
+  if (d.link)       note += '\n🗺️ ' + String(d.link).trim();
+  if (d.conditions) note += '\n📋 ' + String(d.conditions).trim();
+  if (d.kind === 'tracker' && d.probableDrone) note += '\n🛸 імовірно борт: ' + String(d.probableDrone).trim();
+  note += '\n👤 ' + (apiUserEmail_() || '—');
+
+  const log = getSheet(ss, 'Журнал руху');
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  if (d.kind === 'tracker') {
+    const snt = getSheet(ss, 'Sinotrack');
+    if (!snt || snt.getLastRow() < 3) throw new Error('Аркуш Sinotrack не знайдено');
+    const rows = snt.getRange(3, 1, snt.getLastRow() - 2, 8).getValues();
+    let idx = rows.findIndex(r => String(r[0]).trim() === String(d.id));
+    if (idx === -1) idx = rows.findIndex(r => String(r[6]).trim() === String(d.id));
+    if (idx === -1) throw new Error('Трекер не знайдено: ' + d.id);
+    const row = idx + 3;
+    snt.getRange(row, 8).setValue(note);
+    touchSinotrack(snt, row);
+    if (log) log.appendRow([today, d.id, String(rows[idx][1] || ''), 'Деталі втрати', '', '', apiUserEmail_() || '—', '', note.replace(/\n/g, ' | ')]);
+  } else {
+    const inv = getSheet(ss, 'Інвентар');
+    if (!inv) throw new Error('Інвентар не знайдено');
+    const ids = inv.getRange(3, COLS.ID, inv.getLastRow() - 2, 1).getValues().flat().map(String);
+    const i = ids.indexOf(String(d.id));
+    if (i === -1) throw new Error('ID не знайдено: ' + d.id);
+    const row = i + 3;
+    inv.getRange(row, COLS.ID).setNote(note);
+    if (log) log.appendRow([today, d.id, String(inv.getRange(row, COLS.NAME).getValue()), 'Деталі втрати', '', '', apiUserEmail_() || '—', '', note.replace(/\n/g, ' | ')]);
+  }
+  return { ok: true, note: note };
 }
 
 // ── Витратники з веб-застосунку (редагування — тільки адмін) ──
