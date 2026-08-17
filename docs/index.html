@@ -2198,7 +2198,8 @@ function renderLossTables(data) {
   h += '<div class="filter-row">'+
     (oldBackend ? '<div class="warn" style="margin:0;flex:1">⚠ Бекенд таблиці застарілий — оновіть Код.gs (parseLossNote_/getLostMapData) і зробіть нову версію деплою, інакше нотатки зі старих sidebar-форм не читаються</div>' : '')+
     '<div class="staff-actions">'+
-      '<button class="icon-btn" title="Оновити точки з таблиці" style="border:1px solid var(--line-2)" onclick="S.lostMap=null;renderView()">⟳</button>'+
+      // Компакт: ID · Координати · Обставини (як «/» в інвентарі); лише таблиця, карта не чіпається
+      '<button class="icon-btn" title="'+(invCompact ? 'Показати всі стовпці' : 'Компактне подання')+'" style="border:1px solid var(--line-2);font-family:var(--font-data);font-weight:700" onclick="invCompact=!invCompact;renderLossTables(S.lostMap||[])">'+(invCompact ? '»' : '«')+'</button>'+
       // Перемикач режиму перемальовує ЛИШЕ таблицю під картою (карта не чіпається)
       (canEdit ? '<div class="inv-mode">'+
         '<button class="inv-mode-btn'+(!lossEdit?' active':'')+'" onclick="lossEdit=false;renderLossTables(S.lostMap||[])">Перегляд</button>'+
@@ -2223,15 +2224,20 @@ function renderLossTables(data) {
       : (x.trackerRef ? '<span class="hint" title="трекер, згаданий у нотатці">📡 '+esc(x.trackerRef)+'</span>' : '');
     return '<tr>'+
       '<td class="mono accent">'+(x.kind==='drone'?'🛸 ':'📡 ')+esc(x.imei||x.id)+(x.imei?'<div class="hint">'+esc(x.id)+'</div>':'')+acts+'</td>'+
+      (invCompact ? '' :
       '<td>'+esc(x.name||'')+'</td>'+
-      '<td class="mono">'+esc(x.date||'—')+'</td>'+
+      '<td class="mono">'+esc(x.date||'—')+'</td>')+
       '<td class="mono">'+coordCell+'</td>'+
-      '<td class="mono">'+refCell+'</td>'+
+      (invCompact ? '' : '<td class="mono">'+refCell+'</td>')+
       '<td style="max-width:320px;white-space:normal;line-height:1.4">'+esc(x.conditions||'')+'</td>'+
     '</tr>';
   }).join('');
-  h += '<div class="table-wrap" style="max-height:40vh"><table class="data-table"><thead><tr><th>ID'+(lossEdit&&canEdit?' / дії':'')+'</th><th>Назва</th><th>Дата втрати</th><th>Координати</th><th>Борт</th><th>Обставини</th></tr></thead>'+
-    '<tbody>'+(rows || '<tr><td colspan="6" class="empty">Порожньо</td></tr>')+'</tbody></table></div>';
+  h += '<div class="table-wrap" style="max-height:40vh"><table class="data-table"><thead><tr><th>ID'+(lossEdit&&canEdit?' / дії':'')+'</th>'+
+    (invCompact ? '' : '<th>Назва</th><th>Дата втрати</th>')+
+    '<th>Координати</th>'+
+    (invCompact ? '' : '<th>Борт</th>')+
+    '<th>Обставини</th></tr></thead>'+
+    '<tbody>'+(rows || '<tr><td colspan="'+(invCompact ? 3 : 6)+'" class="empty">Порожньо</td></tr>')+'</tbody></table></div>';
   el.innerHTML = h;
   // Спливашки маркерів залежать від lossEdit (посилання ✎) — оновити їх без
   // перебудови карти
