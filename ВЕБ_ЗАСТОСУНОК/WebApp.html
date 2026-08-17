@@ -1951,7 +1951,9 @@ function renderTrackers(c) {
     '<div style="margin-bottom:12px"><input type="text" id="trkSearch" placeholder="Пошук: IMEI, модель, SIM, борт…" value="'+esc(trkFilter.q)+'" oninput="trkFilter.q=this.value;renderTrkTable()" style="width:220px"></div>'+
   '</div>'+
     // Плитки-фільтри — незалежні для кожної вкладки
-    (trkTab === 'trk'
+    (trkTab === 'map'
+      ? lossTilesHtml()
+      : trkTab === 'trk'
       ? '<div class="stat-row">'+
           '<div class="stat-tile green click'+(trkFilter.status==='Робочий'?' active':'')+'" onclick="trkTile(\'Робочий\')"><div class="stat-num">'+(stats['Робочий']||0)+'</div><div class="stat-lbl">Робочі</div></div>'+
           '<div class="stat-tile click'+(trkFilter.status==='Зламаний'?' active':'')+'" onclick="trkTile(\'Зламаний\')"><div class="stat-num">'+(stats['Зламаний']||0)+'</div><div class="stat-lbl">Зламані</div></div>'+
@@ -2088,6 +2090,26 @@ function lossKindOf(x) {
   if (x.kind === 'drone') return 'drones';
   return (x.binding || x.probableDrone) ? 'trkdrone' : 'trkonly';
 }
+// Групи втрат для плиток і підвкладок
+function lossGroups(data) {
+  data = data || [];
+  return {
+    nocoord:  data.filter(function(x){ return !(x.lat && x.lng); }),
+    drones:   data.filter(function(x){ return lossKindOf(x) === 'drones'; }),
+    trkdrone: data.filter(function(x){ return lossKindOf(x) === 'trkdrone'; }),
+    trkonly:  data.filter(function(x){ return lossKindOf(x) === 'trkonly'; })
+  };
+}
+var LOSS_TABS = [['nocoord','Без координат',''],['drones','Втрачені борти','red'],['trkdrone','Трекер із бортом',''],['trkonly','Трекер (без борта)','']];
+// Плитки для вкладки карти: клік перемикає підвкладку таблиці (карта не чіпається)
+function lossTilesHtml() {
+  var g = lossGroups(S.lostMap);
+  var col = { nocoord: '', drones: 'red', trkdrone: '', trkonly: 'blue' };
+  return '<div class="stat-row" id="lossTiles">'+LOSS_TABS.map(function(t){
+    return '<div class="stat-tile '+col[t[0]]+' click'+(lossTab===t[0]?' active':'')+'" onclick="lossTab=\''+t[0]+'\';renderLossTables(S.lostMap||[])">'+
+      '<div class="stat-num">'+(S.lostMap ? g[t[0]].length : '…')+'</div><div class="stat-lbl">'+t[1]+'</div></div>';
+  }).join('')+'</div>';
+}
 function lossColor(x) { return x.kind === 'drone' ? '#e74c3c' : ((x.binding || x.probableDrone) ? '#f39c12' : '#9b59b6'); }
 
 function renderTrkMap() {
@@ -2172,16 +2194,14 @@ function renderTrkMap() {
 function renderLossTables(data) {
   var el = $('lostList');
   if (!el) return;
-  var groups = {
-    nocoord:  data.filter(function(x){ return !(x.lat && x.lng); }),
-    trkdrone: data.filter(function(x){ return lossKindOf(x) === 'trkdrone'; }),
-    trkonly:  data.filter(function(x){ return lossKindOf(x) === 'trkonly'; }),
-    drones:   data.filter(function(x){ return lossKindOf(x) === 'drones'; })
-  };
+  var groups = lossGroups(data);
   var canEdit = invIsAdmin() || !!(S.auth && S.auth.isMain);
-  var tabs = [['nocoord','Без координат'],['drones','🔴 Втрачені борти'],['trkdrone','🟠 Трекер із бортом'],['trkonly','🟣 Трекер (борт не задокументовано)']];
-  var h = '<div class="inv-tabs" style="margin-top:12px">'+tabs.map(function(t){
-    return '<button class="inv-tab'+(lossTab===t[0]?' active':'')+'" onclick="lossTab=\''+t[0]+'\';renderLossTables(S.lostMap||[])">'+t[1]+' ('+groups[t[0]].length+')</button>';
+  // Плитки зверху сторінки — оновити активну і числа без ререндеру карти
+  var tilesEl = $('lossTiles');
+  if (tilesEl) tilesEl.outerHTML = lossTilesHtml();
+  var icons = { nocoord: '', drones: '🔴 ', trkdrone: '🟠 ', trkonly: '🟣 ' };
+  var h = '<div class="inv-tabs" style="margin-top:12px">'+LOSS_TABS.map(function(t){
+    return '<button class="inv-tab'+(lossTab===t[0]?' active':'')+'" onclick="lossTab=\''+t[0]+'\';renderLossTables(S.lostMap||[])">'+icons[t[0]]+t[1]+' ('+groups[t[0]].length+')</button>';
   }).join('')+'</div>';
   // Бекенд старої версії (без _v) не вміє читати нотатки sidebar-форм
   var oldBackend = MODE !== 'demo' && data.length && !(S.lostMapV >= 3);
