@@ -1784,6 +1784,40 @@ function updateConsumable(data) {
   };
 }
 
+// Формула автостану кількісного витратника, СУМІСНА З ЛОКАЛЛЮ таблиці.
+// Роздільник аргументів залежить від локалі (укр./євро — «;», en — «,»).
+// Ставимо варіант із «;», перевіряємо, чи Sheets розпарсив; якщо ні —
+// перезаписуємо з «,». Раніше писалася лише з комами → #ERROR! в укр. локалі.
+function setConsStatusFormula_(sheet, r) {
+  const cell = sheet.getRange(r, 8);
+  const body = (sep) =>
+    '=IF(F' + r + '=""' + sep + '""' + sep +
+    'IF(F' + r + '<=G' + r + sep + '"Критично"' + sep +
+    'IF(F' + r + '<=G' + r + '*2' + sep + '"Мало"' + sep +
+    'IF(F' + r + '<=G' + r + '*4' + sep + '"Достатньо"' + sep + '"Багато"))))';
+  cell.setFormula(body(';'));
+  SpreadsheetApp.flush();
+  const v = String(cell.getDisplayValue() || '');
+  if (/^#/.test(v)) {            // #ERROR! / #NAME? — не та локаль
+    cell.setFormula(body(','));
+    SpreadsheetApp.flush();
+  }
+}
+
+// Одноразовий ремонт: перевстановити формулу стану всім кількісним витратникам
+// (запусти з редактора, якщо в аркуші є #ERROR! у колонці Стан)
+function fixConsumableStatusFormulas() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getSheet(ss, 'Витратники');
+  if (!sheet || sheet.getLastRow() < 3) return;
+  const rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 5).getValues();
+  let n = 0;
+  rows.forEach((row, i) => {
+    if (String(row[0]).trim() && String(row[4]).trim() === 'Кількісний') { setConsStatusFormula_(sheet, 3 + i); n++; }
+  });
+  Logger.log('Формули стану перевстановлено: ' + n);
+}
+
 // Додати новий витратник
 function addConsumableFromForm(data) {
   return withScriptLock(function() {
@@ -1819,10 +1853,7 @@ function addConsumableFromForm(data) {
 
   // Для кількісних — встановити формулу статусу
   if (data.trackType === 'Кількісний') {
-    const r = insertedRow;
-    sheet.getRange(r, 8).setFormula(
-      '=IF(F' + r + '="","",IF(F' + r + '<=G' + r + ',"Критично",IF(F' + r + '<=G' + r + '*2,"Мало",IF(F' + r + '<=G' + r + '*4,"Достатньо","Багато"))))'
-    );
+    setConsStatusFormula_(sheet, insertedRow);
   }
 
   sheet.getRange(insertedRow, 1, 1, 9)
@@ -2249,9 +2280,7 @@ function createConsumablesSheet(ss) {
   for (let i = 0; i < sample.length; i++) {
     const r = 3 + i;
     if (sample[i][4] === 'Кількісний') {
-      sheet.getRange(r, 8).setFormula(
-        '=IF(F' + r + '="","",IF(F' + r + '<=G' + r + ',"Критично",IF(F' + r + '<=G' + r + '*2,"Мало",IF(F' + r + '<=G' + r + '*4,"Достатньо","Багато"))))'
-      );
+      setConsStatusFormula_(sheet, r);
     }
   }
 

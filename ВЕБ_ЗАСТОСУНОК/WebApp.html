@@ -2648,6 +2648,8 @@ var consCompatF = 'all';
 var CONS_STATUSES = ['Багато', 'Достатньо', 'Мало', 'Критично'];
 function consChip(st) {
   st = String(st||'').trim();
+  // Помилка формули в таблиці (#ERROR!/#NAME?) — показати зрозуміло, не як «стан»
+  if (/^#/.test(st)) return '<span class="st-chip st-grey" title="Формула стану в таблиці не рахується (локаль): адмін → запустити fixConsumableStatusFormulas або оновити Код.gs">⚠ формула</span>';
   var cls = st==='Багато' ? 'st-green' : st==='Достатньо' ? 'st-blue' : st==='Мало' ? 'st-orange' : st==='Критично' ? 'st-red' : 'st-grey';
   return '<span class="st-chip '+cls+'">'+esc(st||'—')+'</span>';
 }
