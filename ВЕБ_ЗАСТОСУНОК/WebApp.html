@@ -241,8 +241,12 @@ textarea { height: 54px; resize: vertical; }
 .inv-act--del { color: var(--red); border-color: var(--red); }
 .inv-act--del:hover { background: var(--red-bg); }
 .inv-acts { display: flex; gap: 5px; margin-top: 6px; white-space: nowrap; }
-.inv-tabs { display: flex; border-bottom: 1px solid var(--line-2); margin-bottom: 12px; font-family: var(--font-data); }
+.inv-tabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--line-2); margin-bottom: 12px; font-family: var(--font-data); max-width: 100%; }
 .inv-tab { padding: 8px 18px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; }
+@media (max-width: 800px) { .inv-tab { padding: 8px 10px; font-size: 10px; flex: 1 1 auto; text-align: center; } }
+/* Блок під картою — у межах екрана, широка таблиця скролиться всередині */
+#lostList { max-width: 100%; min-width: 0; overflow: hidden; }
+#lostList .table-wrap { max-width: 100%; }
 .inv-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(255,184,0,.05); }
 .inv-crew-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; margin-bottom: 12px; }
 .inv-crew-bar label { font-family: var(--font-data); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
@@ -968,7 +972,7 @@ function freqWarn(sel) {
 var _loading = 0;
 var _loadPending = false;   // запит на оновлення прийшов, поки тривало інше — виконати після
 var _loadStarted = 0;
-function loadAll(showToast) {
+function loadAll(showToast, silent) {
   if (_loading) {
     // Якщо завантаження триває — не губимо запит, а ставимо в чергу.
     // Якщо воно «застрягло» (>25 с без відповіді) — скидаємо і вантажимо заново.
@@ -983,7 +987,7 @@ function loadAll(showToast) {
     S.loadedAt = new Date();
     $('syncTime').textContent = S.loadedAt.toTimeString().slice(0,8);
     updateTopStats();
-    renderView();
+    if (!silent) renderView();
     if (showToast) toast('✅ Дані оновлено');
     if (_loadPending) { _loadPending = false; setTimeout(function(){ loadAll(); }, 200); }
   }
@@ -2126,19 +2130,22 @@ function renderTrkMap() {
         var kindLbl = x.kind === 'drone' ? '🛸 Втрачений борт'
           : (x.binding ? '📡 Трекер · борт '+esc(x.binding)
           : (x.probableDrone ? '📡 Трекер · імовірно '+esc(x.probableDrone) : '📡 Трекер (борт не задокументовано)'));
-        var popup = '<div style="font-family:monospace;font-size:12px;min-width:200px">'+
-          '<b>'+kindLbl+'</b><br><b>'+esc(x.imei||x.id)+'</b>'+(x.name ? ' — '+esc(x.name) : '')+
-          (x.date ? '<br>📅 '+esc(x.date) : '')+
-          (x.conditions ? '<br>📋 '+esc(x.conditions) : '')+
-          (x.link ? '<br><a href="'+esc(x.link)+'" target="_blank">🗺 відкрити посилання</a>' : '')+
-          '<br><span style="color:#888">'+x.lat.toFixed(5)+', '+x.lng.toFixed(5)+'</span>'+
-          (lossEdit ? '<br><a href="#" onclick="lossEditModal(\''+esc(x.kind)+'\',\''+esc(x.id)+'\');return false">✎ редагувати</a>' : '')+
-        '</div>';
+        var popupFor = function(editOn){
+          return '<div style="font-family:monospace;font-size:12px;min-width:200px">'+
+            '<b>'+kindLbl+'</b><br><b>'+esc(x.imei||x.id)+'</b>'+(x.name ? ' — '+esc(x.name) : '')+
+            (x.date ? '<br>📅 '+esc(x.date) : '')+
+            (x.conditions ? '<br>📋 '+esc(x.conditions) : '')+
+            (x.link ? '<br><a href="'+esc(x.link)+'" target="_blank">🗺 відкрити посилання</a>' : '')+
+            '<br><span style="color:#888">'+x.lat.toFixed(5)+', '+x.lng.toFixed(5)+'</span>'+
+            (editOn ? '<br><a href="#" onclick="lossEditModal(\''+esc(x.kind)+'\',\''+esc(x.id)+'\');return false">✎ редагувати</a>' : '')+
+          '</div>';
+        };
         var tip = (x.kind === 'drone' ? '🛸 ' : '📡 ') + (x.imei || x.id) + (x.name ? ' — ' + x.name : '') + (x.date ? ' · ' + x.date : '');
-        L.circleMarker([x.lat, x.lng], { radius: 9, color: col, fillColor: col, fillOpacity: .75, weight: 2 })
+        var mk = L.circleMarker([x.lat, x.lng], { radius: 9, color: col, fillColor: col, fillOpacity: .75, weight: 2 })
           .addTo(map)
           .bindTooltip(tip, { direction: 'top', offset: [0, -8] })   // при наведенні
-          .bindPopup(popup);                                            // повна картка при кліку
+          .bindPopup(popupFor(lossEdit));                              // повна картка при кліку
+        mk._lossPopupFor = popupFor;
         pts.push([x.lat, x.lng]);
       });
       if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 14 });
@@ -2146,8 +2153,10 @@ function renderTrkMap() {
       setTimeout(function(){ map.invalidateSize(); }, 150);
     });
   }
-  // Дані втрат тягнемо щоразу при відкритті вкладки — джерело правди
-  // таблиця; кеш використовуємо лише для миттєвої перемальовки підвкладок
+  // Дані втрат: тягнемо при першому відкритті вкладки і за кнопкою ⟳
+  // (або після зміни статусу — там кеш скидається). Решта дій на вкладці
+  // (перегляд/редагування, підвкладки, шар) карту й дані НЕ перезавантажують.
+  if (S.lostMap) { draw(S.lostMap); return; }
   mapEl.innerHTML = '<div class="loading-view" style="padding-top:22vh"><span class="pulse-dot"></span>Завантаження точок втрат…</div>';
   rpc('getLostMapData', [], function(v){
     S.lostMap = Array.isArray(v) ? v : [];
@@ -2180,9 +2189,10 @@ function renderLossTables(data) {
     (oldBackend ? '<div class="warn" style="margin:0;flex:1">⚠ Бекенд таблиці застарілий — оновіть Код.gs (parseLossNote_/getLostMapData) і зробіть нову версію деплою, інакше нотатки зі старих sidebar-форм не читаються</div>' : '')+
     '<div class="staff-actions">'+
       '<button class="icon-btn" title="Оновити точки з таблиці" style="border:1px solid var(--line-2)" onclick="S.lostMap=null;renderView()">⟳</button>'+
+      // Перемикач режиму перемальовує ЛИШЕ таблицю під картою (карта не чіпається)
       (canEdit ? '<div class="inv-mode">'+
-        '<button class="inv-mode-btn'+(!lossEdit?' active':'')+'" onclick="lossEdit=false;renderView()">Перегляд</button>'+
-        '<button class="inv-mode-btn'+(lossEdit?' active':'')+'" onclick="lossEdit=true;renderView()">Редагування</button>'+
+        '<button class="inv-mode-btn'+(!lossEdit?' active':'')+'" onclick="lossEdit=false;renderLossTables(S.lostMap||[])">Перегляд</button>'+
+        '<button class="inv-mode-btn'+(lossEdit?' active':'')+'" onclick="lossEdit=true;renderLossTables(S.lostMap||[])">Редагування</button>'+
       '</div>' : '')+
     '</div></div>';
   var list = groups[lossTab] || [];
@@ -2213,6 +2223,11 @@ function renderLossTables(data) {
   h += '<div class="table-wrap" style="max-height:40vh"><table class="data-table"><thead><tr><th>ID'+(lossEdit&&canEdit?' / дії':'')+'</th><th>Назва</th><th>Дата втрати</th><th>Координати</th><th>Борт</th><th>Обставини</th></tr></thead>'+
     '<tbody>'+(rows || '<tr><td colspan="6" class="empty">Порожньо</td></tr>')+'</tbody></table></div>';
   el.innerHTML = h;
+  // Спливашки маркерів залежать від lossEdit (посилання ✎) — оновити їх без
+  // перебудови карти
+  if (_lostMapObj) _lostMapObj.eachLayer(function(l){
+    if (l.getPopup && l.getPopup() && l._lossPopupFor) l.setPopupContent(l._lossPopupFor(lossEdit));
+  });
 }
 
 // Редагування запису втрати (дата, координати, посилання, обставини, імовірний борт)
@@ -4532,6 +4547,8 @@ function userIsBusy() {
 }
 setInterval(function(){
   if (document.hidden || (MODE === 'api' && !authToken()) || userIsBusy()) return;
+  // На вкладці карти втрат — не смикати: тихе оновлення даних без ререндеру
+  if (S.view === 'trackers' && trkTab === 'map') { loadAll(false, true); return; }
   loadAll();
 }, 90000);
 </script>
