@@ -154,9 +154,22 @@ textarea { height: 54px; resize: vertical; }
 .stat-tile.green { border-left-color: var(--green); }
 .stat-tile.red { border-left-color: var(--red); }
 .stat-tile.blue { border-left-color: var(--blue); }
+.stat-tile.grey { border-left-color: var(--grey); }
+.stat-tile.orange { border-left-color: var(--orange); }
+.stat-tile.purple { border-left-color: var(--purple); }
+/* Чіпи-фільтри в кольорах легенди карти втрат */
+.filter-chip.c-grey.active   { background: var(--grey);   border-color: var(--grey);   color: #10171a; }
+.filter-chip.c-red.active    { background: var(--red);    border-color: var(--red);    color: #fff; }
+.filter-chip.c-orange.active { background: var(--orange); border-color: var(--orange); color: #231604; }
+.filter-chip.c-purple.active { background: var(--purple); border-color: var(--purple); color: #fff; }
+.filter-chip.c-grey   { border-color: var(--grey);   color: var(--muted); }
+.filter-chip.c-red    { border-color: var(--red);    color: var(--red-soft); }
+.filter-chip.c-orange { border-color: var(--orange); color: var(--orange); }
+.filter-chip.c-purple { border-color: var(--purple); color: #c9a6dd; }
 .stat-tile.click { cursor: pointer; }
 .stat-tile.click:hover { background: var(--panel-3); }
-.stat-tile.active { background: var(--panel-3); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+/* Активна плитка: жовта рамка з трьох боків, ліва смужка лишається кольором легенди */
+.stat-tile.active { background: var(--panel-3); border-top-color: var(--accent); border-right-color: var(--accent); border-bottom-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .stat-num { font-family: var(--font-data); font-size: 26px; font-weight: 700; color: var(--text); line-height: 1.1; }
 .stat-lbl { font-family: var(--font-data); font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .12em; margin-top: 2px; }
 
@@ -2100,13 +2113,14 @@ function lossGroups(data) {
     trkonly:  data.filter(function(x){ return lossKindOf(x) === 'trkonly'; })
   };
 }
-var LOSS_TABS = [['nocoord','Без координат',''],['drones','Втрачені борти','red'],['trkdrone','Трекер із бортом',''],['trkonly','Трекер (без борта)','']];
+// Групи втрат: ключ, назва, колір — той самий, що й у маркерів на карті
+// (плитки й чіпи = легенда)
+var LOSS_TABS = [['nocoord','Без координат','grey'],['drones','Втрачені борти','red'],['trkdrone','Трекер із бортом','orange'],['trkonly','Трекер (без борта)','purple']];
 // Плитки для вкладки карти: клік перемикає підвкладку таблиці (карта не чіпається)
 function lossTilesHtml() {
   var g = lossGroups(S.lostMap);
-  var col = { nocoord: '', drones: 'red', trkdrone: '', trkonly: 'blue' };
   return '<div class="stat-row" id="lossTiles">'+LOSS_TABS.map(function(t){
-    return '<div class="stat-tile '+col[t[0]]+' click'+(lossTab===t[0]?' active':'')+'" onclick="lossTab=\''+t[0]+'\';renderLossTables(S.lostMap||[])">'+
+    return '<div class="stat-tile '+t[2]+' click'+(lossTab===t[0]?' active':'')+'" onclick="lossTab=\''+t[0]+'\';renderLossTables(S.lostMap||[])">'+
       '<div class="stat-num">'+(S.lostMap ? g[t[0]].length : '…')+'</div><div class="stat-lbl">'+t[1]+'</div></div>';
   }).join('')+'</div>';
 }
@@ -2199,14 +2213,15 @@ function renderLossTables(data) {
   // Плитки зверху сторінки — оновити активну і числа без ререндеру карти
   var tilesEl = $('lossTiles');
   if (tilesEl) tilesEl.outerHTML = lossTilesHtml();
-  var icons = { nocoord: '', drones: '🔴 ', trkdrone: '🟠 ', trkonly: '🟣 ' };
-  var h = '<div class="inv-tabs" style="margin-top:12px">'+LOSS_TABS.map(function(t){
-    return '<button class="inv-tab'+(lossTab===t[0]?' active':'')+'" onclick="lossTab=\''+t[0]+'\';renderLossTables(S.lostMap||[])">'+icons[t[0]]+t[1]+' ('+groups[t[0]].length+')</button>';
+  // Чіпи-фільтри в кольорах легенди (як типи в інвентарі) — в одному рядку
+  // з компактом та Перегляд/Редагування; окрема легенда не потрібна
+  var chips = '<div class="type-chips">'+LOSS_TABS.map(function(t){
+    return '<button class="filter-chip c-'+t[2]+(lossTab===t[0]?' active':'')+'" onclick="lossTab=\''+t[0]+'\';renderLossTables(S.lostMap||[])">'+t[1]+' ('+groups[t[0]].length+')</button>';
   }).join('')+'</div>';
   // Бекенд старої версії (без _v) не вміє читати нотатки sidebar-форм
   var oldBackend = MODE !== 'demo' && data.length && !(S.lostMapV >= 3);
-  h += '<div class="filter-row">'+
-    (oldBackend ? '<div class="warn" style="margin:0;flex:1">⚠ Бекенд таблиці застарілий — оновіть Код.gs (parseLossNote_/getLostMapData) і зробіть нову версію деплою, інакше нотатки зі старих sidebar-форм не читаються</div>' : '')+
+  var h = (oldBackend ? '<div class="warn" style="margin:12px 0 0">⚠ Бекенд таблиці застарілий — оновіть Код.gs (parseLossNote_/getLostMapData) і зробіть нову версію деплою, інакше нотатки зі старих sidebar-форм не читаються</div>' : '');
+  h += '<div class="filter-row" style="margin-top:12px">'+chips+
     '<div class="staff-actions">'+
       // Компакт: ID · Координати · Обставини (як «/» в інвентарі); лише таблиця, карта не чіпається
       '<button class="icon-btn" title="'+(invCompact ? 'Показати всі стовпці' : 'Компактне подання')+'" style="border:1px solid var(--line-2);font-family:var(--font-data);font-weight:700" onclick="invCompact=!invCompact;renderLossTables(S.lostMap||[])">'+(invCompact ? '»' : '«')+'</button>'+
