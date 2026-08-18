@@ -493,11 +493,16 @@ const SHEETS_FOR_ALL = [
   'Літак',
 ];
 
-// Аркуші тільки для адміна
+// Аркуші тільки для адміна (застосовується в applySheetVisibility)
 const SHEETS_ADMIN_ONLY = [
   'Інвентар',
   'Журнал руху',
   'Довідник назв',
+  // «Персонал» містить колонку з хешами паролів (F). Приховування тут —
+  // лише щоб аркуш не потрапляв на очі: будь-хто з правом читання таблиці
+  // може показати прихований аркуш чи колонку. Реальний захист у тому,
+  // що хеші існують ТІЛЬКИ в цій таблиці (див. secretCols у mergeByTimestamp).
+  'Персонал',
 ];
 
 // Системні аркуші — завжди приховані для всіх
@@ -678,7 +683,9 @@ function applySheetVisibility() {
   else if (email && isAllowed(email)) level = 'allowed';
 
   const MINIMAL   = ['Журнал польоту', 'Дашборд'];
-  const HIDDEN_FOR_ALLOWED = ['Журнал руху', 'Довідник назв', 'Інвентар'];
+  // Джерело правди — константа зверху файлу, щоб список не доводилось
+  // правити у двох місцях (раніше тут лежала його ручна копія).
+  const HIDDEN_FOR_ALLOWED = SHEETS_ADMIN_ONLY;
 
   ss.getSheets().forEach(sheet => {
     const name = sheet.getName();
@@ -4560,10 +4567,15 @@ function syncToOperators() {
     mergeSim(mainSs, opSs);
 
     // 5. Персонал (відповідальні особи) — двосторонній merge по timestamp
-    // УВАГА: _TS — колонка 7 (PERSONNEL_COLS тепер 8, остання — «Адмін»)
+    // УВАГА: _TS — колонка 7 (PERSONNEL_COLS тепер 10, останні —
+    // «Адмін», «Інвентар», «Екіпажі»)
+    // Колонка 6 (хеш пароля) — secretCol: лишається лише в головній таблиці.
+    // Вхід за позивним обслуговує API головної таблиці, тож операторській
+    // паролі не потрібні. Якщо колись знадобиться вхід і там — прибрати [6]
+    // не можна, треба виносити хеші зі стовпця у Script Properties.
     ensurePersonnelSheet(mainSs);
     ensurePersonnelSheet(opSs);
-    mergeByTimestamp(mainSs, opSs, 'Персонал', PERSONNEL_COLS, 7);
+    mergeByTimestamp(mainSs, opSs, 'Персонал', PERSONNEL_COLS, 7, null, null, [6]);
 
     pushDashboard(mainSs, opSs);
     pushDronesForOps(mainSs, opSs); // завжди оновлюємо інвентар
@@ -4700,10 +4712,15 @@ function ensureNoteTsColumns(ss) {
 // numCols — кількість колонок даних, tsCol — номер колонки timestamp (1-based).
 // noteCol/noteTsCol (опційно) — примітка зливається окремо за власною міткою часу,
 // щоб зміна примітки на одній таблиці не губилась через новіший рядок на іншій.
-function mergeByTimestamp(mainSs, opSs, sheetName, numCols, tsCol, noteCol, noteTsCol) {
+// secretCols (опційно) — номери колонок із таємницями (напр. хеші паролів).
+// Такі колонки живуть ТІЛЬКИ в головній таблиці: значення завжди беруться
+// з головної (операторська не може їх перезаписати) і при записі в
+// операторську підставляється порожнє. Так секрет не розходиться по копіях.
+function mergeByTimestamp(mainSs, opSs, sheetName, numCols, tsCol, noteCol, noteTsCol, secretCols) {
   const mainSheet = getSheet(mainSs, sheetName);
   const opSheet   = getSheet(opSs,   sheetName);
   if (!mainSheet || !opSheet) return;
+  secretCols = secretCols || [];
 
   // Зняти захист з обох
   [mainSheet, opSheet].forEach(sh => {
@@ -4753,19 +4770,25 @@ function mergeByTimestamp(mainSs, opSs, sheetName, numCols, tsCol, noteCol, note
         }
       }
     }
+    // Таємні колонки не беруть участь у змаганні за timestamp:
+    // головна таблиця — єдине джерело правди для них.
+    secretCols.forEach(c => { winner[c - 1] = m.row[c - 1]; });
     merged.push(winner);
   });
 
   // Сортуємо по ID для стабільності
   merged.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 
-  // Записати в обидві таблиці
-  [mainSheet, opSheet].forEach(sheet => {
+  // Записати в обидві таблиці; в операторську — без таємних колонок
+  const opRowsOut = secretCols.length
+    ? merged.map(r => { const c = r.slice(); secretCols.forEach(i => { c[i - 1] = ''; }); return c; })
+    : merged;
+  [[mainSheet, merged], [opSheet, opRowsOut]].forEach(([sheet, rows]) => {
     if (sheet.getLastRow() >= 3) {
       sheet.getRange(3, 1, Math.max(sheet.getLastRow() - 2, 1), numCols).clearContent();
     }
-    if (merged.length) {
-      sheet.getRange(3, 1, merged.length, numCols).setValues(merged);
+    if (rows.length) {
+      sheet.getRange(3, 1, rows.length, numCols).setValues(rows);
     }
   });
 
