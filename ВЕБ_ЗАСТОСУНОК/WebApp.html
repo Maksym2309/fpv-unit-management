@@ -344,7 +344,8 @@ textarea { height: 54px; resize: vertical; }
 .spec-area.hid { display: none; }
 .spec-mark { position: absolute; top: 14px; bottom: 0; border-left: 1px solid; }
 .spec-mark.dash { border-left-style: dashed; }
-.spec-lbl { position: absolute; top: -13px; transform: translateX(-50%); font-family: var(--font-data); font-size: 8px; font-weight: 700; padding: 1px 4px; color: #0d0d0d; white-space: nowrap; }
+.spec-lbl { position: absolute; top: -13px; transform: translateX(-50%); font-family: var(--font-data); font-size: 8px; font-weight: 700; padding: 1px 4px; color: #0d0d0d; white-space: nowrap; cursor: default; }
+.spec-mark:hover .spec-lbl { z-index: 3; outline: 1px solid #fff; }
 
 /* ── Модалки ── */
 #modalBg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 100; backdrop-filter: blur(3px); align-items: flex-start; justify-content: center; overflow-y: auto; padding: 40px 16px; }
@@ -1618,6 +1619,19 @@ function bandOf(band) {
   return '3.3';
 }
 function cleanCode(fc) { return String(fc||'').replace(/\s*\(\d+\)/, '').trim(); }
+// Читабельна назва екіпажу: «Alfa» (за CRW-ID) або сам рядок, якщо це не наш екіпаж
+function crewNameOnly(idOrName) {
+  var s = String(idOrName || '');
+  var cr = crewById(s);
+  return (cr && cr.crewName) ? cr.crewName : s;
+}
+// «Alfa · CRW-032» — назва + порядковий ID (як у переліку екіпажів)
+function crewDisplayHtml(idOrName) {
+  var s = String(idOrName || '');
+  var cr = crewById(s);
+  if (cr && cr.crewName) return '<b>'+esc(cr.crewName)+'</b> <span class="hint">'+esc(cr.id)+'</span>';
+  return esc(s);
+}
 function freqToCodeLocal(freq) {
   for (var b in BANDS) { var i = BANDS[b].indexOf(Number(freq)); if (i !== -1) return b + (i+1); }
   return '?';
@@ -1635,6 +1649,29 @@ function countConflicts() {
 }
 var specOpen = true;
 var sidePanels = { af: true, crews: true, conf: true };
+// Мітки спектра: піднімаємо на поверх вище, якщо перекривається з попередньою
+// на тому ж поверсі (за реальними пікселями після рендеру). Шкала отримує
+// верхній відступ під найвищий поверх.
+function layoutSpecLabels() {
+  var area = $('specArea');
+  if (!area) return;
+  var LVL_H = 15, LEVELS = 6;
+  var marks = Array.from(area.querySelectorAll('.spec-mark')).sort(function(a, b){ return parseFloat(a.style.left) - parseFloat(b.style.left); });
+  var lastRight = [];
+  var maxLvl = 0;
+  marks.forEach(function(m){
+    var l = m.querySelector('.spec-lbl');
+    l.style.top = '-13px';
+    var r = l.getBoundingClientRect();
+    var lvl = 0;
+    while (lvl < LEVELS - 1 && lastRight[lvl] !== undefined && r.left < lastRight[lvl] + 3) lvl++;
+    lastRight[lvl] = r.right;
+    l.style.top = (-13 - lvl * LVL_H) + 'px';
+    if (lvl > maxLvl) maxLvl = lvl;
+  });
+  area.style.marginTop = (8 + maxLvl * LVL_H) + 'px';
+}
+window.addEventListener('resize', function(){ if (S.view === 'freq') layoutSpecLabels(); });
 function togglePanel(key) { sidePanels[key] = !sidePanels[key]; renderView(); }
 function toggleSpec() { specOpen = !specOpen; renderView(); }
 
@@ -1776,7 +1813,7 @@ function renderFreq(c) {
       '<div class="af-bar"></div>'+
       (conf&&conf.level==='critical'?'<div class="af-badge">КОНФЛІКТ!</div>':'')+
       '<div class="af-head">'+
-        '<div class="af-title">'+esc(a.crew)+(isMineA?' (ВИ)':'')+(isExt?' (ЗОВН)':'')+'</div>'+
+        '<div class="af-title">'+crewDisplayHtml(a.crew)+(isMineA?' (ВИ)':'')+(isExt?' (ЗОВН)':'')+'</div>'+
         '<div class="af-freq '+freqCls+'">📶 '+(a.freq?esc(cc)+' ('+esc(a.freq)+')':'—')+'</div>'+
       '</div>'+
       ((a.pilot||a.system)?'<div class="af-meta">'+(a.pilot?'👤 '+esc(a.pilot):'')+(a.pilot&&a.system?' · ':'')+(a.system&&a.system!=='Зовнішній'?esc(a.system):'')+'</div>':'');
@@ -1808,7 +1845,7 @@ function renderFreq(c) {
     var info = crewInfoMap[a.crew];
     var canSwitch = info && info.reserves && info.reserves.length && (info.author === S.me || S.me === d.adminEmail);
     var swId = 'swc-' + String(a.crew).replace(/[^\w-]/g, '_');
-    crewRows += '<tr><td><span class="crew-dot"></span>'+esc(a.crew)+'</td>'+
+    crewRows += '<tr><td><span class="crew-dot"></span>'+crewDisplayHtml(a.crew)+'</td>'+
       '<td><span class="crew-freq">'+esc(cc)+' ('+esc(a.freq)+')</span>'+
       (canSwitch?' <button class="vtx-btn" style="padding:1px 6px;margin-left:4px" onclick="document.getElementById(\''+swId+'\').classList.toggle(\'open\')">🎚</button>':'')+
       '</td></tr>';
@@ -1821,7 +1858,7 @@ function renderFreq(c) {
     }
   });
   reserves.forEach(function(r){
-    crewRows += '<tr><td><span class="crew-dot purple"></span>'+esc(r.crew)+'</td>'+
+    crewRows += '<tr><td><span class="crew-dot purple"></span>'+crewDisplayHtml(r.crew)+'</td>'+
       '<td><span class="crew-freq purple">РЕЗЕРВ '+esc(cleanCode(r.freqCode))+'</span></td></tr>';
   });
   side += '<div class="side-panel">'+
@@ -1837,15 +1874,15 @@ function renderFreq(c) {
       var a1 = occupied[i], a2 = occupied[j];
       if (a1.crew === a2.crew) continue;
       var gap = Math.abs(a1.freq - a2.freq);
-      if (gap < 20) realConf.push({lvl:'🔴', t:'Прямий', d:a1.crew+' @'+a1.freq+' ↔ '+a2.crew+' @'+a2.freq+' (Δ'+gap+' МГц)'});
-      else if (gap < 40) realConf.push({lvl:'🟠', t:'Близькі канали', d:a1.crew+' @'+a1.freq+' ↔ '+a2.crew+' @'+a2.freq+' (Δ'+gap+' МГц)'});
+      if (gap < 20) realConf.push({lvl:'🔴', t:'Прямий', d:crewNameOnly(a1.crew)+' @'+a1.freq+' ↔ '+crewNameOnly(a2.crew)+' @'+a2.freq+' (Δ'+gap+' МГц)'});
+      else if (gap < 40) realConf.push({lvl:'🟠', t:'Близькі канали', d:crewNameOnly(a1.crew)+' @'+a1.freq+' ↔ '+crewNameOnly(a2.crew)+' @'+a2.freq+' (Δ'+gap+' МГц)'});
     }
   reserves.forEach(function(r){
     occupied.forEach(function(o){
       if (o.crew === r.crew) return;
       var dd = Math.abs(r.freq - o.freq);
-      if (dd < 20) realConf.push({lvl:'🔴', t:'Резерв ↔ активна', d:'🔄 '+r.crew+' резерв '+r.freq+' ↔ '+o.crew+' '+o.freq+' (Δ'+dd+')'});
-      else if (dd < 40) realConf.push({lvl:'🟠', t:'Резерв ↔ активна', d:'🔄 '+r.crew+' резерв '+r.freq+' ↔ '+o.crew+' '+o.freq+' (Δ'+dd+')'});
+      if (dd < 20) realConf.push({lvl:'🔴', t:'Резерв ↔ активна', d:'🔄 '+crewNameOnly(r.crew)+' резерв '+r.freq+' ↔ '+crewNameOnly(o.crew)+' '+o.freq+' (Δ'+dd+')'});
+      else if (dd < 40) realConf.push({lvl:'🟠', t:'Резерв ↔ активна', d:'🔄 '+crewNameOnly(r.crew)+' резерв '+r.freq+' ↔ '+crewNameOnly(o.crew)+' '+o.freq+' (Δ'+dd+')'});
     });
   });
   side += '<div class="side-panel">'+
@@ -1868,24 +1905,35 @@ function renderFreq(c) {
     else range = [5600, 6000];
   }
   function pos(f) { return Math.max(1.5, Math.min(98.5, (f - range[0]) / (range[1] - range[0]) * 100)); }
-  var marks = '';
+  // Збираємо всі мітки, сортуємо по частоті й розкладаємо по «поверхах»:
+  // якщо мітка ближче за MIN_GAP% до попередньої на тому ж поверсі — піднімаємо
+  // на поверх вище. Так підписи не перекриваються. Лише назва; деталі — tooltip.
+  var items = [];
   occupied.forEach(function(o){
     if (o.freq < range[0] || o.freq > range[1]) return;
     var conf = conflictOf(o);
     var col = conf && conf.level==='critical' ? '#e74c3c' : (o.source==='mine' ? '#2ecc71' : (o.source==='external' ? '#7f8c8d' : '#3498db'));
-    var lbl = (o.source==='mine' ? 'ВИ' : o.crew) + ' (' + o.freq + ')';
-    marks += '<div class="spec-mark'+(conf&&conf.level==='critical'?' dash':'')+'" style="left:'+pos(o.freq)+'%;border-color:'+col+'">'+
-      '<div class="spec-lbl" style="background:'+col+'">'+esc(lbl)+'</div></div>';
+    items.push({ f: o.freq, x: pos(o.freq), col: col, dash: !!(conf&&conf.level==='critical'),
+      name: o.source==='mine' ? 'ВИ' : crewNameOnly(o.crew),
+      tip: (o.source==='mine' ? 'ВИ' : crewNameOnly(o.crew)) + ' · ' + (o.crew && crewById(o.crew) ? o.crew + ' · ' : '') + o.freq + ' МГц' + (o.system ? ' · ' + o.system : '') + (conf ? ' · ⚠ конфлікт з ' + crewNameOnly(conf.with.crew) + ' (Δ' + conf.gap + ')' : '') });
   });
   reserves.forEach(function(r){
     if (r.freq < range[0] || r.freq > range[1]) return;
-    marks += '<div class="spec-mark dash" style="left:'+pos(r.freq)+'%;border-color:#9b59b6">'+
-      '<div class="spec-lbl" style="background:#9b59b6">🔄 '+esc(r.crew)+' ('+r.freq+')</div></div>';
+    items.push({ f: r.freq, x: pos(r.freq), col: '#9b59b6', dash: true,
+      name: '🔄 ' + crewNameOnly(r.crew),
+      tip: 'Резерв · ' + crewNameOnly(r.crew) + ' · ' + r.freq + ' МГц' });
   });
+  items.sort(function(a, b){ return a.x - b.x; });
+  var marks = items.map(function(it){
+    return '<div class="spec-mark'+(it.dash?' dash':'')+'" style="left:'+it.x+'%;border-color:'+it.col+'" title="'+esc(it.tip)+'">'+
+      '<div class="spec-lbl" style="background:'+it.col+'">'+esc(it.name)+'</div></div>';
+  }).join('');
   var spectrum = '<div class="spectrum">'+
-    '<div class="spec-head"><span>'+(range[0]/1000).toFixed(1)+' GHz</span><span>Аналізатор спектру · зайнятість</span>'+
+    '<div class="spec-head"><span>'+(range[0]/1000).toFixed(1)+' GHz</span><span>Аналізатор спектру · зайнятість · наведи на мітку — деталі</span>'+
     '<span>'+(range[1]/1000).toFixed(1)+' GHz <button class="tgl" onclick="toggleSpec()">'+(specOpen?'▼':'▲')+'</button></span></div>'+
-    '<div class="spec-area'+(specOpen?'':' hid')+'">'+marks+'</div></div>';
+    '<div class="spec-area'+(specOpen?'':' hid')+'" id="specArea">'+marks+'</div></div>';
+  // Розкладка міток по «поверхах» після рендеру — за реальною шириною тексту
+  setTimeout(layoutSpecLabels, 0);
 
   c.innerHTML = '<div class="view-title">Матриця <span class="accent">частот</span> <span style="font-size:14px;color:var(--dim)">(VHF/UHF)</span></div>'+
     '<div class="view-sub">Клік по клітинці — позначити/зняти чужу частоту</div>'+
