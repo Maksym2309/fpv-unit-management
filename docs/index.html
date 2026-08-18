@@ -1949,7 +1949,7 @@ function renderFreq(c) {
       '<div class="spec-lbl" style="background:'+it.col+'">'+esc(it.name)+'</div></div>';
   }).join('');
   var spectrum = '<div class="spectrum">'+
-    '<div class="spec-head"><span>'+(range[0]/1000).toFixed(1)+' GHz</span><span>Аналізатор спектру · зайнятість · наведи на мітку — деталі</span>'+
+    '<div class="spec-head"><span>'+(range[0]/1000).toFixed(1)+' GHz</span><span>Аналізатор спектру</span>'+
     '<span>'+(range[1]/1000).toFixed(1)+' GHz <button class="tgl" onclick="toggleSpec()">'+(specOpen?'▼':'▲')+'</button></span></div>'+
     '<div class="spec-area'+(specOpen?'':' hid')+'" id="specArea">'+marks+'</div></div>';
   // Розкладка міток по «поверхах» після рендеру — за реальною шириною тексту
