@@ -340,10 +340,13 @@ textarea { height: 54px; resize: vertical; }
 .spectrum { margin-top: 14px; background: var(--bg-low); border: 1px solid var(--line); position: relative; }
 .spec-head { display: flex; justify-content: space-between; align-items: center; font-family: var(--font-data); font-size: 9px; letter-spacing: .1em; color: rgba(255,184,0,.65); padding: 6px 10px; text-transform: uppercase; }
 .spec-head .tgl { cursor: pointer; color: var(--accent); background: none; border: none; font-size: 11px; padding: 0 4px; }
-.spec-area { position: relative; height: 110px; margin: 4px 14px 12px; border-bottom: 1px solid var(--line-2); }
+.spec-area { position: relative; height: 130px; margin: 4px 14px 12px; border-bottom: 1px solid var(--line-2); }
 .spec-area.hid { display: none; }
+/* Лінія маркера тягнеться від «землі» ДО своєї мітки (top задає JS за поверхом) —
+   підпис завжди сидить на своїй лінії, не «висить» над чужою */
 .spec-mark { position: absolute; top: 14px; bottom: 0; border-left: 1px solid; }
 .spec-mark.dash { border-left-style: dashed; }
+.spec-mark:hover { z-index: 50 !important; }
 .spec-lbl { position: absolute; top: -13px; transform: translateX(-50%); font-family: var(--font-data); font-size: 8px; font-weight: 700; padding: 1px 4px; color: #0d0d0d; white-space: nowrap; cursor: default; }
 .spec-mark:hover .spec-lbl { z-index: 3; outline: 1px solid #fff; }
 
@@ -1655,21 +1658,28 @@ var sidePanels = { af: true, crews: true, conf: true };
 function layoutSpecLabels() {
   var area = $('specArea');
   if (!area) return;
-  var LVL_H = 15, LEVELS = 6;
+  var LVL_H = 16, LEVELS = 6, BASE_TOP = 14; // BASE_TOP = верх лінії поверху 0
   var marks = Array.from(area.querySelectorAll('.spec-mark')).sort(function(a, b){ return parseFloat(a.style.left) - parseFloat(b.style.left); });
-  var lastRight = [];
-  var maxLvl = 0;
-  marks.forEach(function(m){
-    var l = m.querySelector('.spec-lbl');
-    l.style.top = '-13px';
-    var r = l.getBoundingClientRect();
+  // 1) Скидаємо в базовий стан і міряємо ширини
+  marks.forEach(function(m){ m.style.top = BASE_TOP + 'px'; m.querySelector('.spec-lbl').style.top = '-13px'; });
+  var rects = marks.map(function(m){ return m.querySelector('.spec-lbl').getBoundingClientRect(); });
+  // 2) Поверх для кожної мітки: найнижчий, де вона не наїжджає на попередні
+  var lastRight = [], lvls = [];
+  rects.forEach(function(r, i){
     var lvl = 0;
-    while (lvl < LEVELS - 1 && lastRight[lvl] !== undefined && r.left < lastRight[lvl] + 3) lvl++;
-    lastRight[lvl] = r.right;
-    l.style.top = (-13 - lvl * LVL_H) + 'px';
-    if (lvl > maxLvl) maxLvl = lvl;
+    while (lvl < LEVELS - 1 && lastRight[lvl] !== undefined && r.left < lastRight[lvl] + 4) lvl++;
+    lastRight[lvl] = r.right; lvls[i] = lvl;
   });
+  var maxLvl = Math.max.apply(null, [0].concat(lvls));
+  // 3) Застосовуємо: ЛІНІЯ маркера піднімається до свого поверху (top менший),
+  //    мітка сидить на вершині лінії — жодних «підвішених» підписів.
+  //    Верхній відступ шкали — під найвищий поверх.
   area.style.marginTop = (8 + maxLvl * LVL_H) + 'px';
+  marks.forEach(function(m, i){
+    m.style.top = (BASE_TOP - lvls[i] * LVL_H) + 'px';
+    m.querySelector('.spec-lbl').style.top = '-13px';
+    m.style.zIndex = String(10 + lvls[i]); // вищі поверхи — зверху над нижчими лініями
+  });
 }
 window.addEventListener('resize', function(){ if (S.view === 'freq') layoutSpecLabels(); });
 function togglePanel(key) { sidePanels[key] = !sidePanels[key]; renderView(); }
