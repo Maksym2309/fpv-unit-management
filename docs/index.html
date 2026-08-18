@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
-// PWA: service worker (https Ð°Ð±Ð¾ localhost)
+// PWA: service worker (https або localhost)
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   addEventListener('load', function(){ navigator.serviceWorker.register('./sw.js').catch(function(){}); });
 }

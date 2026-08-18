@@ -1,4 +1,4 @@
-# Збірка PWA: ВЕБ_ЗАСТОСУНОК/WebApp.html → docs/index.html (+ PWA-блок у <head>)
+﻿# Збірка PWA: ВЕБ_ЗАСТОСУНОК/WebApp.html → docs/index.html (+ PWA-блок у <head>)
 # Запускати після кожної зміни WebApp.html: powershell -File sync-docs.ps1
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
