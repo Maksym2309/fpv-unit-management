@@ -34,8 +34,8 @@ const API_FUNCTIONS = [
   // трекери й SIM
   'addSinotrack', 'addSim', 'bindSimToTracker', 'unbindSimFromTracker',
   'updateSinotrackStatus', 'updateSimStatus',
-  // інвентар
-  'acceptItem', 'updateItemStatusById', 'webDeleteInventoryItem',
+  // інвентар (видалення з обліку у PWA немає — тільки списання через статус)
+  'acceptItem', 'updateItemStatusById',
   'webAddInventoryItem', 'getFormData', 'getNextIdNum', 'webSetItemAssignment',
   'webSetItemNote', 'webSetTrackerNote', 'webLogStatusChange', 'getLostMapData',
   'webUpdateLossRecord',

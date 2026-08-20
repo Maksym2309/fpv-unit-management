@@ -598,9 +598,12 @@ var AUTH_KEY = 'wh_auth_token';
 function authToken() { try { return localStorage.getItem(AUTH_KEY) || ''; } catch(e) { return ''; } }
 function setAuthToken(t) { try { if (t) localStorage.setItem(AUTH_KEY, t); else localStorage.removeItem(AUTH_KEY); } catch(e) {} }
 function isAdminUser() { return !!(S.invCaps && S.invCaps.admin); }
+// Гранульовані права з аркуша «Персонал» (роздає адмін; адмін має все)
+function canEditInv()   { return isAdminUser() || !!(S.auth && S.auth.canInv); }
+function canEditCrews() { return isAdminUser() || !!(S.auth && S.auth.canCrew); }
 // Токен для привілейованих викликів: адмін працює без токена (за Google-акаунтом)
 function crewToken() { return (!isAdminUser() && S.auth) ? authToken() : ''; }
-function canManageCrew(crewId) { return isAdminUser() || !!(S.auth && S.auth.isMain && S.auth.crewId === crewId); }
+function canManageCrew(crewId) { return canEditCrews() || !!(S.auth && S.auth.isMain && S.auth.crewId === crewId); }
 var PERSON_ROLES = ['Пілот','Штурман','Технік','Сапер','Оператор','Командир'];
 
 // Серйозні SVG-іконки дій (замість емодзі); колір — через currentColor
@@ -654,9 +657,9 @@ var DEMO_DATA = {
   getInventoryCaps: { mode:'full', admin:true, email:'pilot@unit.mil',
     statuses:['Робочий','Ремонт','На перевірці','Несправний','Втрачений','Списаний','Резерв'] },
   getPersonnelList: [
-    {id:'OP-001', callsign:'Яструб', name:'Олексій', role:'Командир', status:'Активний', crewId:'CRW-001', crewName:'АЛЬФА', isMain:true},
-    {id:'OP-002', callsign:'Сокіл',  name:'Іван',    role:'Пілот',    status:'Активний', crewId:'CRW-001', crewName:'АЛЬФА', isMain:false},
-    {id:'OP-003', callsign:'Ворон',  name:'Сергій',  role:'Технік',   status:'Відпочинок', crewId:'', crewName:'', isMain:false},
+    {id:'OP-001', callsign:'Яструб', name:'Олексій', role:'Командир', status:'Активний', crewId:'CRW-001', crewName:'АЛЬФА', isMain:true, admin:true, canInv:true, canCrew:true},
+    {id:'OP-002', callsign:'Сокіл',  name:'Іван',    role:'Пілот',    status:'Активний', crewId:'CRW-001', crewName:'АЛЬФА', isMain:false, rightCrew:true, canCrew:true},
+    {id:'OP-003', callsign:'Ворон',  name:'Сергій',  role:'Технік',   status:'Відпочинок', crewId:'', crewName:'', isMain:false, rightInv:true, canInv:true},
     {id:'OP-004', callsign:'Грім',   name:'Дмитро',  role:'Штурман',  status:'Активний', crewId:'CRW-002', crewName:'БРАВО', isMain:true}
   ],
   // Демо-авторизація: будь-який пароль, вхід за позивним зі списку
@@ -1277,6 +1280,8 @@ function admRenderPersonnel() {
     return '<div class="member-row'+(p.isMain?' member-main':'')+'">'+
       '<div style="flex:1"><div class="member-cs">'+esc(p.callsign)+
         (p.admin?' <span class="badge-main" style="background:var(--accent);color:var(--on-accent)">🛡 Адмін</span>':'')+
+        (!p.admin && p.rightInv?' <span class="badge-main">📦 Інвентар</span>':'')+
+        (!p.admin && p.rightCrew?' <span class="badge-main">👥 Екіпажі</span>':'')+
         (p.isMain?' <span class="badge-main">Головний</span>':'')+'</div>'+
       '<div class="member-name">'+esc(p.name||'')+' · '+esc(p.role||'без ролі')+' · '+esc(p.status||'')+
         (p.crewId ? ' · '+esc(p.crewName || p.crewId) : ' · без екіпажу')+'</div></div>'+
@@ -1303,9 +1308,19 @@ function admEditPerson(id) {
       }).join('')+'</select></div>'+
     '<div class="f"><label>'+(p?'Новий пароль (порожньо — не міняти)':'Початковий пароль *')+'</label>'+
       '<input type="text" id="apPassword" placeholder="'+(p?'без змін':'мін. 4 символи')+'"></div>'+
-    '<div class="f"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0">'+
-      '<input type="checkbox" id="apAdmin" style="width:auto"'+(p && p.admin?' checked':'')+'>'+
-      '<span>🛡 Адміністратор (повні права у застосунку)</span></label></div>'+
+    // Права роздає тільки справжній адмін; право «Екіпажі» дозволяє вести О.С., але не права
+    (isAdminUser()
+      ? '<div class="f"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0">'+
+          '<input type="checkbox" id="apAdmin" style="width:auto"'+(p && p.admin?' checked':'')+'>'+
+          '<span>🛡 Адміністратор (повні права у застосунку)</span></label></div>'+
+        '<div class="f"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0">'+
+          '<input type="checkbox" id="apRightInv" style="width:auto"'+(p && p.rightInv?' checked':'')+'>'+
+          '<span>📦 Редагувати інвентар (статуси, додавання, закріплення, витратники)</span></label></div>'+
+        '<div class="f"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0">'+
+          '<input type="checkbox" id="apRightCrew" style="width:auto"'+(p && p.rightCrew?' checked':'')+'>'+
+          '<span>👥 Редагувати екіпажі (склад, створення, особовий склад)</span></label>'+
+        '<div class="hint">Адмін має всі права автоматично — окремі чекбокси йому не потрібні</div></div>'
+      : '')+
     '<button class="btn btn-green" id="apBtn" onclick="admSavePerson(\''+esc(id||'')+'\')">💾 Зберегти</button>'
   );
 }
@@ -1315,9 +1330,14 @@ function admSavePerson(id) {
     callsign: $('apCallsign').value.trim(),
     name: $('apName').value.trim(),
     role: $('apRole').value,
-    status: $('apStatus').value,
-    admin: !!($('apAdmin') && $('apAdmin').checked)
+    status: $('apStatus').value
   };
+  // Права шле тільки адмін (у решти чекбоксів немає; бекенд теж їх відкине)
+  if (isAdminUser()) {
+    d.admin = !!($('apAdmin') && $('apAdmin').checked);
+    d.rightInv = !!($('apRightInv') && $('apRightInv').checked);
+    d.rightCrew = !!($('apRightCrew') && $('apRightCrew').checked);
+  }
   if (id) d.id = id;
   var pw = $('apPassword').value;
   if (pw) d.newPassword = pw;
@@ -1993,7 +2013,7 @@ var trkFilter = { q: '', status: 'all' };
 var TRK_STATUSES = ['Робочий', 'Зламаний', 'Втрачений'];
 var SIM_STATUSES = ['Активна', 'Заблокована', 'Втрачена', 'Невідомо'];
 
-function trkCanEdit() { return invIsAdmin() || !!(S.auth && S.auth.isMain); }
+function trkCanEdit() { return canEditInv() || !!(S.auth && S.auth.isMain); }
 // Перемикання фільтра плиткою в межах поточної вкладки (повторний клік скидає)
 function trkTile(st) {
   trkFilter.status = trkFilter.status === st ? 'all' : st;
@@ -2277,7 +2297,7 @@ function renderLossTables(data) {
   var el = $('lostList');
   if (!el) return;
   var groups = lossGroups(data);
-  var canEdit = invIsAdmin() || !!(S.auth && S.auth.isMain);
+  var canEdit = canEditInv() || !!(S.auth && S.auth.isMain);
   // Плитки зверху сторінки — оновити активну і числа без ререндеру карти
   var tilesEl = $('lossTiles');
   if (tilesEl) tilesEl.outerHTML = lossTilesHtml();
@@ -2546,15 +2566,15 @@ function renderInventory(c) {
   var stats = {};
   invBaseList().forEach(function(it){ var s = String(it.status||'').trim(); stats[s] = (stats[s]||0)+1; });
 
-  // Редагування: адмін (основна таблиця) або головний відповідальний екіпажу (після входу)
-  var canEdit = !!S.invCaps && (invIsAdmin() || !!(S.auth && S.auth.isMain));
+  // Редагування: адмін, право «Інвентар» або головний відповідальний екіпажу
+  var canEdit = !!S.invCaps && (canEditInv() || !!(S.auth && S.auth.isMain));
   var sub;
   if (!canEdit) {
     sub = S.items.length+' одиниць · перегляд'+(S.auth ? '' : ' (редагування — після входу головного відповідального)');
   } else if (invMode !== 'edit') {
     sub = S.items.length+' одиниць · перегляд';
-  } else if (invIsAdmin()) {
-    sub = S.items.length+' одиниць · редагування: статуси (списання — через статус) · прийняття · до екіпажу · видалити';
+  } else if (canEditInv()) {
+    sub = S.items.length+' одиниць · редагування: статуси (списання — через статус) · прийняття · до екіпажу';
   } else {
     sub = S.items.length+' одиниць · редагування: статуси · прийняття обладнання ('+esc(S.auth.crewName || S.auth.crewId)+')';
   }
@@ -2606,7 +2626,7 @@ function renderInventory(c) {
       return '<option value="'+esc(cr.id)+'"'+(cr.id===invCrewSel?' selected':'')+'>'+esc(cr.crewName || cr.id)+(cr.bind?' ['+esc(cr.bind)+']':'')+'</option>';
     }).join('');
     // Жовтий квадрат «+» — як на сторінці екіпажів: лише в режимі редагування
-    var addDroneBtn = (invMode==='edit' && canEdit && invIsAdmin() && invCrewSel)
+    var addDroneBtn = (invMode==='edit' && canEdit && canEditInv() && invCrewSel)
       ? '<button class="icon-btn" title="Додати обладнання в екіпаж" style="background:var(--accent);color:var(--on-accent)" onclick="invAddDroneToCrewModal()">'+svgIcon('plus')+'</button>' : '';
     toolbar = '<div class="inv-crew-bar">'+
       '<label>Підрозділ:</label>'+
@@ -2616,8 +2636,8 @@ function renderInventory(c) {
       '<div class="staff-actions">'+invCompactBtn()+modeToggle+addDroneBtn+'</div>'+
     '</div>';
   } else {
-    // Загальний інвентар: «+» для адміна — лише в режимі редагування
-    var addItemBtn = (invIsAdmin() && invMode==='edit')
+    // Загальний інвентар: «+» для адміна чи права «Інвентар» — лише в режимі редагування
+    var addItemBtn = (canEditInv() && invMode==='edit')
       ? '<button class="icon-btn" title="Додати предмет в інвентар" style="background:var(--accent);color:var(--on-accent)" onclick="invAddItemModal()">'+svgIcon('plus')+'</button>' : '';
     toolbar = '<div class="filter-row">'+
       '<div class="type-chips">'+typeChips+'</div>'+
@@ -2777,7 +2797,7 @@ function consList() {
 }
 
 function renderConsTab(c, tabs) {
-  var canEdit = invIsAdmin();
+  var canEdit = canEditInv();
   var list = consList();
   var stats = {};
   list.forEach(function(x){ var s = String(x.status||'').trim(); stats[s] = (stats[s]||0)+1; });
@@ -2827,7 +2847,7 @@ function renderConsTab(c, tabs) {
 function renderConsTable() {
   var el = $('consTable');
   if (!el) return;
-  var edit = invIsAdmin() && invMode === 'edit';
+  var edit = canEditInv() && invMode === 'edit';
   var list = consList().filter(function(x){
     return consStatusF === 'all' || String(x.status||'').trim() === consStatusF;
   });
@@ -3097,25 +3117,21 @@ function invActionsHtml(it) {
   if (invBusy[it.id]) return '<div class="inv-acts"><span class="hint">⏳</span></div>';
   // Дії під ID — різні для вкладок, щоб не нагромаджувати:
   //   «Інвентар екіпажу»: прийняти ✓ / не прийняти ✗(оранж.) / прибрати з екіпажу ✕(черв.)
-  //   «Загальний»: додати в екіпаж + / прибрати з екіпажу ✕(черв.) / видалити з обліку 🗑(черв.)
-  // Списання — через статус «Списаний».
+  //   «Загальний»: додати в екіпаж + / прибрати з екіпажу ✕(черв.)
+  // Списання (і будь-яке вибуття) — тільки через статус «Списаний»; видалення з обліку немає.
   var h = '<div class="inv-acts">';
   // Прийняття обладнання — тільки у вкладці екіпажу (парафія головного)
   if (invTab === 'crew' && invCanAccept(it)) {
     h += '<button class="inv-act inv-act--ok" title="Прийняти обладнання" onclick="invAcceptEquip(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('check')+'</button>';
     h += '<button class="inv-act" style="color:var(--orange);border-color:var(--orange)" title="Не прийняти (причина + статус)" onclick="invRejectModal(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('x')+'</button>';
   }
-  if (invIsAdmin()) {
+  if (canEditInv()) {
     var inCrew = invItemCrew(it.id);
     if (inCrew) {
       // Червоний ✕ — контрастний до помаранчевого «не прийняти»
       h += '<button class="inv-act inv-act--del" title="Прибрати з екіпажу '+esc(inCrew.id)+'" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('x')+'</button>';
     } else if (invTab === 'all') {
       h += '<button class="inv-act inv-act--crew" title="Додати до екіпажу" onclick="invCrewToggle(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('plus')+'</button>';
-    }
-    // Видалення з обліку — лише в загальному інвентарі
-    if (invTab === 'all') {
-      h += '<button class="inv-act inv-act--del" title="Видалити з обліку" onclick="invDelete(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('trash')+'</button>';
     }
   }
   return h + '</div>';
@@ -3316,7 +3332,7 @@ function renderInvTable() {
       '<td>'+esc(it.name)+'</td>'+
       (invCompact ? '' :
       '<td class="mono">'+esc(it.type)+'</td>'+
-      '<td>'+((edit && invIsAdmin()) ? invAsgSelectHtml(it) : esc(it.assignment))+'</td>')+
+      '<td>'+((edit && canEditInv()) ? invAsgSelectHtml(it) : esc(it.assignment))+'</td>')+
       '<td>'+(edit ? invStatusSelectHtml(it) : statusChip(it.status))+
         (it.accepted === 'Не прийнято'
           ? '<div class="accept-badge accept-no" title="'+esc(it.acceptReason||'')+'">НЕ ПРИЙНЯТИЙ'+(it.acceptReason?': '+esc(it.acceptReason):'')+'</div>'
@@ -3339,9 +3355,9 @@ function renderInvTable() {
     rows += trks.map(function(t){
       var c = crewById(invCrewSel);
       var bind = t.binding ? 'Борт '+t.binding : (c ? c.id : '');
-      // Дії трекера: ✕ прибрати з екіпажу (адмін) — та сама логіка, що й у предметів
+      // Дії трекера: ✕ прибрати з екіпажу — та сама логіка, що й у предметів
       var trkActs = '';
-      if (showActs && invIsAdmin()) {
+      if (showActs && canEditInv()) {
         trkActs = invBusy[t.id]
           ? '<span class="hint">⏳</span>'
           : '<div class="inv-acts"><button class="inv-act inv-act--del" title="Прибрати трекер з екіпажу" onclick="invRemoveTrkFromCrew(this.dataset.id)" data-id="'+esc(t.id)+'">'+svgIcon('x')+'</button></div>';
@@ -3414,19 +3430,7 @@ function doMarkLost(id) {
   });
 }
 
-// ── Видалення з обліку (адмін) ──
-function invDelete(id) {
-  var reason = prompt('🗑 Видалити '+id+' з обліку БЕЗПОВОРОТНО?\nВкажи причину:', '');
-  if (reason === null) return;
-  if (invBusy[id]) return;
-  invBusy[id] = true; renderInvTable();
-  rpc('webDeleteInventoryItem', [id, reason.trim()], function(){
-    S.items = S.items.filter(function(x){ return x.id !== id; });
-    delete invBusy[id];
-    toast('🗑 '+id+' видалено з обліку');
-    renderView();
-  }, function(e){ delete invBusy[id]; renderInvTable(); toast('❌ '+e.message, true); });
-}
+// Видалення з обліку прибрано: вибуття предмета — тільки списання через статус «Списаний»
 
 // ── Додати предмет до екіпажу (адмін): вибір екіпажу ──
 function invAddToCrew(id) {
@@ -3637,12 +3641,12 @@ function sideCrewClickable(id) {
   // Єдиний лок: користувач у режимі редагування на «Активних зʼєднаннях» —
   // перелік заблоковано (редагується лише свій екіпаж, чужі частоти захищені).
   // У перегляді все вільно для всіх; адміна нічого не обмежує.
-  if (!isAdminUser() && crewPageTab === 'links' && (typeof crewEdit !== 'undefined' && crewEdit)) return false;
+  if (!canEditCrews() && crewPageTab === 'links' && (typeof crewEdit !== 'undefined' && crewEdit)) return false;
   return true;
 }
 function sideCrewBadge(id) {
-  if (S.auth && !isAdminUser() && S.auth.crewId === id) return '<span class="badge-main">мій</span>';
-  if (isAdminUser() && crewPageTab === 'links' && crewPageSel === id) return '<span class="badge-main">вибраний</span>';
+  if (S.auth && !canEditCrews() && S.auth.crewId === id) return '<span class="badge-main">мій</span>';
+  if (canEditCrews() && crewPageTab === 'links' && crewPageSel === id) return '<span class="badge-main">вибраний</span>';
   return '';
 }
 function sideCrewPick(id) {
@@ -3671,8 +3675,8 @@ function renderCrews(c) {
     return;
   }
   var crews = activeCrews();
-  // Оператор завжди працює зі своїм екіпажем; адмін вибирає в тулбарі
-  if (S.auth && !isAdminUser()) {
+  // Оператор завжди працює зі своїм екіпажем; адмін чи право «Екіпажі» — вибір у тулбарі
+  if (S.auth && !canEditCrews()) {
     crewPageSel = S.auth.crewId || '';
   } else if (!crewPageSel || !crews.find(function(x){ return x.id === crewPageSel; })) {
     crewPageSel = crews[0] ? crews[0].id : '';
@@ -3713,8 +3717,8 @@ function renderCrews(c) {
   html += '<div class="side-panel">'+sidePanelHead('list', '🗂 Перелік екіпажів');
   if (sidePanelOpen.list) {
     html += '<div class="side-panel-body">';
-    // Адмін у режимі редагування: ✎ перейменувати / ✕ завершити екіпаж
-    var listEdit = isAdminUser() &&
+    // Адмін чи право «Екіпажі» в режимі редагування: ✎ перейменувати / ✕ завершити екіпаж
+    var listEdit = canEditCrews() &&
       ((crewPageTab === 'links' && crewEdit) || (crewPageTab === 'staff' && staffEdit));
     html += crews.length ? crews.map(function(cr){
       var n = (cr.main ? 1 : 0) + (cr.members||'').split('|').filter(Boolean).length;
@@ -3749,7 +3753,7 @@ function renderCrews(c) {
 
 // ── Ліва частина, вкладка «Увесь О.С.» ──
 function renderStaffMain() {
-  var actions = isAdminUser()
+  var actions = canEditCrews()
     ? '<div class="staff-actions">'+
         '<div class="inv-mode">'+
           '<button class="inv-mode-btn'+(!staffEdit?' active':'')+'" onclick="staffEdit=false;renderView()">Перегляд</button>'+
@@ -3818,7 +3822,7 @@ function staffList() {
 function renderStaffInto() {
   var t = $('staffTable');
   if (!t) return;
-  var edit = staffEdit && isAdminUser();
+  var edit = staffEdit && canEditCrews();
   var rows = staffList().map(function(p){
     var eq = personEquipment(p);
     return '<tr><td class="mono accent">'+esc(p.id)+
@@ -3854,7 +3858,7 @@ function renderLinksMain() {
   // Оператор привʼязаний до свого екіпажу — випадаючого списку немає, лише позначка «мій».
   // Адмін вибирає екіпаж; якщо він був вибраний у боковій панелі — та згортається (не дублюємо).
   var crewPicker;
-  if (S.auth && !isAdminUser()) {
+  if (S.auth && !canEditCrews()) {
     crewPicker = cr
       ? '<span class="cp-name" style="font-family:var(--font-data)">'+esc(cr.crewName || cr.id)+' <span class="badge-main">мій</span></span>'
       : '<span class="hint">Ти не привʼязаний до екіпажу</span>';
@@ -3864,25 +3868,25 @@ function renderLinksMain() {
       : '<span class="hint">Немає активних екіпажів</span>';
   }
   var h = '<div class="staff-bar">'+
-    '<label>'+(S.auth && !isAdminUser() ? 'Екіпаж:' : 'Вибір екіпажу:')+'</label>'+
+    '<label>'+(S.auth && !canEditCrews() ? 'Екіпаж:' : 'Вибір екіпажу:')+'</label>'+
     crewPicker+
     '<div class="staff-actions">'+
-      // Адмін бачить перемикач завжди (інакше з нулем екіпажів не увімкнути
-      // редагування і не створити перший екіпаж), головний — для свого екіпажу
-      (isAdminUser() || canMg
+      // Адмін/право «Екіпажі» бачить перемикач завжди (інакше з нулем екіпажів
+      // не увімкнути редагування), головний — для свого екіпажу
+      (canEditCrews() || canMg
         ? '<div class="inv-mode">'+
             '<button class="inv-mode-btn'+(!crewEdit?' active':'')+'" onclick="crewEdit=false;renderView()">Перегляд</button>'+
             '<button class="inv-mode-btn'+(crewEdit?' active':'')+'" onclick="crewEdit=true;renderView()">Редагування</button>'+
           '</div>'
         : '')+
       // «+» тут = додати особу в ЦЕЙ екіпаж (створення екіпажу — на «Загальному О.С.»)
-      (crewEdit && cr && (isAdminUser() || canMg)
+      (crewEdit && cr && (canEditCrews() || canMg)
         ? '<button class="icon-btn" title="Додати особу до екіпажу '+esc(cr.crewName || cr.id)+'" style="background:var(--accent);color:var(--on-accent)" onclick="crewAddMemberModal()">'+svgIcon('personAdd')+'</button>'
         : '')+
     '</div>'+
   '</div>';
 
-  if (!cr) return h + '<div class="empty">Оберіть екіпаж'+(isAdminUser() ? ' (створити новий — вкладка «Загальний О.С.» → редагування → «+»)' : '')+'</div>';
+  if (!cr) return h + '<div class="empty">Оберіть екіпаж'+(canEditCrews() ? ' (створити новий — вкладка «Загальний О.С.» → редагування → «+»)' : '')+'</div>';
 
   // Таблиця членів вибраного екіпажу
   var ids = (cr.main ? [cr.main] : []).concat(crewMembersArr(cr));
@@ -3907,7 +3911,7 @@ function renderLinksMain() {
     var acts = '';
     if (crewEdit && canMg) {
       acts = '<div class="inv-acts">'+
-        (isAdminUser() ? '<button class="inv-act" title="Редагувати особу" onclick="admEditPerson(this.dataset.op)" data-op="'+esc(opId)+'">'+svgIcon('edit')+'</button>' : '')+
+        (canEditCrews() ? '<button class="inv-act" title="Редагувати особу" onclick="admEditPerson(this.dataset.op)" data-op="'+esc(opId)+'">'+svgIcon('edit')+'</button>' : '')+
         (!isMain ? '<button class="inv-act inv-act--crew" title="Зробити головним відповідальним" onclick="crewSetMain(this.dataset.op)" data-op="'+esc(opId)+'">'+svgIcon('star')+'</button>' : '')+
         (!isMain ? '<button class="inv-act inv-act--del" title="Прибрати з екіпажу" onclick="crewRemoveMember(this.dataset.op)" data-op="'+esc(opId)+'">'+svgIcon('x')+'</button>' : '')+
       '</div>';
@@ -3924,7 +3928,7 @@ function renderLinksMain() {
 
   h += '<div class="table-wrap"><table class="data-table">'+
     '<thead><tr><th>ID</th><th>Позивний / Ім\'я</th><th>Роль</th><th>Статус</th><th>Призначене обладнання</th></tr></thead>'+
-    '<tbody>'+(rows || '<tr><td colspan="5" class="empty">Склад порожній'+(isAdminUser()?' — додай членів кнопкою 👤⁺ у режимі редагування':'')+'</td></tr>')+'</tbody></table></div>';
+    '<tbody>'+(rows || '<tr><td colspan="5" class="empty">Склад порожній'+(canEditCrews()?' — додай членів кнопкою 👤⁺ у режимі редагування':'')+'</td></tr>')+'</tbody></table></div>';
 
   return h;
 }
@@ -4066,7 +4070,7 @@ function renderCrewFreqPanel() {
   //   він і може редагувати; у боковому переліку свій не вибирається)
   // - інакше: боковий перелік → вибраний у тулбарі (links) → свій
   var selId;
-  if (editOn && !isAdminUser() && S.auth && S.auth.crewId) {
+  if (editOn && !canEditCrews() && S.auth && S.auth.crewId) {
     selId = S.auth.crewId;
   } else {
     selId = sideCrewSel || (isLinks ? crewPageSel : '') || (S.auth && S.auth.crewId) || '';
@@ -4284,12 +4288,12 @@ function crewAddMemberModal() {
   if (!list.length) { toast('⚠ Немає вільних осіб — додай персонал у налаштуваннях', true); return; }
   var opts = list.map(function(p){
     var locked = p.crewId && p.crewId !== cr.id;
-    return '<option value="'+esc(p.id)+'"'+((locked && !isAdminUser())?' disabled':'')+'>'+
+    return '<option value="'+esc(p.id)+'"'+((locked && !canEditCrews())?' disabled':'')+'>'+
       esc(p.callsign)+(p.name?' ('+esc(p.name)+')':'')+(locked?' 🔒 '+esc(p.crewName||p.crewId):'')+'</option>';
   }).join('');
   openModal('➕ Член екіпажу → '+esc(cr.crewName || cr.id),
     '<div class="f"><label>Особа</label><select id="cmSel">'+opts+'</select>'+
-    '<div class="hint">🔒 — особа в іншому екіпажі'+(isAdminUser()?' (адмін може перевести)':' (переводить адмін)')+'</div></div>'+
+    '<div class="hint">🔒 — особа в іншому екіпажі'+(canEditCrews()?' (можна перевести)':' (переводить адмін)')+'</div></div>'+
     '<button class="btn btn-green" id="cmBtn" onclick="crewPickMember()">➕ Додати</button>'
   );
 }
@@ -4307,7 +4311,7 @@ function crewPickMember() {
     closeModal();
   }
   if (p.crewId && p.crewId !== cr.id) {
-    if (!isAdminUser()) { toast('⚠ '+p.callsign+' в іншому екіпажі — переводить адмін', true); if (btn){btn.disabled=false;btn.textContent='➕ Додати';} return; }
+    if (!canEditCrews()) { toast('⚠ '+p.callsign+' в іншому екіпажі — переводить адмін', true); if (btn){btn.disabled=false;btn.textContent='➕ Додати';} return; }
     if (p.isMain) { toast('⚠ '+p.callsign+' — головний екіпажу '+(p.crewName||p.crewId)+'. Спочатку передай там головного.', true); if (btn){btn.disabled=false;btn.textContent='➕ Додати';} return; }
     if (!confirm('🔒 '+p.callsign+' в екіпажі '+(p.crewName||p.crewId)+'.\nПеревести в '+(cr.crewName||cr.id)+'?')) { if (btn){btn.disabled=false;btn.textContent='➕ Додати';} return; }
     var oc = crewById(p.crewId);

@@ -1361,18 +1361,20 @@ function acceptItem(token, itemId, accepted, reason) {
 }
 
 // Видалити предмет з обліку через веб-застосунок — тільки адмін
+// Видалення з обліку прибрано з PWA (тільки списання через статус) —
+// функція лишається для sidebar-форм таблиці, у whitelist API її немає.
 function webDeleteInventoryItem(id, reason) {
   const email = apiUserEmail_() || '';
   if (!isAdmin(email)) throw new Error('Видаляти предмети може тільки адміністратор');
   return deleteItemsByIds([id], reason || 'Видалено через веб-застосунок');
 }
 
-// Створити предмети інвентаря з веб-застосунку (тільки адмін).
+// Створити предмети інвентаря з веб-застосунку (адмін або право «Інвентар»).
 // qty 1–20 — як у sidebar-формі AddForm. Повертає масив {fullId, shortId, name}
 // для показу наклейок.
 function webAddInventoryItem(d) {
   const email = apiUserEmail_() || '';
-  if (!isAdmin(email)) throw new Error('Додавати предмети може тільки адміністратор');
+  if (!isAdmin(email) && !apiRight_('inv')) throw new Error('Потрібне право «Інвентар» або права адміністратора');
   if (!d || !String(d.name || '').trim()) throw new Error('Вкажи назву предмета');
   if (!d.type) throw new Error('Вкажи тип предмета');
   return addItemsFromForm({
@@ -1389,7 +1391,7 @@ function webAddInventoryItem(d) {
 // Змінити закріплення предмета (тільки адмін), із записом у Журнал руху
 function webSetItemAssignment(id, assignment) {
   const email = apiUserEmail_() || '';
-  if (!isAdmin(email)) throw new Error('Змінювати закріплення може тільки адміністратор');
+  if (!isAdmin(email) && !apiRight_('inv')) throw new Error('Потрібне право «Інвентар» або права адміністратора');
   if (ASSIGNMENT_LIST.indexOf(assignment) === -1) throw new Error('Невідоме закріплення: ' + assignment);
   const ss  = SpreadsheetApp.getActiveSpreadsheet();
   const inv = getSheet(ss, 'Інвентар');
@@ -1410,10 +1412,11 @@ function webSetItemAssignment(id, assignment) {
   return { id: id, assignment: assignment };
 }
 
-// ── Примітки з веб-застосунку (адмін або головний екіпажу) ──
+// ── Примітки з веб-застосунку (адмін, право «Інвентар» або головний екіпажу) ──
 function webNoteGuard_(token) {
   const email = apiUserEmail_() || '';
   if (isAdmin(email)) return;
+  if (apiRight_('inv')) return;
   if (token) {
     const p = authSession(token);
     if (p) {
@@ -1650,7 +1653,7 @@ function webUpdateLossRecord(d, token) {
 // ── Витратники з веб-застосунку (редагування — тільки адмін) ──
 function webConsGuard_() {
   const email = apiUserEmail_() || '';
-  if (!isAdmin(email)) throw new Error('Редагувати витратники може тільки адміністратор');
+  if (!isAdmin(email) && !apiRight_('inv')) throw new Error('Потрібне право «Інвентар» або права адміністратора');
 }
 function webUpdateConsumable(data) { webConsGuard_(); return updateConsumable(data); }
 function webAddConsumable(data) { webConsGuard_(); return addConsumableFromForm(data); }
@@ -3819,7 +3822,8 @@ function updateCrew(crewId, data, token) {
     const p = authSession(token);
     if (!p) throw new Error('Сесія завершилась — увійди знову');
     const crew = findPersonCrew(p.id);
-    if (!crew || crew.crewId !== crewId || !crew.isMain) {
+    // Головний — свій екіпаж; право «Екіпажі» — будь-який
+    if (!apiRight_('crew') && (!crew || crew.crewId !== crewId || !crew.isMain)) {
       throw new Error('Змінювати екіпаж може тільки його головний відповідальний');
     }
   }
@@ -4140,10 +4144,13 @@ function protectSinotrackSheets() {
 // ============================================================
 // ПЕРСОНАЛ ТА АВТОРИЗАЦІЯ (відповідальні особи)
 // ============================================================
-// Аркуш «Персонал»: ID | Позивний | Ім'я | Роль | Статус | Пароль (сіль$хеш) | _TS | Адмін
+// Аркуш «Персонал»: ID | Позивний | Ім'я | Роль | Статус | Пароль (сіль$хеш) | _TS | Адмін | Інвентар | Екіпажі
 // Ролі — декоративні мітки; права визначає членство в екіпажі (головний/додатковий).
 // «Адмін» (чекбокс) — права адміністратора у PWA; ставиться адміном у застосунку або в аркуші.
-const PERSONNEL_COLS = 8;
+// «Інвентар» / «Екіпажі» (чекбокси) — гранульовані права: редагування інвентарю
+// (статуси, додавання, закріплення, примітки, витратники) та редагування екіпажів
+// (склад, створення, особовий склад). Роздає тільки адмін; адмін має всі права.
+const PERSONNEL_COLS = 10;
 const PERSON_ROLES = ['Пілот','Штурман','Технік','Сапер','Оператор','Командир'];
 
 function ensurePersonnelSheet(ss) {
@@ -4156,24 +4163,28 @@ function ensurePersonnelSheet(ss) {
       .setHorizontalAlignment('center').setVerticalAlignment('middle');
     sheet.setRowHeight(1, 38);
     sheet.getRange(2, 1, 1, PERSONNEL_COLS)
-      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін']])
+      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін','Інвентар','Екіпажі']])
       .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
     sheet.setFrozenRows(2);
-    [90, 140, 180, 110, 110, 10, 10, 70].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+    [90, 140, 180, 110, 110, 10, 10, 70, 90, 90].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
     try { sheet.hideColumns(6, 2); } catch(e) {} // пароль і _TS приховані
   }
-  // Міграція: колонка «Адмін» (чекбокс) для аркушів, створених раніше
-  if (String(sheet.getRange(2, 8).getValue()).trim() !== 'Адмін') {
-    sheet.getRange(2, 8).setValue('Адмін')
+  // Міграція: чекбокс-колонки для аркушів, створених раніше
+  [[8, 'Адмін', 70], [9, 'Інвентар', 90], [10, 'Екіпажі', 90]].forEach(([col, title, width]) => {
+    if (String(sheet.getRange(2, col).getValue()).trim() === title) return;
+    sheet.getRange(2, col).setValue(title)
       .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
-    sheet.setColumnWidth(8, 70);
+    sheet.setColumnWidth(col, width);
     try {
-      sheet.getRange(3, 8, 300, 1).setDataValidation(
+      sheet.getRange(3, col, 300, 1).setDataValidation(
         SpreadsheetApp.newDataValidation().requireCheckbox().build());
     } catch(e) {}
-  }
+  });
   return sheet;
 }
+
+// Значення чекбокса з аркуша (true або текстові варіанти)
+function chk_(v) { return v === true || /^(true|так|✓|1)$/i.test(String(v || '').trim()); }
 
 function makeSalt() { return Utilities.getUuid().replace(/-/g, '').slice(0, 12); }
 function hashPassword(pw, salt) {
@@ -4188,7 +4199,7 @@ function readPersonnel() {
     .map((r, i) => ({ row: 3 + i,
       id: String(r[0]).trim(), callsign: String(r[1]).trim(), name: String(r[2]).trim(),
       role: String(r[3]).trim(), status: String(r[4]).trim(), pass: String(r[5]).trim(),
-      admin: r[7] === true || /^(true|так|✓|1)$/i.test(String(r[7] || '').trim()) }))
+      admin: chk_(r[7]), rightInv: chk_(r[8]), rightCrew: chk_(r[9]) }))
     .filter(p => p.id && p.status !== 'Видалений');
 }
 
@@ -4216,7 +4227,11 @@ function personPublic(p) {
   const crew = findPersonCrew(p.id);
   return { id: p.id, callsign: p.callsign, name: p.name, role: p.role, status: p.status,
     crewId: crew ? crew.crewId : '', crewName: crew ? crew.crewName : '',
-    isMain: !!(crew && crew.isMain), admin: !!p.admin };
+    isMain: !!(crew && crew.isMain), admin: !!p.admin,
+    // Гранульовані права: rightInv/rightCrew — чекбокси, canInv/canCrew — фактичні
+    // права (адмін має все). Фронтенд дивиться на canInv/canCrew.
+    rightInv: !!p.rightInv, rightCrew: !!p.rightCrew,
+    canInv: !!(p.admin || p.rightInv), canCrew: !!(p.admin || p.rightCrew) };
 }
 
 // Список персоналу для сторінки екіпажів (доступний після входу або адміну)
@@ -4318,6 +4333,7 @@ function setPersonRole(opId, role, token) {
     const p = authSession(token);
     if (!p) throw new Error('Сесія завершилась — увійди знову');
     if (p.id === opId) allowed = true;
+    else if (apiRight_('crew')) allowed = true;
     else {
       const crew = findPersonCrew(p.id);
       const tCrew = findPersonCrew(opId);
@@ -4343,6 +4359,7 @@ function setPersonStatus(opId, status, token) {
     const p = authSession(token);
     if (!p) throw new Error('Сесія завершилась — увійди знову');
     if (p.id === opId) allowed = true;
+    else if (apiRight_('crew')) allowed = true;
     else {
       const crew = findPersonCrew(p.id);
       const tCrew = findPersonCrew(opId);
@@ -4358,10 +4375,23 @@ function setPersonStatus(opId, status, token) {
   return { id: opId, status: status };
 }
 
-// ── Адміністрування персоналу (тільки адмін за Google-акаунтом) ──
+// ── Гранульовані права API-користувача ──
+// 'inv' — редагувати інвентар/витратники, 'crew' — редагувати екіпажі/О.С.
+// Діє лише в API-контексті (PWA): __API_CTX ставить doPost в ApiEndpoint.gs.
+// У sidebar-контексті (Google-акаунт) прав немає — там вирішує isAdmin(email).
+function apiRight_(kind) {
+  if (typeof __API_CTX === 'undefined' || !__API_CTX || !__API_CTX.person) return false;
+  const p = __API_CTX.person;
+  if (p.admin) return true;
+  return kind === 'inv' ? !!p.rightInv : kind === 'crew' ? !!p.rightCrew : false;
+}
+
+// ── Адміністрування персоналу ──
+// Адмін — усе; право «Екіпажі» — керування О.С. без ескалації (див. adminSavePerson).
 function adminGuard() {
   const email = apiUserEmail_() || '';
-  if (!isAdmin(email)) throw new Error('Тільки для адміністратора');
+  if (isAdmin(email) || apiRight_('crew')) return;
+  throw new Error('Потрібне право «Екіпажі» або права адміністратора');
 }
 
 function adminListPersonnel() {
@@ -4369,15 +4399,21 @@ function adminListPersonnel() {
   return readPersonnel().map(p => personPublic(p));
 }
 
-// Створити/оновити особу. d = {id?, callsign, name, role, status, newPassword?}
+// Створити/оновити особу. d = {id?, callsign, name, role, status, newPassword?,
+// admin?, rightInv?, rightCrew?}. Захист від ескалації: право «Екіпажі» дозволяє
+// вести О.С., але НЕ роздавати права/адмінку й НЕ чіпати адміністраторів —
+// це може тільки справжній адмін.
 function adminSavePerson(d) {
   adminGuard();
+  const fullAdmin = isAdmin(apiUserEmail_() || '');
+  if (!fullAdmin) { delete d.admin; delete d.rightInv; delete d.rightCrew; }
   return withScriptLock(function() {
     const sheet = ensurePersonnelSheet();
     const list = readPersonnel();
     if (d.id) {
       const p = list.find(x => x.id === d.id);
       if (!p) throw new Error('Не знайдено: ' + d.id);
+      if (p.admin && !fullAdmin) throw new Error('Редагувати адміністратора може тільки адмін');
       if (d.callsign !== undefined) {
         const cs = String(d.callsign).trim();
         if (!cs) throw new Error('Позивний не може бути порожнім');
@@ -4389,6 +4425,8 @@ function adminSavePerson(d) {
       if (d.role   !== undefined) sheet.getRange(p.row, 4).setValue(d.role);
       if (d.status !== undefined) sheet.getRange(p.row, 5).setValue(d.status);
       if (d.admin  !== undefined) sheet.getRange(p.row, 8).setValue(!!d.admin);
+      if (d.rightInv  !== undefined) sheet.getRange(p.row, 9).setValue(!!d.rightInv);
+      if (d.rightCrew !== undefined) sheet.getRange(p.row, 10).setValue(!!d.rightCrew);
       if (d.newPassword) {
         const salt = makeSalt();
         sheet.getRange(p.row, 6).setValue(salt + '$' + hashPassword(d.newPassword, salt));
@@ -4410,7 +4448,7 @@ function adminSavePerson(d) {
     const newId = 'OP-' + String(maxN + 1).padStart(3, '0');
     const salt = makeSalt();
     sheet.appendRow([newId, cs, d.name || '', d.role || '', d.status || 'Активний',
-      salt + '$' + hashPassword(d.newPassword, salt), nowTS(), !!d.admin]);
+      salt + '$' + hashPassword(d.newPassword, salt), nowTS(), !!d.admin, !!d.rightInv, !!d.rightCrew]);
     return { id: newId };
   });
 }
@@ -4421,6 +4459,7 @@ function adminDeletePerson(id) {
   const sheet = ensurePersonnelSheet();
   const p = readPersonnel().find(x => x.id === id);
   if (!p) throw new Error('Не знайдено: ' + id);
+  if (p.admin && !isAdmin(apiUserEmail_() || '')) throw new Error('Видалити адміністратора може тільки адмін');
   sheet.getRange(p.row, 5).setValue('Видалений');
   sheet.getRange(p.row, 7).setValue(nowTS());
   return { ok: true };
