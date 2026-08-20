@@ -1500,7 +1500,7 @@ function openNewFlightModal() {
   }
   var crewOpts = crews.map(function(c){
     var dl = c.drones ? c.drones.split('|').filter(Boolean) : [];
-    return '<option value="'+esc(c.id)+'">'+esc(c.crewName || c.id)+(c.bind?' ['+esc(c.bind)+']':'')+' — '+esc(dl.join(', '))+'</option>';
+    return '<option value="'+esc(c.id)+'">'+esc(c.crewName || c.id)+' — '+esc(dl.join(', '))+'</option>';
   }).join('');
   var sysOpts = VIDEO_SYSTEMS.map(function(s){ return '<option value="'+s+'">'+s+'</option>'; }).join('');
   openModal(
@@ -2623,7 +2623,7 @@ function renderInventory(c) {
       invCrewSel = crews.length ? crews[0].id : '';
     }
     var crewOpts = crews.map(function(cr){
-      return '<option value="'+esc(cr.id)+'"'+(cr.id===invCrewSel?' selected':'')+'>'+esc(cr.crewName || cr.id)+(cr.bind?' ['+esc(cr.bind)+']':'')+'</option>';
+      return '<option value="'+esc(cr.id)+'"'+(cr.id===invCrewSel?' selected':'')+'>'+esc(cr.crewName || cr.id)+'</option>';
     }).join('');
     // Жовтий квадрат «+» — як на сторінці екіпажів: лише в режимі редагування
     var addDroneBtn = (invMode==='edit' && canEdit && canEditInv() && invCrewSel)
@@ -3440,7 +3440,7 @@ function invAddToCrew(id) {
   var opts = crews.map(function(c){
     var dl = c.drones ? c.drones.split('|').filter(Boolean) : [];
     var inCrew = cur && cur.id === c.id;
-    return '<option value="'+esc(c.id)+'"'+(inCrew?' disabled':'')+'>'+esc(c.id)+(c.bind?' ['+esc(c.bind)+']':'')+' — '+dl.length+' борт.'+(inCrew?' (вже там)':'')+'</option>';
+    return '<option value="'+esc(c.id)+'"'+(inCrew?' disabled':'')+'>'+esc(c.id)+' — '+dl.length+' борт.'+(inCrew?' (вже там)':'')+'</option>';
   }).join('');
   openModal('👥 '+esc(id)+' → екіпаж',
     '<div class="f"><label>Екіпаж</label><select id="acCrew">'+opts+'</select></div>'+
