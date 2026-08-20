@@ -390,6 +390,8 @@ textarea { height: 54px; resize: vertical; }
 .home-tile:hover { background: var(--panel-3); border-color: var(--accent); }
 .home-tile.stub { opacity: .55; border-left-color: var(--line-2); cursor: default; }
 .home-tile-icon { font-size: 22px; }
+/* Для SVG-іконок (емодзі колір ігнорують, а векторна бере currentColor) */
+.home-tile-icon.icon-accent { color: var(--accent); line-height: 1; }
 .home-tile-name { font-family: var(--font-data); font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text); margin-top: 8px; }
 .home-tile-sub { font-family: var(--font-data); font-size: 10px; color: var(--dim); margin-top: 3px; }
 
@@ -550,6 +552,7 @@ textarea { height: 54px; resize: vertical; }
         <button class="nav-item" data-view="trackers" onclick="setView('trackers')"><span class="nav-icon">📡</span>GPS трекери</button>
         <button class="nav-item" data-view="inventory" onclick="setView('inventory')"><span class="nav-icon">📦</span>Інвентар</button>
         <button class="nav-item" data-view="crews" onclick="setView('crews')"><span class="nav-icon">👥</span>Екіпаж</button>
+        <button class="nav-item" data-view="info" onclick="setView('info')"><span class="nav-icon" style="color:var(--accent)">&#9432;</span>Інформація</button>
       </nav>
       <div class="nav" id="navLogoutWrap" style="display:none;margin-top:auto;border-top:1px solid var(--line);padding:8px 0 4px">
         <button class="nav-item" id="navLogout" style="color:var(--red)" onclick="doLogout()"><span class="nav-icon">⎋</span>Вихід</button>
@@ -608,6 +611,7 @@ function isAdminUser() { return !!(S.invCaps && S.invCaps.admin); }
 // Гранульовані права з аркуша «Персонал» (роздає адмін; адмін має все)
 function canEditInv()   { return isAdminUser() || !!(S.auth && S.auth.canInv); }
 function canEditCrews() { return isAdminUser() || !!(S.auth && S.auth.canCrew); }
+function canViewInfo()  { return isAdminUser() || !!(S.auth && S.auth.canInfo); }
 // Токен для привілейованих викликів: адмін працює без токена (за Google-акаунтом)
 function crewToken() { return (!isAdminUser() && S.auth) ? authToken() : ''; }
 function canManageCrew(crewId) { return canEditCrews() || !!(S.auth && S.auth.isMain && S.auth.crewId === crewId); }
@@ -623,7 +627,11 @@ var SVG_ICONS = {
   trash: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/><path d="M10 11v6M14 11v6"/></svg>',
   personAdd: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.4 3.4-5 6.5-5s5.7 1.6 6.5 5"/><path d="M19 8v6M16 11h6"/></svg>',
   power: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><path d="M12 2v10"/></svg>',
-  gear: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+  gear: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  // Мала «i»: крапка + ніжка з підставкою, як на класичному знаку інформації.
+  // Розмір у em і currentColor — щоб бралися розмір і колір з місця вставки
+  // (у плитці головної це акцентний жовтий, як і в решти іконок).
+  info: '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><circle cx="12" cy="4.2" r="2.7"/><path d="M8.5 9.3h6.2v9.8h2v3.1H7.3v-3.1h2v-6.7h-1.8z"/></svg>'
 };
 function svgIcon(n) { return SVG_ICONS[n] || ''; }
 /* ── Режим транспорту ─────────────────────────────────────────
@@ -664,7 +672,7 @@ var DEMO_DATA = {
   getInventoryCaps: { mode:'full', admin:true, email:'pilot@unit.mil',
     statuses:['Робочий','Ремонт','На перевірці','Несправний','Втрачений','Списаний','Резерв'] },
   getPersonnelList: [
-    {id:'OP-001', callsign:'Яструб', name:'Олексій', role:'Командир', status:'Активний', crewId:'CRW-001', crewName:'АЛЬФА', isMain:true, admin:true, canInv:true, canCrew:true},
+    {id:'OP-001', callsign:'Яструб', name:'Олексій', role:'Командир', status:'Активний', crewId:'CRW-001', crewName:'АЛЬФА', isMain:true, admin:true, canInv:true, canCrew:true, canInfo:true},
     {id:'OP-002', callsign:'Сокіл',  name:'Іван',    role:'Пілот',    status:'Активний', crewId:'CRW-001', crewName:'АЛЬФА', isMain:false, rightCrew:true, canCrew:true},
     {id:'OP-003', callsign:'Ворон',  name:'Сергій',  role:'Технік',   status:'Відпочинок', crewId:'', crewName:'', isMain:false, rightInv:true, canInv:true},
     {id:'OP-004', callsign:'Грім',   name:'Дмитро',  role:'Штурман',  status:'Активний', crewId:'CRW-002', crewName:'БРАВО', isMain:true}
@@ -749,6 +757,29 @@ var DEMO_DATA = {
     {id:'CONS-004', name:'Термозбіжка 8мм', category:'Електрика', compat:'FPV, GNST', trackType:'Кількісний', qty:45, minQty:15, status:'Мало', note:''}
   ],
   getCompatOptions: ['FPV', 'STNG', 'WING', 'RMT', 'TX', 'GNST', 'TRK', 'ANT', 'VRX', 'GGL', 'PC', 'Універсальне'],
+  // Демо-сховище «Інформації»: дві теки й кілька файлів, щоб розділ можна
+  // було подивитись без справжньої теки Drive.
+  infoListFolder: function(id){
+    var tree = {
+      '': { path:[{id:'', name:'Документи підрозділу'}],
+            folders:[{id:'F1', name:'Інструкції'}, {id:'F2', name:'Навчання'}],
+            files:[{id:'D0', name:'Пам\'ятка оператора.pdf', kind:'pdf', mime:'application/pdf', size:184320, date:'2026-08-02', tooBig:false}] },
+      'F1': { path:[{id:'', name:'Документи підрозділу'},{id:'F1', name:'Інструкції'}],
+            folders:[], files:[
+              {id:'D1', name:'Налаштування VTX.pdf', kind:'pdf', mime:'application/pdf', size:520192, date:'2026-07-19', tooBig:false},
+              {id:'D2', name:'Схема підключення.png', kind:'image', mime:'image/png', size:96000, date:'2026-07-21', tooBig:false}] },
+      'F2': { path:[{id:'', name:'Документи підрозділу'},{id:'F2', name:'Навчання'}],
+            folders:[], files:[
+              {id:'D3', name:'Розбір вильоту.mp4', kind:'video', mime:'video/mp4', size:41943040, date:'2026-08-11', tooBig:true}] }
+    };
+    var t = tree[String(id||'')] || tree[''];
+    return { configured:true, folderId:String(id||''), path:t.path, folders:t.folders, files:t.files };
+  },
+  infoGetFile: function(id){
+    var txt = 'Демо-файл ' + id + '\nСправжній вміст приходить з Google Drive.';
+    return { name:'demo-'+id+'.txt', mime:'text/plain', kind:'text', size:txt.length,
+             data: btoa(unescape(encodeURIComponent(txt))) };
+  },
   webUpdateConsumable: function(d){ return { id: d.id, status: d.status || 'Достатньо' }; },
   webAddConsumable: function(d){ return 'CONS-005'; },
   webWriteOffConsumable: function(d){ return { id: d.id, written: d.qty, left: 10, status: 'Мало' }; },
@@ -1087,6 +1118,7 @@ function renderView() {
   else if (S.view === 'trackers') renderTrackers(c);
   else if (S.view === 'inventory') renderInventory(c);
   else if (S.view === 'crews') renderCrews(c);
+  else if (S.view === 'info') renderInfo(c);
   else if (S.view === 'settings') renderSettings(c);
   _lastRenderedView = S.view;
   c.scrollTop = keepScroll;
@@ -1184,7 +1216,7 @@ function renderHome(c) {
     { icon:'📦', name:'Інвентар', sub:S.items.length+' одиниць', view:'inventory' },
     { icon:'👥', name:'Управління екіпажем', sub:(isAdminUser()||S.auth ? activeCrews().length+' активних' : 'потрібен вхід'), view:'crews' },
     { icon:'🗺️', name:'Управління сектором', sub:'скоро', stub:true },
-    { icon:'📚', name:'Навчальна інформація', sub:'скоро', stub:true }
+    { icon:svgIcon('info'), name:'Інформація', sub:'документи підрозділу', view:'info', iconAccent:true }
   ];
   c.innerHTML = '<div class="view-title">Wild Hornets <span class="accent">Tactical OS</span></div>'+
     '<div class="view-sub">'+(S.auth
@@ -1193,12 +1225,132 @@ function renderHome(c) {
     '<div class="home-grid">'+
     tiles.map(function(t){
       return '<div class="home-tile'+(t.stub?' stub':'')+'"'+(t.stub?'':' onclick="setView(\''+t.view+'\')"')+'>'+
-        '<div class="home-tile-icon">'+t.icon+'</div>'+
+        '<div class="home-tile-icon'+(t.iconAccent?' icon-accent':'')+'">'+t.icon+'</div>'+
         '<div><div class="home-tile-name">'+t.name+'</div>'+
         '<div class="home-tile-sub">'+esc(t.sub)+'</div></div>'+
       '</div>';
     }).join('')+
     '</div>';
+}
+
+/* ═══════════ ВИД: ІНФОРМАЦІЯ ═══════════ */
+// Документи підрозділу зі спільної теки Drive. Доступ — право «Інформація»
+// в аркуші «Персонал»: Drive операторів не знає (вони заходять за позивним),
+// тому розмежування живе в нашому коді, а не в шаренні Drive. З тієї ж
+// причини файл відкривається вмістом через API, а не посиланням на Drive.
+var infoState = { folderId: '', data: null, loading: false, err: '' };
+
+function infoIcon(kind) {
+  return kind === 'image' ? '🖼' : kind === 'pdf' ? '📕' : kind === 'video' ? '🎞'
+       : kind === 'text' ? '📄' : kind === 'gdoc' ? '📘' : '📎';
+}
+function infoSize(n) {
+  if (!n) return '';
+  if (n < 1024) return n + ' Б';
+  if (n < 1024 * 1024) return Math.round(n / 1024) + ' КБ';
+  return (n / 1024 / 1024).toFixed(1) + ' МБ';
+}
+
+function infoOpenFolder(id) {
+  infoState.folderId = id || '';
+  infoState.data = null;
+  infoLoad();
+}
+
+function infoLoad() {
+  if (infoState.loading) return;
+  infoState.loading = true; infoState.err = '';
+  renderView();
+  rpc('infoListFolder', [infoState.folderId], function(res){
+    infoState.loading = false;
+    infoState.data = res || null;
+    renderView();
+  }, function(e){
+    infoState.loading = false;
+    infoState.err = e.message || 'Помилка';
+    renderView();
+  });
+}
+
+function renderInfo(c) {
+  var head = '<div class="view-title">Інформація <span class="accent">підрозділу</span></div>'+
+    '<div class="view-sub">Документи, інструкції, матеріали навчання</div>';
+
+  if (!canViewInfo()) {
+    c.innerHTML = head + '<div class="side-panel" style="margin-top:14px"><div class="side-panel-body">'+
+      '<div class="empty">Немає доступу до цього розділу.</div>'+
+      '<div class="hint" style="margin-top:8px">Право «Інформація» видає адміністратор у розділі «Екіпаж» → особовий склад.</div>'+
+    '</div></div>';
+    return;
+  }
+
+  if (!infoState.data && !infoState.loading && !infoState.err) { infoLoad(); }
+
+  var body;
+  if (infoState.loading) {
+    body = '<div class="loading-view"><span class="pulse-dot"></span>Завантаження…</div>';
+  } else if (infoState.err) {
+    body = '<div class="empty">❌ '+esc(infoState.err)+'</div>';
+  } else if (infoState.data && infoState.data.configured === false) {
+    body = '<div class="empty">Сховище ще не під\'єднане.</div>'+
+      '<div class="hint" style="margin-top:8px">Адміністратору: створи спільну теку на Google Drive і впиши її ID у INFO_ROOT_ID (файл Code.gs).</div>';
+  } else if (infoState.data) {
+    var d = infoState.data;
+    var crumbs = (d.path || []).map(function(p, i, arr){
+      var last = i === arr.length - 1;
+      return last ? '<b>'+esc(p.name)+'</b>'
+                  : '<a href="#" onclick="infoOpenFolder(\''+esc(p.id)+'\');return false;" style="color:var(--blue-soft)">'+esc(p.name)+'</a>';
+    }).join(' <span class="hint">/</span> ');
+
+    var rows = '';
+    (d.folders || []).forEach(function(f){
+      rows += '<div class="member-row" style="cursor:pointer" onclick="infoOpenFolder(\''+esc(f.id)+'\')">'+
+        '<div style="flex:1"><div class="member-cs">📁 <b>'+esc(f.name)+'</b></div></div>'+
+        '<div class="hint">тека</div></div>';
+    });
+    (d.files || []).forEach(function(f){
+      rows += '<div class="member-row">'+
+        '<div style="flex:1"><div class="member-cs">'+infoIcon(f.kind)+' '+esc(f.name)+'</div>'+
+        '<div class="member-name">'+esc(f.date)+(f.size?' · '+infoSize(f.size):'')+'</div></div>'+
+        (f.tooBig
+          ? '<div class="hint">завеликий</div>'
+          : '<div class="inv-acts"><button class="inv-act" title="Відкрити" onclick="infoOpen(\''+esc(f.id)+'\', this)">↗</button></div>')+
+      '</div>';
+    });
+    if (!rows) rows = '<div class="empty">Тека порожня</div>';
+
+    body = (crumbs ? '<div class="hint" style="margin-bottom:8px">'+crumbs+'</div>' : '') + rows;
+  } else {
+    body = '<div class="empty">—</div>';
+  }
+
+  c.innerHTML = head + '<div class="side-panel" style="margin-top:14px"><div class="side-panel-body">'+body+'</div></div>';
+}
+
+// Відкриття файлу: бекенд віддає вміст (base64) після перевірки прав,
+// далі робимо blob і відкриваємо у новій вкладці — Drive-посилання
+// в людини без Google-доступу не спрацювало б.
+function infoOpen(fileId, btn) {
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳'; }
+  rpc('infoGetFile', [fileId], function(res){
+    if (btn) { btn.disabled = false; btn.textContent = '↗'; }
+    if (!res || !res.data) { toast('❌ Порожня відповідь', true); return; }
+    try {
+      var bin = atob(res.data), len = bin.length, bytes = new Uint8Array(len);
+      for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([bytes], { type: res.mime || 'application/octet-stream' }));
+      var w = window.open(url, '_blank');
+      if (!w) { // мобільні часто блокують нове вікно — тоді качаємо
+        var a = document.createElement('a');
+        a.href = url; a.download = res.name || 'file';
+        document.body.appendChild(a); a.click(); a.remove();
+      }
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+    } catch(e) { toast('❌ '+e.message, true); }
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '↗'; }
+    toast('❌ '+e.message, true);
+  });
 }
 
 /* ═══════════ ВИД: НАЛАШТУВАННЯ ═══════════ */
@@ -1289,6 +1441,7 @@ function admRenderPersonnel() {
         (p.admin?' <span class="badge-main" style="background:var(--accent);color:var(--on-accent)">🛡 Адмін</span>':'')+
         (!p.admin && p.rightInv?' <span class="badge-main">📦 Інвентар</span>':'')+
         (!p.admin && p.rightCrew?' <span class="badge-main">👥 Екіпажі</span>':'')+
+        (!p.admin && p.rightInfo?' <span class="badge-main">ⓘ Інформація</span>':'')+
         (p.isMain?' <span class="badge-main">Головний</span>':'')+'</div>'+
       '<div class="member-name">'+esc(p.name||'')+' · '+esc(p.role||'без ролі')+' · '+esc(p.status||'')+
         (p.crewId ? ' · '+esc(p.crewName || p.crewId) : ' · без екіпажу')+'</div></div>'+
@@ -1325,7 +1478,10 @@ function admEditPerson(id) {
           '<span>📦 Редагувати інвентар (статуси, додавання, закріплення, витратники)</span></label></div>'+
         '<div class="f"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0">'+
           '<input type="checkbox" id="apRightCrew" style="width:auto"'+(p && p.rightCrew?' checked':'')+'>'+
-          '<span>👥 Редагувати екіпажі (склад, створення, особовий склад)</span></label>'+
+          '<span>👥 Редагувати екіпажі (склад, створення, особовий склад)</span></label></div>'+
+        '<div class="f"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0">'+
+          '<input type="checkbox" id="apRightInfo" style="width:auto"'+(p && p.rightInfo?' checked':'')+'>'+
+          '<span>ⓘ Доступ до розділу «Інформація» (документи підрозділу)</span></label>'+
         '<div class="hint">Адмін має всі права автоматично — окремі чекбокси йому не потрібні</div></div>'
       : '')+
     '<button class="btn btn-green" id="apBtn" onclick="admSavePerson(\''+esc(id||'')+'\')">💾 Зберегти</button>'
@@ -1344,6 +1500,7 @@ function admSavePerson(id) {
     d.admin = !!($('apAdmin') && $('apAdmin').checked);
     d.rightInv = !!($('apRightInv') && $('apRightInv').checked);
     d.rightCrew = !!($('apRightCrew') && $('apRightCrew').checked);
+    d.rightInfo = !!($('apRightInfo') && $('apRightInfo').checked);
   }
   if (id) d.id = id;
   var pw = $('apPassword').value;

@@ -4151,13 +4151,13 @@ function protectSinotrackSheets() {
 // ============================================================
 // ПЕРСОНАЛ ТА АВТОРИЗАЦІЯ (відповідальні особи)
 // ============================================================
-// Аркуш «Персонал»: ID | Позивний | Ім'я | Роль | Статус | Пароль (сіль$хеш) | _TS | Адмін | Інвентар | Екіпажі
+// Аркуш «Персонал»: ID | Позивний | Ім'я | Роль | Статус | Пароль (сіль$хеш) | _TS | Адмін | Інвентар | Екіпажі | Інформація
 // Ролі — декоративні мітки; права визначає членство в екіпажі (головний/додатковий).
 // «Адмін» (чекбокс) — права адміністратора у PWA; ставиться адміном у застосунку або в аркуші.
 // «Інвентар» / «Екіпажі» (чекбокси) — гранульовані права: редагування інвентарю
 // (статуси, додавання, закріплення, примітки, витратники) та редагування екіпажів
 // (склад, створення, особовий склад). Роздає тільки адмін; адмін має всі права.
-const PERSONNEL_COLS = 10;
+const PERSONNEL_COLS = 11;
 const PERSON_ROLES = ['Пілот','Штурман','Технік','Сапер','Оператор','Командир'];
 
 function ensurePersonnelSheet(ss) {
@@ -4170,14 +4170,14 @@ function ensurePersonnelSheet(ss) {
       .setHorizontalAlignment('center').setVerticalAlignment('middle');
     sheet.setRowHeight(1, 38);
     sheet.getRange(2, 1, 1, PERSONNEL_COLS)
-      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін','Інвентар','Екіпажі']])
+      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін','Інвентар','Екіпажі','Інформація']])
       .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
     sheet.setFrozenRows(2);
-    [90, 140, 180, 110, 110, 10, 10, 70, 90, 90].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+    [90, 140, 180, 110, 110, 10, 10, 70, 90, 90, 100].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
     try { sheet.hideColumns(6, 2); } catch(e) {} // пароль і _TS приховані
   }
   // Міграція: чекбокс-колонки для аркушів, створених раніше
-  [[8, 'Адмін', 70], [9, 'Інвентар', 90], [10, 'Екіпажі', 90]].forEach(([col, title, width]) => {
+  [[8, 'Адмін', 70], [9, 'Інвентар', 90], [10, 'Екіпажі', 90], [11, 'Інформація', 100]].forEach(([col, title, width]) => {
     if (String(sheet.getRange(2, col).getValue()).trim() === title) return;
     sheet.getRange(2, col).setValue(title)
       .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
@@ -4206,7 +4206,7 @@ function readPersonnel() {
     .map((r, i) => ({ row: 3 + i,
       id: String(r[0]).trim(), callsign: String(r[1]).trim(), name: String(r[2]).trim(),
       role: String(r[3]).trim(), status: String(r[4]).trim(), pass: String(r[5]).trim(),
-      admin: chk_(r[7]), rightInv: chk_(r[8]), rightCrew: chk_(r[9]) }))
+      admin: chk_(r[7]), rightInv: chk_(r[8]), rightCrew: chk_(r[9]), rightInfo: chk_(r[10]) }))
     .filter(p => p.id && p.status !== 'Видалений');
 }
 
@@ -4237,8 +4237,9 @@ function personPublic(p) {
     isMain: !!(crew && crew.isMain), admin: !!p.admin,
     // Гранульовані права: rightInv/rightCrew — чекбокси, canInv/canCrew — фактичні
     // права (адмін має все). Фронтенд дивиться на canInv/canCrew.
-    rightInv: !!p.rightInv, rightCrew: !!p.rightCrew,
-    canInv: !!(p.admin || p.rightInv), canCrew: !!(p.admin || p.rightCrew) };
+    rightInv: !!p.rightInv, rightCrew: !!p.rightCrew, rightInfo: !!p.rightInfo,
+    canInv: !!(p.admin || p.rightInv), canCrew: !!(p.admin || p.rightCrew),
+    canInfo: !!(p.admin || p.rightInfo) };
 }
 
 // Список персоналу для сторінки екіпажів (доступний після входу або адміну)
@@ -4390,7 +4391,7 @@ function apiRight_(kind) {
   if (typeof __API_CTX === 'undefined' || !__API_CTX || !__API_CTX.person) return false;
   const p = __API_CTX.person;
   if (p.admin) return true;
-  return kind === 'inv' ? !!p.rightInv : kind === 'crew' ? !!p.rightCrew : false;
+  return kind === 'inv' ? !!p.rightInv : kind === 'crew' ? !!p.rightCrew : kind === 'info' ? !!p.rightInfo : false;
 }
 
 // ── Адміністрування персоналу ──
@@ -4413,7 +4414,7 @@ function adminListPersonnel() {
 function adminSavePerson(d) {
   adminGuard();
   const fullAdmin = isAdmin(apiUserEmail_() || '');
-  if (!fullAdmin) { delete d.admin; delete d.rightInv; delete d.rightCrew; }
+  if (!fullAdmin) { delete d.admin; delete d.rightInv; delete d.rightCrew; delete d.rightInfo; }
   return withScriptLock(function() {
     const sheet = ensurePersonnelSheet();
     const list = readPersonnel();
@@ -4434,6 +4435,7 @@ function adminSavePerson(d) {
       if (d.admin  !== undefined) sheet.getRange(p.row, 8).setValue(!!d.admin);
       if (d.rightInv  !== undefined) sheet.getRange(p.row, 9).setValue(!!d.rightInv);
       if (d.rightCrew !== undefined) sheet.getRange(p.row, 10).setValue(!!d.rightCrew);
+      if (d.rightInfo !== undefined) sheet.getRange(p.row, 11).setValue(!!d.rightInfo);
       if (d.newPassword) {
         const salt = makeSalt();
         sheet.getRange(p.row, 6).setValue(salt + '$' + hashPassword(d.newPassword, salt));
@@ -4455,7 +4457,7 @@ function adminSavePerson(d) {
     const newId = 'OP-' + String(maxN + 1).padStart(3, '0');
     const salt = makeSalt();
     sheet.appendRow([newId, cs, d.name || '', d.role || '', d.status || 'Активний',
-      salt + '$' + hashPassword(d.newPassword, salt), nowTS(), !!d.admin, !!d.rightInv, !!d.rightCrew]);
+      salt + '$' + hashPassword(d.newPassword, salt), nowTS(), !!d.admin, !!d.rightInv, !!d.rightCrew, !!d.rightInfo]);
     return { id: newId };
   });
 }
@@ -5056,4 +5058,131 @@ function addMissingSheets() {
     'Результат:\n\n' +
     added.concat(skipped).join('\n')
   );
+}
+
+// ============================================================
+// ІНФОРМАЦІЯ — ДОКУМЕНТИ ПІДРОЗДІЛУ (Google Drive)
+// ============================================================
+// Спільна тека на Drive, вміст якої показує розділ «Інформація» у PWA.
+//
+// ЯК ПРАЦЮЄ ДОСТУП. PWA задеплоєний як «Execute as: Me», тому всі звернення
+// до Drive йдуть від власника таблиці — Drive не знає операторів (вони
+// заходять за позивним, без Google-акаунтів). Отже рідне шарення Drive тут
+// нічого не розмежує: права перевіряються ТУТ, чекбоксом «Інформація» в
+// аркуші «Персонал». З тієї ж причини файл віддається вмістом через API,
+// а не посиланням: посилання в людини без Google-доступу просто не відкриється,
+// а робити теку «доступною за посиланням» — це вже витік поза застосунок.
+//
+// НАЛАШТУВАННЯ: створи теку на Drive, відкрий її і візьми ID з адреси
+//   https://drive.google.com/drive/folders/<ЦЕЙ_РЯДОК>
+// Порожній INFO_ROOT_ID — розділ показує «сховище не під'єднане».
+const INFO_ROOT_ID = '';
+
+// Стеля на віддачу файлу. Apps Script тримає відповідь у пам'яті, а base64
+// роздуває розмір на третину — тому великі відео так не віддати.
+const INFO_MAX_FILE_MB = 25;
+
+function infoAssertAccess_() {
+  // Адмін таблиці (sidebar, за Google-акаунтом) або право «Інформація» у PWA
+  if (typeof __API_CTX !== 'undefined' && __API_CTX && __API_CTX.person) {
+    if (!apiRight_('info')) throw new Error('Немає доступу до розділу «Інформація»');
+    return;
+  }
+  if (!isAdmin(apiUserEmail_())) throw new Error('Немає доступу до розділу «Інформація»');
+}
+
+// Тека має лежати всередині кореневої — інакше знаючи чужий ID можна було б
+// прочитати будь-що з Drive власника.
+function infoAssertInsideRoot_(folder) {
+  const rootId = INFO_ROOT_ID;
+  let cur = folder, hops = 0;
+  while (cur && hops < 25) {
+    if (cur.getId() === rootId) return true;
+    const parents = cur.getParents();
+    cur = parents.hasNext() ? parents.next() : null;
+    hops++;
+  }
+  throw new Error('Тека поза межами спільної теки підрозділу');
+}
+
+function infoFileKind_(mime) {
+  if (!mime) return 'file';
+  if (mime.indexOf('image/') === 0) return 'image';
+  if (mime === 'application/pdf') return 'pdf';
+  if (mime.indexOf('video/') === 0) return 'video';
+  if (mime.indexOf('text/') === 0) return 'text';
+  if (mime.indexOf('google-apps') !== -1) return 'gdoc';
+  return 'file';
+}
+
+// Вміст теки: підтеки + файли. folderId порожній — коренева тека.
+function infoListFolder(folderId) {
+  infoAssertAccess_();
+  if (!INFO_ROOT_ID) return { configured: false, folders: [], files: [] };
+
+  const id = String(folderId || '').trim() || INFO_ROOT_ID;
+  const folder = DriveApp.getFolderById(id);
+  if (id !== INFO_ROOT_ID) infoAssertInsideRoot_(folder);
+
+  const folders = [];
+  const it = folder.getFolders();
+  while (it.hasNext()) {
+    const f = it.next();
+    folders.push({ id: f.getId(), name: f.getName() });
+  }
+
+  const files = [];
+  const fit = folder.getFiles();
+  while (fit.hasNext()) {
+    const f = fit.next();
+    const size = Number(f.getSize() || 0);
+    files.push({
+      id: f.getId(), name: f.getName(), mime: f.getMimeType(),
+      kind: infoFileKind_(f.getMimeType()), size: size,
+      tooBig: size > INFO_MAX_FILE_MB * 1024 * 1024,
+      date: Utilities.formatDate(f.getLastUpdated(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    });
+  }
+
+  folders.sort((a, b) => a.name.localeCompare(b.name));
+  files.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Шлях від кореня — для «хлібних крихт» у застосунку
+  const path = [];
+  let cur = folder, hops = 0;
+  while (cur && hops < 25) {
+    path.unshift({ id: cur.getId(), name: cur.getName() });
+    if (cur.getId() === INFO_ROOT_ID) break;
+    const parents = cur.getParents();
+    cur = parents.hasNext() ? parents.next() : null;
+    hops++;
+  }
+
+  return { configured: true, folderId: id, path: path, folders: folders, files: files };
+}
+
+// Вміст файлу в base64 — застосунок відкриває його сам, без Drive-посилання.
+function infoGetFile(fileId) {
+  infoAssertAccess_();
+  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+
+  const file = DriveApp.getFileById(String(fileId));
+  const parents = file.getParents();
+  if (!parents.hasNext()) throw new Error('Файл поза спільною текою');
+  infoAssertInsideRoot_(parents.next());
+
+  const size = Number(file.getSize() || 0);
+  if (size > INFO_MAX_FILE_MB * 1024 * 1024) {
+    throw new Error('Файл завеликий для перегляду в застосунку (' +
+      Math.round(size / 1024 / 1024) + ' МБ, стеля ' + INFO_MAX_FILE_MB + ' МБ)');
+  }
+
+  const blob = file.getBlob();
+  return {
+    name: file.getName(),
+    mime: blob.getContentType(),
+    kind: infoFileKind_(blob.getContentType()),
+    size: size,
+    data: Utilities.base64Encode(blob.getBytes()),
+  };
 }

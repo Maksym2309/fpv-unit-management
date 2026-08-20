@@ -39,6 +39,8 @@ const API_FUNCTIONS = [
   'webAddInventoryItem', 'getFormData', 'getNextIdNum', 'webSetItemAssignment',
   'webSetItemNote', 'webSetTrackerNote', 'webLogStatusChange', 'getLostMapData',
   'webUpdateLossRecord',
+  // інформація (документи підрозділу) — права перевіряють самі функції
+  'infoListFolder', 'infoGetFile',
   // витратники
   'getConsumablesList', 'getCompatOptions', 'webUpdateConsumable',
   'webAddConsumable', 'webWriteOffConsumable', 'webDeleteConsumable',
