@@ -1658,6 +1658,15 @@ function crewNameOnly(idOrName) {
   var cr = crewById(s);
   return (cr && cr.crewName) ? cr.crewName : s;
 }
+// Bind-фраза для таблиці «Наші екіпажі» на карті частот.
+// Береться з S.flights (рядки екіпажів), а не з getFrequencyAnalysis —
+// бекенд її не віддає, і чіпати його заради показу не довелось.
+// Для чужих підрозділів екіпажу немає — комірка лишається порожньою.
+function crewBindCell(idOrName) {
+  var cr = crewById(String(idOrName || ''));
+  if (!cr || !cr.bind) return '<span class="hint">—</span>';
+  return '<span class="mono" style="color:var(--accent-soft)">'+esc(cr.bind)+'</span>';
+}
 // «Alfa · CRW-032» — назва + порядковий ID (як у переліку екіпажів)
 function crewDisplayHtml(idOrName) {
   var s = String(idOrName || '');
@@ -1888,9 +1897,9 @@ function renderFreq(c) {
     crewRows += '<tr><td><span class="crew-dot"></span>'+crewDisplayHtml(a.crew)+'</td>'+
       '<td><span class="crew-freq">'+esc(cc)+' ('+esc(a.freq)+')</span>'+
       (canSwitch?' <button class="vtx-btn" style="padding:1px 6px;margin-left:4px" onclick="document.getElementById(\''+swId+'\').classList.toggle(\'open\')">🎚</button>':'')+
-      '</td></tr>';
+      '</td><td>'+crewBindCell(a.crew)+'</td></tr>';
     if (canSwitch) {
-      crewRows += '<tr><td colspan="2" style="padding:0 8px"><div class="swap-menu" id="'+swId+'" style="margin:0 0 6px">';
+      crewRows += '<tr><td colspan="3" style="padding:0 8px"><div class="swap-menu" id="'+swId+'" style="margin:0 0 6px">';
       info.reserves.forEach(function(r){
         crewRows += '<button class="vtx-btn" onclick="doSwapFreq(\''+esc(a.crew)+'\',\''+esc(r)+'\')">→ '+esc(cleanCode(r))+'</button>';
       });
@@ -1899,12 +1908,13 @@ function renderFreq(c) {
   });
   reserves.forEach(function(r){
     crewRows += '<tr><td><span class="crew-dot purple"></span>'+crewDisplayHtml(r.crew)+'</td>'+
-      '<td><span class="crew-freq purple">РЕЗЕРВ '+esc(cleanCode(r.freqCode))+'</span></td></tr>';
+      '<td><span class="crew-freq purple">РЕЗЕРВ '+esc(cleanCode(r.freqCode))+'</span></td>'+
+      '<td>'+crewBindCell(r.crew)+'</td></tr>';
   });
   side += '<div class="side-panel">'+
     '<div class="side-head" onclick="togglePanel(\'crews\')"><span class="cap">👥 Наші екіпажі</span><span class="arr">'+(sidePanels.crews?'▲':'▼')+'</span></div>'+
     '<div class="side-body'+(sidePanels.crews?'':' hid')+'" style="padding:0">'+
-    (crewRows ? '<table class="crew-table"><tr><th>Позивний</th><th>Частота</th></tr>'+crewRows+'</table>' : '<div class="empty">Екіпажів немає</div>')+
+    (crewRows ? '<table class="crew-table"><tr><th>Позивний</th><th>Частота</th><th>Bind</th></tr>'+crewRows+'</table>' : '<div class="empty">Екіпажів немає</div>')+
     '</div></div>';
 
   // Конфлікти (активні + резервні)
@@ -4090,6 +4100,20 @@ function renderCrewFreqPanel() {
   var d = S.freq || {};
   var conflicts = [];
 
+  // Bind-фраза — над списком частот: вона спільна для всіх бортів екіпажу,
+  // а частоти нижче поштучні. Рядок показується завжди (тобто і в режимі
+  // «Перегляд», і на «Загальному О.С.»), кнопка ✎ — лише за тим самим
+  // правилом canMg, що й у частот.
+  h += '<div class="member-row">'+
+    '<div style="flex:1"><div class="member-cs">🔗 '+
+      (cr.bind ? '<span class="mono" style="color:var(--accent-soft)">'+esc(cr.bind)+'</span>'
+               : '<span class="hint">— не задано —</span>')+'</div>'+
+    '<div class="member-name">bind-фраза екіпажу</div></div>'+
+    (canMg
+      ? '<div class="inv-acts"><button class="inv-act" title="Змінити bind-фразу" onclick="crewBindModal(\''+esc(cr.id)+'\')">'+svgIcon('edit')+'</button></div>'
+      : '')+
+  '</div>';
+
   if (!list.length) {
     h += '<div class="hint" style="margin-bottom:8px">Частот не задано</div>';
   }
@@ -4620,6 +4644,36 @@ function doCrewRename(crewId) {
     if (cr) cr.crewName = v;
     refreshPersonnelCrewLinks();
     toast('✏️ '+crewId+' → «'+v+'»');
+    closeModal();
+    renderView();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+// Bind-фраза екіпажу — правиться прямо з панелі «Частоти екіпажу»,
+// бо разом із частотами вона і потрібна під час налаштування зв'язку.
+// Порожнє значення дозволене навмисно: так вичищаються старі приписки
+// (колись у це поле писали GNST наземки, звідки й плутанина в назвах).
+function crewBindModal(crewId) {
+  var cr = crewById(crewId);
+  if (!cr) return;
+  openModal('🔗 Bind-фраза · '+esc(cr.crewName || crewId),
+    '<div class="f"><label>Bind фраза</label><input type="text" id="cbVal" value="'+esc(cr.bind||'')+'" placeholder="спільна для всіх бортів…" onkeydown="if(event.key===\'Enter\')doCrewBind(\''+esc(crewId)+'\')"></div>'+
+    '<div class="hint" style="margin-bottom:10px">Спільна для всіх бортів екіпажу. Порожнє поле — прибрати фразу.</div>'+
+    '<button class="btn btn-green" id="cbBtn" onclick="doCrewBind(\''+esc(crewId)+'\')">💾 Зберегти</button>'
+  );
+  setTimeout(function(){ var i = $('cbVal'); if (i) { i.focus(); i.select(); } }, 60);
+}
+function doCrewBind(crewId) {
+  var v = $('cbVal').value.trim();
+  var btn = $('cbBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('updateCrew', [crewId, { bind: v }, crewToken() || undefined], function(){
+    var cr = crewById(crewId);
+    if (cr) cr.bind = v;
+    toast(v ? '🔗 Bind: '+v : '🔗 Bind-фразу прибрано');
     closeModal();
     renderView();
   }, function(e){
