@@ -4,8 +4,14 @@
     {
       "name": "tactical-webapp-demo",
       "runtimeExecutable": "powershell",
-      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".claude/serve.ps1"],
-      "port": 8765
+      "runtimeArgs": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        ".claude/serve.ps1"
+      ],
+      "autoPort": true
     }
   ]
 }
