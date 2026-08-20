@@ -5177,12 +5177,90 @@ function infoGetFile(fileId) {
       Math.round(size / 1024 / 1024) + ' МБ, стеля ' + INFO_MAX_FILE_MB + ' МБ)');
   }
 
-  const blob = file.getBlob();
+  // Google Docs/Sheets/Slides не мають бінарного вмісту — віддаємо як PDF,
+  // інакше застосунку не було б що показати.
+  const isGoogleDoc = String(file.getMimeType()).indexOf('google-apps') !== -1;
+  const blob = isGoogleDoc ? file.getAs('application/pdf') : file.getBlob();
+
   return {
-    name: file.getName(),
+    name: file.getName() + (isGoogleDoc ? '.pdf' : ''),
     mime: blob.getContentType(),
     kind: infoFileKind_(blob.getContentType()),
     size: size,
+    exported: isGoogleDoc,
     data: Utilities.base64Encode(blob.getBytes()),
   };
+}
+
+// ── Запис: створення тек і завантаження файлів ───────────────
+// Право те саме, що й на перегляд («Інформація» в аркуші «Персонал»):
+// без нього розділ узагалі не видно. Якщо колись знадобиться рівень
+// «дивитись, але не чіпати» — треба буде окремий чекбокс.
+
+// Ім'я теки/файлу: без роздільників шляху й керівних символів,
+// щоб не можна було вилізти з теки або зіпсувати показ у списку.
+function infoCleanName_(name) {
+  const s = String(name || '').replace(/[\/\:*?"<>|\u0000-\u001f]/g, '').trim();
+  if (!s) throw new Error('Порожня назва');
+  if (s === '.' || s === '..') throw new Error('Недопустима назва');
+  if (s.length > 120) throw new Error('Назва задовга (максимум 120 символів)');
+  return s;
+}
+
+function infoTargetFolder_(parentId) {
+  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+  const id = String(parentId || '').trim() || INFO_ROOT_ID;
+  const folder = DriveApp.getFolderById(id);
+  if (id !== INFO_ROOT_ID) infoAssertInsideRoot_(folder);
+  return folder;
+}
+
+function infoCreateFolder(parentId, name) {
+  infoAssertAccess_();
+  const folder = infoTargetFolder_(parentId);
+  const clean = infoCleanName_(name);
+
+  const existing = folder.getFoldersByName(clean);
+  if (existing.hasNext()) throw new Error('Тека «' + clean + '» тут уже є');
+
+  const created = folder.createFolder(clean);
+  return { id: created.getId(), name: created.getName() };
+}
+
+// dataBase64 — вміст файлу. Приходить у тілі POST, тому діє та сама стеля:
+// base64 роздуває розмір на третину, а Apps Script тримає все в пам'яті.
+function infoUploadFile(parentId, name, mime, dataBase64) {
+  infoAssertAccess_();
+  const folder = infoTargetFolder_(parentId);
+  const clean = infoCleanName_(name);
+
+  const raw = String(dataBase64 || '');
+  if (!raw) throw new Error('Порожній файл');
+  // Довжина base64 → приблизний розмір у байтах (4 символи = 3 байти)
+  const approx = Math.floor(raw.length * 3 / 4);
+  if (approx > INFO_MAX_FILE_MB * 1024 * 1024) {
+    throw new Error('Файл завеликий (' + Math.round(approx / 1024 / 1024) +
+      ' МБ, стеля ' + INFO_MAX_FILE_MB + ' МБ)');
+  }
+
+  let bytes;
+  try { bytes = Utilities.base64Decode(raw); }
+  catch (e) { throw new Error('Не вдалося прочитати вміст файлу'); }
+
+  const blob = Utilities.newBlob(bytes, mime || 'application/octet-stream', clean);
+
+  // Однакове ім'я — не перезаписуємо мовчки, а додаємо мітку часу:
+  // затерти чужий документ гірше, ніж мати два.
+  let finalName = clean;
+  if (folder.getFilesByName(clean).hasNext()) {
+    const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd_HH-mm');
+    const dot = clean.lastIndexOf('.');
+    finalName = dot > 0
+      ? clean.slice(0, dot) + ' (' + stamp + ')' + clean.slice(dot)
+      : clean + ' (' + stamp + ')';
+    blob.setName(finalName);
+  }
+
+  const created = folder.createFile(blob);
+  return { id: created.getId(), name: created.getName(), renamed: finalName !== clean };
 }

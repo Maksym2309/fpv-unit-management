@@ -763,12 +763,31 @@ var DEMO_DATA = {
               {id:'D3', name:'Розбір вильоту.mp4', kind:'video', mime:'video/mp4', size:41943040, date:'2026-08-11', tooBig:true}] }
     };
     var t = tree[String(id||'')] || tree[''];
-    return { configured:true, folderId:String(id||''), path:t.path, folders:t.folders, files:t.files };
+    // Долучаємо створене/завантажене в демо-режимі
+    var extra = (DEMO_DATA.__infoExtra || {})[String(id||'')] || {folders:[], files:[]};
+    return { configured:true, folderId:String(id||''), path:t.path,
+             folders:t.folders.concat(extra.folders), files:t.files.concat(extra.files) };
   },
   infoGetFile: function(id){
     var txt = 'Демо-файл ' + id + '\nСправжній вміст приходить з Google Drive.';
     return { name:'demo-'+id+'.txt', mime:'text/plain', kind:'text', size:txt.length,
              data: btoa(unescape(encodeURIComponent(txt))) };
+  },
+  // Демо-запис: у пам'яті, щоб перевірити потік без справжнього Drive
+  infoCreateFolder: function(parentId, name){
+    var t = DEMO_DATA.__infoExtra || (DEMO_DATA.__infoExtra = {});
+    var key = String(parentId||''), id = 'NF'+(Date.now()%10000);
+    (t[key] || (t[key] = {folders:[], files:[]})).folders.push({id:id, name:name});
+    return { id:id, name:name };
+  },
+  infoUploadFile: function(parentId, name, mime, b64){
+    var t = DEMO_DATA.__infoExtra || (DEMO_DATA.__infoExtra = {});
+    var key = String(parentId||''), id = 'UP'+(Date.now()%10000);
+    var size = Math.floor(String(b64||'').length * 3 / 4);
+    (t[key] || (t[key] = {folders:[], files:[]})).files.push({
+      id:id, name:name, mime:mime, kind:(mime.indexOf('image/')===0?'image':mime==='application/pdf'?'pdf':'file'),
+      size:size, date:'2026-08-21', tooBig:false });
+    return { id:id, name:name, renamed:false };
   },
   webUpdateConsumable: function(d){ return { id: d.id, status: d.status || 'Достатньо' }; },
   webAddConsumable: function(d){ return 'CONS-005'; },
@@ -1309,7 +1328,16 @@ function renderInfo(c) {
     });
     if (!rows) rows = '<div class="empty">Тека порожня</div>';
 
-    body = (crumbs ? '<div class="hint" style="margin-bottom:8px">'+crumbs+'</div>' : '') + rows;
+    // Дії створюють у ПОТОЧНІЙ теці — тій, що видно в крихтах.
+    // Прихований input: свій вигляд кнопки замість системного «Огляд».
+    var actions =
+      '<div class="btn-row" style="margin-bottom:10px">'+
+        '<button class="btn btn-mini btn-sec" onclick="infoNewFolderModal()">📁 Нова тека</button>'+
+        '<button class="btn btn-mini btn-sec" onclick="infoPickFile()">⬆ Завантажити файл</button>'+
+        '<input type="file" id="infoFileInput" style="display:none" onchange="infoDoUpload(this)">'+
+      '</div>';
+
+    body = (crumbs ? '<div class="hint" style="margin-bottom:8px">'+crumbs+'</div>' : '') + actions + rows;
   } else {
     body = '<div class="empty">—</div>';
   }
@@ -1318,8 +1346,22 @@ function renderInfo(c) {
 }
 
 // Відкриття файлу: бекенд віддає вміст (base64) після перевірки прав,
-// далі робимо blob і відкриваємо у новій вкладці — Drive-посилання
-// в людини без Google-доступу не спрацювало б.
+// далі робимо blob і показуємо ПРЯМО в застосунку. Посилання на Drive
+// в людини без Google-доступу не спрацювало б, а Apps Script не вміє
+// віддавати бінарні дані — тому вміст і приходить у тілі відповіді.
+var infoBlobUrl = '';   // активний blob поточного перегляду
+
+function infoRevokeBlob() {
+  if (infoBlobUrl) { try { URL.revokeObjectURL(infoBlobUrl); } catch(e) {} infoBlobUrl = ''; }
+}
+
+function infoDownloadCurrent(name) {
+  if (!infoBlobUrl) return;
+  var a = document.createElement('a');
+  a.href = infoBlobUrl; a.download = name || 'file';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
 function infoOpen(fileId, btn) {
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳'; }
   rpc('infoGetFile', [fileId], function(res){
@@ -1328,19 +1370,93 @@ function infoOpen(fileId, btn) {
     try {
       var bin = atob(res.data), len = bin.length, bytes = new Uint8Array(len);
       for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
-      var url = URL.createObjectURL(new Blob([bytes], { type: res.mime || 'application/octet-stream' }));
-      var w = window.open(url, '_blank');
-      if (!w) { // мобільні часто блокують нове вікно — тоді качаємо
-        var a = document.createElement('a');
-        a.href = url; a.download = res.name || 'file';
-        document.body.appendChild(a); a.click(); a.remove();
+      var mime = res.mime || 'application/octet-stream';
+      infoRevokeBlob();
+      infoBlobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+
+      var nameEsc = esc(res.name || 'файл');
+      var view;
+      if (mime.indexOf('image/') === 0) {
+        view = '<img src="'+infoBlobUrl+'" alt="'+nameEsc+'" style="max-width:100%;max-height:70vh;display:block;margin:0 auto">';
+      } else if (mime === 'application/pdf') {
+        // Вбудований переглядач браузера. На iOS Safari iframe із PDF
+        // буває примхливим — тому поруч завжди лишається «Зберегти».
+        view = '<iframe src="'+infoBlobUrl+'" style="width:100%;height:70vh;border:1px solid var(--line);background:#fff"></iframe>';
+      } else if (mime.indexOf('video/') === 0) {
+        // Без перемотки наперед: файл приходить цілком, стрімінгу тут немає.
+        view = '<video src="'+infoBlobUrl+'" controls style="max-width:100%;max-height:70vh;display:block;margin:0 auto"></video>';
+      } else if (mime.indexOf('audio/') === 0) {
+        view = '<audio src="'+infoBlobUrl+'" controls style="width:100%"></audio>';
+      } else if (mime.indexOf('text/') === 0 || mime.indexOf('json') !== -1) {
+        var txt = '';
+        try { txt = new TextDecoder('utf-8').decode(bytes); } catch(e) { txt = bin; }
+        view = '<pre style="max-height:70vh;overflow:auto;white-space:pre-wrap;word-break:break-word;'+
+               'background:var(--bg-low);border:1px solid var(--line);padding:10px;font-size:12px">'+esc(txt)+'</pre>';
+      } else {
+        view = '<div class="empty">Цей тип не показується в застосунку — збережи файл, щоб відкрити.</div>';
       }
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+
+      openModal('📄 '+nameEsc,
+        (res.exported ? '<div class="hint" style="margin-bottom:8px">Google-документ показано як PDF</div>' : '')+
+        view+
+        '<div class="btn-row" style="margin-top:10px">'+
+          '<button class="btn btn-sec" onclick="infoDownloadCurrent(\''+esc(res.name||'file').replace(/'/g,"\\'")+'\')">⬇ Зберегти</button>'+
+        '</div>', true);
     } catch(e) { toast('❌ '+e.message, true); }
   }, function(e){
     if (btn) { btn.disabled = false; btn.textContent = '↗'; }
     toast('❌ '+e.message, true);
   });
+}
+
+/* ── Запис: тека і завантаження ─────────────────────────────── */
+function infoNewFolderModal() {
+  openModal('📁 Нова тека',
+    '<div class="f"><label>Назва</label><input type="text" id="ifName" placeholder="напр. Інструкції" onkeydown="if(event.key===\'Enter\')infoDoCreateFolder()"></div>'+
+    '<button class="btn btn-green" id="ifBtn" onclick="infoDoCreateFolder()">📁 Створити</button>'
+  );
+  setTimeout(function(){ var i = $('ifName'); if (i) i.focus(); }, 60);
+}
+function infoDoCreateFolder() {
+  var v = $('ifName').value.trim();
+  if (!v) { toast('⚠ Вкажи назву', true); return; }
+  var btn = $('ifBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('infoCreateFolder', [infoState.folderId, v], function(){
+    closeModal();
+    toast('📁 Теку створено: '+v);
+    infoState.data = null; infoLoad();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '📁 Створити'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+function infoPickFile() { var i = $('infoFileInput'); if (i) i.click(); }
+
+function infoDoUpload(input) {
+  var file = input && input.files && input.files[0];
+  input.value = '';           // щоб той самий файл можна було обрати ще раз
+  if (!file) return;
+  var maxMb = 25;
+  if (file.size > maxMb * 1024 * 1024) {
+    toast('❌ Файл завеликий ('+(file.size/1024/1024).toFixed(1)+' МБ, стеля '+maxMb+' МБ)', true);
+    return;
+  }
+  toast('⏳ Завантаження '+file.name+'…');
+  var reader = new FileReader();
+  reader.onerror = function(){ toast('❌ Не вдалося прочитати файл', true); };
+  reader.onload = function(){
+    // readAsDataURL дає "data:<mime>;base64,<дані>" — беремо частину після коми
+    var s = String(reader.result), comma = s.indexOf(',');
+    var b64 = comma >= 0 ? s.slice(comma + 1) : '';
+    if (!b64) { toast('❌ Порожній файл', true); return; }
+    rpc('infoUploadFile', [infoState.folderId, file.name, file.type || 'application/octet-stream', b64], function(res){
+      toast('⬆ Завантажено: '+((res && res.name) || file.name)+((res && res.renamed) ? ' (перейменовано — таке ім\'я вже було)' : ''));
+      infoState.data = null; infoLoad();
+    }, function(e){ toast('❌ '+e.message, true); });
+  };
+  reader.readAsDataURL(file);
 }
 
 /* ═══════════ ВИД: НАЛАШТУВАННЯ ═══════════ */
