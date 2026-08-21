@@ -5415,3 +5415,44 @@ function infoGetFileChunk(fileId, start, length) {
 
   return { start: from, data: Utilities.base64Encode(res.getContent()) };
 }
+
+// ── Файл: перейменування і видалення ──────────────────────────
+// Симетрично до тек: те саме чищення імені, та сама відмова на двійника,
+// те саме видалення в кошик Drive замість остаточного стирання.
+function infoFileParent_(file) {
+  const parents = file.getParents();
+  if (!parents.hasNext()) throw new Error('Файл поза спільною текою');
+  const parent = parents.next();
+  infoAssertInsideRoot_(parent);
+  return parent;
+}
+
+function infoRenameFile(fileId, newName) {
+  infoAssertAccess_();
+  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+
+  const file = DriveApp.getFileById(String(fileId));
+  const parent = infoFileParent_(file);
+  const clean = infoCleanName_(newName);
+  if (clean === file.getName()) return { id: file.getId(), name: clean };
+
+  const twin = parent.getFilesByName(clean);
+  while (twin.hasNext()) {
+    if (twin.next().getId() !== file.getId()) throw new Error('Файл «' + clean + '» тут уже є');
+  }
+
+  file.setName(clean);
+  return { id: file.getId(), name: clean };
+}
+
+function infoTrashFile(fileId) {
+  infoAssertAccess_();
+  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+
+  const file = DriveApp.getFileById(String(fileId));
+  infoFileParent_(file);            // перевірка, що файл усередині спільної теки
+
+  const name = file.getName();
+  file.setTrashed(true);
+  return { id: String(fileId), name: name };
+}

@@ -803,8 +803,15 @@ var DEMO_DATA = {
     var folders = t.folders.concat(extra.folders)
       .filter(function(f){ return !trash[f.id]; })
       .map(function(f){ return ren[f.id] ? {id:f.id, name:ren[f.id]} : f; });
+    var fRen = DEMO_DATA.__infoFileRenames || {}, fTrash = DEMO_DATA.__infoFileTrashed || {};
+    var files = t.files.concat(extra.files)
+      .filter(function(x){ return !fTrash[x.id]; })
+      .map(function(x){
+        if (!fRen[x.id]) return x;
+        var c = JSON.parse(JSON.stringify(x)); c.name = fRen[x.id]; return c;
+      });
     return { configured:true, folderId:String(id||''), path:t.path,
-             folders:folders, files:t.files.concat(extra.files) };
+             folders:folders, files:files };
   },
   infoGetFile: function(id){
     var txt = 'Демо-файл ' + id + '\nСправжній вміст приходить з Google Drive.';
@@ -821,6 +828,16 @@ var DEMO_DATA = {
   // Демо: сесії немає, тож застосунок сам відкотиться на запасний шлях —
   // це заразом і перевірка того відкату.
   infoUploadSession: function(){ throw new Error('Демо: прямого завантаження немає'); },
+  infoRenameFile: function(id, name){
+    var t = DEMO_DATA.__infoFileRenames || (DEMO_DATA.__infoFileRenames = {});
+    t[String(id)] = name;
+    return { id:id, name:name };
+  },
+  infoTrashFile: function(id){
+    var t = DEMO_DATA.__infoFileTrashed || (DEMO_DATA.__infoFileTrashed = {});
+    t[String(id)] = true;
+    return { id:id, name:'файл' };
+  },
   infoTrashFolder: function(folderId){
     var t = DEMO_DATA.__infoTrashed || (DEMO_DATA.__infoTrashed = {});
     t[String(folderId)] = true;
@@ -1397,18 +1414,24 @@ function renderInfo(c) {
       '</div>';
     });
     (d.files || []).forEach(function(f){
-      // Завантажити можна завжди — навіть те, що завелике для перегляду.
-      // Раніше такий файл просто позначався «завеликий» і забрати його
-      // із застосунку було неможливо взагалі.
+      // Симетрично до тек: у перегляді — робота з файлом (↗ ⬇),
+      // у редагуванні — робота НАД файлом (✎ 🗑).
+      // Завантажити можна й те, що завелике для перегляду: раніше такий
+      // файл позначався «завеликий» і забрати його було неможливо взагалі.
+      var acts = edit
+        ? '<button class="inv-act" title="Перейменувати файл" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
+            'onclick="infoRenameFileModal(this.dataset.id, this.dataset.name)">'+svgIcon('edit')+'</button>'+
+          '<button class="inv-act inv-act--del" title="Видалити файл" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
+            'onclick="infoTrashFileModal(this.dataset.id, this.dataset.name)">'+svgIcon('trash')+'</button>'
+        : (f.tooBig ? '' : '<button class="inv-act" title="Переглянути" onclick="infoOpen(\''+esc(f.id)+'\', this)">↗</button>')+
+          '<button class="inv-act" title="Завантажити" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" data-size="'+(f.size||0)+'" '+
+            'onclick="infoDownload(this.dataset.id, this.dataset.name, +this.dataset.size, this)">⬇</button>';
+
       rows += '<div class="member-row">'+
         '<div style="flex:1"><div class="member-cs">'+infoIcon(f.kind)+' '+esc(f.name)+'</div>'+
         '<div class="member-name">'+esc(f.date)+(f.size?' · '+infoSize(f.size):'')+
           (f.tooBig ? ' · <span class="hint">завеликий для перегляду</span>' : '')+'</div></div>'+
-        '<div class="inv-acts">'+
-          (f.tooBig ? '' : '<button class="inv-act" title="Переглянути" onclick="infoOpen(\''+esc(f.id)+'\', this)">↗</button>')+
-          '<button class="inv-act" title="Завантажити" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" data-size="'+(f.size||0)+'" '+
-            'onclick="infoDownload(this.dataset.id, this.dataset.name, +this.dataset.size, this)">⬇</button>'+
-        '</div>'+
+        '<div class="inv-acts">'+acts+'</div>'+
       '</div>';
     });
     if (!rows) rows = '<div class="empty">Тека порожня</div>';
@@ -1617,6 +1640,57 @@ function infoDoTrash(folderId) {
     var extra = (res && (res.files || res.folders))
       ? ' (у кошик разом із вмістом: файлів '+(res.files||0)+', тек '+(res.folders||0)+')' : '';
     toast('🗑 Видалено: '+((res && res.name) || folderId)+extra);
+    infoState.data = null; infoLoad();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '🗑 Видалити'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+/* ── Файл: перейменування і видалення ───────────────────────── */
+function infoRenameFileModal(fileId, curName) {
+  openModal('✏️ Назва файлу',
+    '<div class="f"><label>Назва</label><input type="text" id="ifrName" value="'+esc(curName||'')+'" onkeydown="if(event.key===\'Enter\')infoDoRenameFile(\''+esc(fileId)+'\')"></div>'+
+    '<div class="hint" style="margin-bottom:10px">Розширення (.pdf, .zip) лишай — за ним застосунок розуміє, як показувати файл</div>'+
+    '<button class="btn btn-green" id="ifrBtn" onclick="infoDoRenameFile(\''+esc(fileId)+'\')">💾 Зберегти</button>'
+  );
+  // Виділяємо лише назву без розширення — його зазвичай міняти не треба
+  setTimeout(function(){
+    var i = $('ifrName');
+    if (!i) return;
+    i.focus();
+    var dot = i.value.lastIndexOf('.');
+    if (dot > 0) i.setSelectionRange(0, dot); else i.select();
+  }, 60);
+}
+function infoDoRenameFile(fileId) {
+  var v = $('ifrName').value.trim();
+  if (!v) { toast('⚠ Вкажи назву', true); return; }
+  var btn = $('ifrBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('infoRenameFile', [fileId, v], function(){
+    closeModal();
+    toast('✏️ Файл перейменовано: '+v);
+    infoState.data = null; infoLoad();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+function infoTrashFileModal(fileId, name) {
+  openModal('🗑 Видалити файл',
+    '<div class="warn" style="margin-bottom:10px">Файл <b class="mono">'+esc(name)+'</b> переїде в кошик Google Drive.</div>'+
+    '<div class="hint" style="margin-bottom:10px">Звідти його можна повернути — остаточно нічого не стирається.</div>'+
+    '<button class="btn btn-red" id="iftBtn" onclick="infoDoTrashFile(\''+esc(fileId)+'\')">🗑 Видалити</button>'
+  );
+}
+function infoDoTrashFile(fileId) {
+  var btn = $('iftBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('infoTrashFile', [fileId], function(res){
+    closeModal();
+    toast('🗑 Видалено: '+((res && res.name) || fileId));
     infoState.data = null; infoLoad();
   }, function(e){
     if (btn) { btn.disabled = false; btn.textContent = '🗑 Видалити'; }
