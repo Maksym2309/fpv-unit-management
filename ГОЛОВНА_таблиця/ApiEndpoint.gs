@@ -39,6 +39,8 @@ const API_FUNCTIONS = [
   'webAddInventoryItem', 'getFormData', 'getNextIdNum', 'webSetItemAssignment',
   'webSetItemNote', 'webSetTrackerNote', 'webLogStatusChange', 'getLostMapData',
   'webUpdateLossRecord',
+  // комплекти (перевіряють право «Інвентар» усередині)
+  'assignToKit', 'removeFromKit',
   // інформація (документи підрозділу) — права перевіряють самі функції
   'infoListFolder', 'infoGetFile', 'infoCreateFolder', 'infoUploadFile', 'infoRenameFolder', 'infoUploadSession',
   // витратники

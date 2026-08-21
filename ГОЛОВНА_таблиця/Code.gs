@@ -1257,6 +1257,10 @@ function getKitMembers(kitId) {
 
 // Призначити предмет до комплекту
 function assignToKit(itemId, kitId) {
+  // Раніше викликалась лише з sidebar, де вартовим був Google-акаунт.
+  // Тепер доступна й через API, тож перевірка мусить бути тут.
+  const email = apiUserEmail_() || '';
+  if (!isAdmin(email) && !apiRight_('inv')) throw new Error('Потрібне право «Інвентар» або права адміністратора');
   const ss  = SpreadsheetApp.getActiveSpreadsheet();
   const inv = getSheet(ss, 'Інвентар');
   if (!inv) throw new Error('Інвентар не знайдено');
@@ -1272,6 +1276,8 @@ function assignToKit(itemId, kitId) {
 
 // Видалити предмет з комплекту
 function removeFromKit(itemId) {
+  const email = apiUserEmail_() || '';
+  if (!isAdmin(email) && !apiRight_('inv')) throw new Error('Потрібне право «Інвентар» або права адміністратора');
   const ss  = SpreadsheetApp.getActiveSpreadsheet();
   const inv = getSheet(ss, 'Інвентар');
   if (!inv) throw new Error('Інвентар не знайдено');

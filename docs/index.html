@@ -718,6 +718,8 @@ var DEMO_DATA = {
     today: '2026-08-09'
   },
   getNextIdNum: function(code){ return 12; },
+  assignToKit: function(itemId, kitId){ return { id:itemId, kit:kitId }; },
+  removeFromKit: function(itemId){ return { id:itemId }; },
   webSetItemAssignment: function(id, a){
     var it = DEMO_DATA.getInventoryList.find(function(x){ return x.id === id; });
     if (it) it.assignment = a;
@@ -2937,6 +2939,105 @@ var myCallsign = '';    // запам'ятований позивний для �
 var INV_STATUSES = ['Робочий','Ремонт','На перевірці','Несправний','Втрачений','Списаний','Резерв'];
 var TRK_STATUSES = ['Робочий','Зламаний','Втрачений'];
 
+/* ── Комплекти ────────────────────────────────────────────────
+   Комплект позначається ID головного предмета (зазвичай наземки):
+   у КОМПОНЕНТА в колонці «Компл.» стоїть ID наземки, а сама наземка
+   свого ID там не має. Через це в її рядку колонка виглядала порожньою,
+   хоча комплект існує. Тому головному показуємо, скільки в нього
+   складників, а не порожнечу. */
+function invKitMembers(headId) {
+  if (!headId) return [];
+  return S.items.filter(function(x){ return String(x.kit||'').trim() === headId; });
+}
+function invKitCellHtml(it, edit) {
+  var isMember = !!String(it.kit||'').trim();
+  var members = invKitMembers(it.id);
+  var txt;
+  if (isMember) {
+    txt = '<span title="Входить до комплекту '+esc(it.kit)+'">↳ '+esc(it.kit)+'</span>';
+  } else if (members.length) {
+    txt = '<span class="accent" title="'+esc(members.map(function(m){ return m.id+' — '+m.name; }).join(', '))+'">🔗 '+members.length+' шт</span>';
+  } else {
+    txt = '<span class="hint">—</span>';
+  }
+  if (edit && canEditInv()) {
+    txt += ' <button class="inv-act" title="Комплект" data-id="'+esc(it.id)+'" '+
+      'onclick="event.stopPropagation();invKitModal(this.dataset.id)">'+svgIcon('edit')+'</button>';
+  }
+  return txt;
+}
+
+function invKitModal(itemId) {
+  var it = S.items.find(function(x){ return x.id === itemId; });
+  if (!it) return;
+  var inKit = String(it.kit||'').trim();
+  var members = invKitMembers(it.id);
+
+  var body;
+  if (inKit) {
+    // Предмет уже в чужому комплекті — звідси лише від'єднання
+    body = '<div class="hint" style="margin-bottom:10px">'+esc(it.id)+' входить до комплекту <b class="mono">'+esc(inKit)+'</b></div>'+
+      '<button class="btn btn-red" id="kitBtn" onclick="invKitRemove(\''+esc(it.id)+'\')">✕ Від\'єднати від комплекту</button>';
+  } else {
+    // Предмет — головний: показуємо склад і даємо додати ще
+    var list = members.length
+      ? members.map(function(m){
+          return '<div class="member-row"><div style="flex:1"><div class="member-cs">'+esc(m.id)+'</div>'+
+            '<div class="member-name">'+esc(m.name)+'</div></div>'+
+            '<div class="inv-acts"><button class="inv-act inv-act--del" title="Прибрати з комплекту" '+
+              'onclick="invKitRemove(\''+esc(m.id)+'\')">'+svgIcon('x')+'</button></div></div>';
+        }).join('')
+      : '<div class="empty">Комплект порожній</div>';
+
+    // Кандидати: вільні предмети, крім самого себе
+    var free = S.items.filter(function(x){ return x.id !== it.id && !String(x.kit||'').trim(); });
+    var opts = '<option value="">— обери предмет —</option>' + free.map(function(x){
+      return '<option value="'+esc(x.id)+'">'+esc(x.id)+' — '+esc(x.name)+'</option>';
+    }).join('');
+
+    body = '<div class="hint" style="margin-bottom:8px">Комплект <b class="mono">'+esc(it.id)+'</b> — '+esc(it.name)+'</div>'+
+      list +
+      '<div class="f" style="margin-top:12px"><label>Додати до комплекту</label><select id="kitPick">'+opts+'</select></div>'+
+      '<button class="btn btn-green" id="kitBtn" onclick="invKitAdd(\''+esc(it.id)+'\')">🔗 Додати</button>'+
+      (members.length ? '' : '<div class="hint" style="margin-top:8px">Комплект створюється сам, щойно додаси перший складник</div>');
+  }
+  openModal('🔗 Комплект · '+esc(it.id), body);
+}
+
+function invKitAdd(headId) {
+  var compId = $('kitPick').value;
+  if (!compId) { toast('⚠ Обери предмет', true); return; }
+  var btn = $('kitBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('assignToKit', [compId, headId], function(){
+    var it = S.items.find(function(x){ return x.id === compId; });
+    if (it) it.kit = headId;
+    toast('🔗 '+compId+' → '+headId);
+    invKitModal(headId);      // лишаємось у модалці — зручно додавати підряд
+    renderView();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '🔗 Додати'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+function invKitRemove(itemId) {
+  var it = S.items.find(function(x){ return x.id === itemId; });
+  var head = it ? String(it.kit||'').trim() : '';
+  var btn = $('kitBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('removeFromKit', [itemId], function(){
+    if (it) it.kit = '';
+    toast('✕ '+itemId+' прибрано з комплекту');
+    if (head && S.items.some(function(x){ return x.id === head; })) invKitModal(head);
+    else closeModal();
+    renderView();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '✕ Від\'єднати від комплекту'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
 function invIsAdmin() { return !!(S.invCaps && S.invCaps.admin); }
 function invStatuses() { return (S.invCaps && S.invCaps.statuses && S.invCaps.statuses.length) ? S.invCaps.statuses : INV_STATUSES; }
 
@@ -3752,7 +3853,7 @@ function renderInvTable() {
       '</td>'+
       '<td>'+esc(it.responsible)+'</td>'+
       '<td class="mono">'+esc(it.date||'')+'</td>'+
-      '<td class="mono">'+esc(it.kit)+'</td>'+
+      '<td class="mono">'+invKitCellHtml(it, edit)+'</td>'+
       '<td class="mono" style="max-width:200px">'+noteCellHtml('item', it.id, it.note, edit)+'</td>'+
     '</tr>';
   }).join('');
