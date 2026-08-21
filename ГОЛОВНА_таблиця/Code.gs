@@ -5292,3 +5292,50 @@ function infoRenameFolder(folderId, newName) {
   folder.setName(clean);
   return { id: id, name: clean };
 }
+
+// ── Швидке завантаження: браузер вантажить напряму в Drive ────
+// Повільний шлях (infoUploadFile) ганяє байти через Apps Script у base64:
+// +33% обсягу, весь файл у пам'яті скрипта, JSON.parse на десятки МБ.
+// Тут ми лише ВІДКРИВАЄМО resumable-сесію і віддаємо її адресу браузеру —
+// далі байти йдуть повз нас, сирими, з прогресом і можливістю дослати.
+//
+// Безпека: адреса сесії прив'язана до однієї теки й одного файлу,
+// живе недовго і НЕ дає доступу на читання Drive. Токен власника
+// (ScriptApp.getOAuthToken) браузеру не потрапляє.
+function infoUploadSession(parentId, name, mime) {
+  infoAssertAccess_();
+  const folder = infoTargetFolder_(parentId);
+  const clean = infoCleanName_(name);
+
+  // Те саме правило, що й у повільному шляху: не затираємо тезку
+  let finalName = clean;
+  if (folder.getFilesByName(clean).hasNext()) {
+    const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd_HH-mm');
+    const dot = clean.lastIndexOf('.');
+    finalName = dot > 0
+      ? clean.slice(0, dot) + ' (' + stamp + ')' + clean.slice(dot)
+      : clean + ' (' + stamp + ')';
+  }
+
+  const res = UrlFetchApp.fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
+      method: 'post',
+      contentType: 'application/json; charset=UTF-8',
+      headers: {
+        Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+        'X-Upload-Content-Type': mime || 'application/octet-stream',
+      },
+      payload: JSON.stringify({ name: finalName, parents: [folder.getId()] }),
+      muteHttpExceptions: true,
+    });
+
+  const code = res.getResponseCode();
+  if (code < 200 || code >= 300) {
+    throw new Error('Google не відкрив сесію завантаження (' + code + ')');
+  }
+  const h = res.getHeaders();
+  const loc = h['Location'] || h['location'];
+  if (!loc) throw new Error('Google не повернув адресу сесії');
+
+  return { uploadUrl: loc, name: finalName, renamed: finalName !== clean };
+}

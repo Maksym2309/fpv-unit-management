@@ -794,6 +794,9 @@ var DEMO_DATA = {
     (t[key] || (t[key] = {folders:[], files:[]})).folders.push({id:id, name:name});
     return { id:id, name:name };
   },
+  // Демо: сесії немає, тож застосунок сам відкотиться на запасний шлях —
+  // це заразом і перевірка того відкату.
+  infoUploadSession: function(){ throw new Error('Демо: прямого завантаження немає'); },
   infoRenameFolder: function(folderId, name){
     var t = DEMO_DATA.__infoRenames || (DEMO_DATA.__infoRenames = {});
     t[String(folderId)] = name;
@@ -1361,6 +1364,18 @@ function renderInfo(c) {
         '<input type="file" id="infoFileInput" style="display:none" onchange="infoDoUpload(this)">'+
       '</div>';
 
+    // Смужка прогресу: без неї великий файл виглядав як «висить»
+    if (infoUp.active) {
+      actions +=
+        '<div style="margin-bottom:10px">'+
+          '<div class="hint" id="infoUpTxt" style="margin-bottom:4px">'+esc(infoUp.name)+' — '+infoUp.pct+'%'+
+            (infoUp.mode === 'slow' ? ' (запасний шлях)' : '')+'</div>'+
+          '<div style="height:6px;background:var(--panel-3);border:1px solid var(--line)">'+
+            '<div id="infoUpBar" style="height:100%;width:'+infoUp.pct+'%;background:var(--accent);transition:width .2s"></div>'+
+          '</div>'+
+        '</div>';
+    }
+
     body = (crumbs ? '<div class="hint" style="margin-bottom:8px">'+crumbs+'</div>' : '') + actions + rows;
   } else {
     body = '<div class="empty">—</div>';
@@ -1480,27 +1495,96 @@ function infoDoRename(folderId) {
 
 function infoPickFile() { var i = $('infoFileInput'); if (i) i.click(); }
 
+// Стеля для повільного (запасного) шляху: там файл їде через Apps Script
+// у base64 і цілком лежить у його пам'яті.
+var INFO_SLOW_MAX_MB = 25;
+// Стеля для прямого шляху — байти йдуть повз Apps Script, тож обмеження
+// лише практичне (час на аплінку).
+var INFO_FAST_MAX_MB = 512;
+
+var infoUp = { active: false, name: '', pct: 0, mode: '' };
+
+function infoUpSet(pct, mode) {
+  infoUp.active = true; infoUp.pct = pct; infoUp.mode = mode || infoUp.mode;
+  var el = $('infoUpBar');
+  if (el) {
+    el.style.width = pct + '%';
+    var t = $('infoUpTxt');
+    if (t) t.textContent = infoUp.name + ' — ' + pct + '%' + (infoUp.mode === 'slow' ? ' (запасний шлях)' : '');
+  } else {
+    renderView();
+  }
+}
+function infoUpDone(msg, isErr) {
+  infoUp.active = false; infoUp.pct = 0;
+  toast(msg, isErr);
+  infoState.data = null; infoLoad();
+}
+
 function infoDoUpload(input) {
   var file = input && input.files && input.files[0];
   input.value = '';           // щоб той самий файл можна було обрати ще раз
   if (!file) return;
-  var maxMb = 25;
-  if (file.size > maxMb * 1024 * 1024) {
-    toast('❌ Файл завеликий ('+(file.size/1024/1024).toFixed(1)+' МБ, стеля '+maxMb+' МБ)', true);
+  if (infoUp.active) { toast('⚠ Зачекай — попереднє завантаження ще йде', true); return; }
+  if (file.size > INFO_FAST_MAX_MB * 1024 * 1024) {
+    toast('❌ Файл завеликий ('+(file.size/1024/1024).toFixed(0)+' МБ, стеля '+INFO_FAST_MAX_MB+' МБ)', true);
     return;
   }
-  toast('⏳ Завантаження '+file.name+'…');
+
+  infoUp.name = file.name;
+  infoUpSet(0, 'fast');
+
+  // Швидкий шлях: бекенд відкриває resumable-сесію, байти летять у Drive
+  // напряму — без base64 (+33%) і без Apps Script у шляху даних.
+  rpc('infoUploadSession', [infoState.folderId, file.name, file.type || 'application/octet-stream'],
+    function(s){
+      if (!s || !s.uploadUrl) { infoUploadSlow(file); return; }
+      var xhr = new XMLHttpRequest();
+      xhr.open('PUT', s.uploadUrl, true);
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      xhr.upload.onprogress = function(ev){
+        if (ev.lengthComputable) infoUpSet(Math.round(ev.loaded / ev.total * 100), 'fast');
+      };
+      xhr.onload = function(){
+        if (xhr.status >= 200 && xhr.status < 300) {
+          infoUpDone('⬆ Завантажено: '+(s.name || file.name)+(s.renamed ? ' (перейменовано — таке ім\'я вже було)' : ''));
+        } else {
+          infoUploadSlow(file);   // Google не прийняв — пробуємо запасним
+        }
+      };
+      // Найімовірніша причина — CORS чи обрив мережі. Не показуємо помилку
+      // одразу: у запасного шляху інша механіка, він може пройти.
+      xhr.onerror = function(){ infoUploadSlow(file); };
+      xhr.send(file);
+    },
+    function(){ infoUploadSlow(file); }
+  );
+}
+
+// Запасний шлях — той самий, що був: base64 через Apps Script.
+function infoUploadSlow(file) {
+  if (file.size > INFO_SLOW_MAX_MB * 1024 * 1024) {
+    infoUp.active = false;
+    toast('❌ Пряме завантаження не вдалося, а для запасного шляху файл завеликий ('+
+          (file.size/1024/1024).toFixed(1)+' МБ, стеля '+INFO_SLOW_MAX_MB+' МБ)', true);
+    renderView();
+    return;
+  }
+  infoUpSet(0, 'slow');
   var reader = new FileReader();
-  reader.onerror = function(){ toast('❌ Не вдалося прочитати файл', true); };
+  reader.onerror = function(){ infoUp.active = false; toast('❌ Не вдалося прочитати файл', true); renderView(); };
+  reader.onprogress = function(ev){
+    if (ev.lengthComputable) infoUpSet(Math.round(ev.loaded / ev.total * 50), 'slow'); // читання — перша половина
+  };
   reader.onload = function(){
+    infoUpSet(50, 'slow');
     // readAsDataURL дає "data:<mime>;base64,<дані>" — беремо частину після коми
     var s = String(reader.result), comma = s.indexOf(',');
     var b64 = comma >= 0 ? s.slice(comma + 1) : '';
-    if (!b64) { toast('❌ Порожній файл', true); return; }
+    if (!b64) { infoUp.active = false; toast('❌ Порожній файл', true); renderView(); return; }
     rpc('infoUploadFile', [infoState.folderId, file.name, file.type || 'application/octet-stream', b64], function(res){
-      toast('⬆ Завантажено: '+((res && res.name) || file.name)+((res && res.renamed) ? ' (перейменовано — таке ім\'я вже було)' : ''));
-      infoState.data = null; infoLoad();
-    }, function(e){ toast('❌ '+e.message, true); });
+      infoUpDone('⬆ Завантажено: '+((res && res.name) || file.name)+((res && res.renamed) ? ' (перейменовано — таке ім\'я вже було)' : ''));
+    }, function(e){ infoUp.active = false; toast('❌ '+e.message, true); renderView(); });
   };
   reader.readAsDataURL(file);
 }
