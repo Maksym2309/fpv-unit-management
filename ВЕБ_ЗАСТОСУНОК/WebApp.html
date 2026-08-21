@@ -330,6 +330,21 @@ textarea { height: 54px; resize: vertical; }
 .crew-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--blue); background: rgba(52,152,219,.25); margin-right: 7px; vertical-align: middle; }
 .crew-dot.purple { border-color: var(--purple); background: transparent; }
 .crew-freq { color: var(--blue); } .crew-freq.purple { color: var(--purple); opacity: .75; }
+/* Склад комплекту. Системна підказка (title) тут не годиться: один рядок,
+   бліда, зі затримкою, а на телефоні наведення немає взагалі. Тому власна
+   плашка по кліку — і на десктопі, і на дотик. */
+.kit-chip { cursor: pointer; border-bottom: 1px dotted var(--accent); }
+.kit-pop {
+  position: fixed; z-index: 60; background: var(--panel-2);
+  border: 1px solid var(--accent); box-shadow: 0 8px 24px rgba(0,0,0,.65);
+  padding: 8px 10px; font-family: var(--font-data); font-size: 11px;
+  color: var(--text); max-width: 320px; max-height: 55vh; overflow: auto;
+}
+.kit-pop .kp-head { color: var(--accent); font-weight: 700; margin-bottom: 6px; }
+.kit-pop .kp-row { padding: 4px 0; border-bottom: 1px solid var(--line); white-space: normal; }
+.kit-pop .kp-row:last-child { border-bottom: 0; }
+.kit-pop .kp-id { color: var(--accent-soft); }
+.kit-pop .kp-name { color: var(--muted); }
 /* Підпис CRW-ID: поруч із назвою за замовчуванням… */
 .crew-id { font-size: 10px; color: var(--dim); font-family: var(--font-data); }
 /* …і окремим рядком у таблиці екіпажів, щоб довга назва не розпирала
@@ -1126,6 +1141,9 @@ function setView(v) {
 var _lastRenderedView = null;
 function renderView() {
   var c = $('content');
+  // Плашка складу комплекту висить на body — інакше лишилась би висіти
+  // над уже перемальованим списком
+  if (typeof invKitPopClose === 'function') invKitPopClose();
   renderAuthBox();
   if (!S.loadedAt) {
     if (MODE === 'api' && !S.auth && !authToken()) { c.innerHTML = loginGateHtml('Застосунок'); return; }
@@ -2946,7 +2964,8 @@ function invKitCellHtml(it, edit) {
   if (isMember) {
     txt = '<span title="Входить до комплекту '+esc(it.kit)+'">↳ '+esc(it.kit)+'</span>';
   } else if (members.length) {
-    txt = '<span class="accent" title="'+esc(members.map(function(m){ return m.id+' — '+m.name; }).join(', '))+'">🔗 '+members.length+' шт</span>';
+    txt = '<span class="accent kit-chip" data-head="'+esc(it.id)+'" '+
+          'onclick="event.stopPropagation();invKitPop(event, this, this.dataset.head)">🔗 '+members.length+' шт</span>';
   } else {
     txt = '<span class="hint">—</span>';
   }
@@ -2955,6 +2974,61 @@ function invKitCellHtml(it, edit) {
       'onclick="event.stopPropagation();invKitModal(this.dataset.id)">'+svgIcon('edit')+'</button>';
   }
   return txt;
+}
+
+function invKitPopClose() {
+  var p = $('kitPop');
+  if (p) p.parentNode.removeChild(p);
+  document.removeEventListener('click', invKitPopOutside, true);
+}
+function invKitPopOutside(e) {
+  var p = $('kitPop');
+  if (p && !p.contains(e.target)) invKitPopClose();
+}
+function invKitPop(ev, anchor, headId) {
+  var wasOpen = !!$('kitPop');
+  invKitPopClose();
+  if (wasOpen) return;                 // повторний клік по тому ж чіпу — закрити
+  var members = invKitMembers(headId);
+  if (!members.length) return;
+
+  var el = document.createElement('div');
+  el.className = 'kit-pop';
+  el.id = 'kitPop';
+  el.innerHTML =
+    '<div class="kp-head">🔗 '+esc(headId)+' — складників: '+members.length+'</div>'+
+    members.map(function(m){
+      return '<div class="kp-row"><div class="kp-id">'+esc(m.id)+'</div>'+
+             '<div class="kp-name">'+esc(m.name)+'</div></div>';
+    }).join('');
+  document.body.appendChild(el);
+
+  // Позиціонування. Спершу по горизонталі, бо від ширини залежить перенос
+  // рядків, а отже й висота: якщо міряти висоту до цього, рішення про
+  // «вниз чи вгору» приймається за застарілим розміром і плашка вилазить
+  // за нижній край — саме так і було на телефоні.
+  var r = anchor.getBoundingClientRect();
+  var left = r.left;
+  var w = el.offsetWidth;
+  if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
+  if (left < 8) left = 8;
+  el.style.left = left + 'px';
+
+  var h = el.offsetHeight;                      // міряємо вже на місці
+  var top = r.bottom + 6;
+  if (top + h > window.innerHeight - 8) top = r.top - h - 6;   // над чіпом
+  if (top < 8) top = 8;
+  el.style.top = top + 'px';
+
+  // Контрольний прохід: якщо після всіх переносів усе одно не влазить —
+  // притискаємо до низу, всередині лишається прокрутка (max-height).
+  var box = el.getBoundingClientRect();
+  if (box.bottom > window.innerHeight - 8) {
+    el.style.top = Math.max(8, window.innerHeight - box.height - 8) + 'px';
+  }
+
+  // Слухача вішаємо наступним тиком, інакше цей самий клік одразу закриє плашку
+  setTimeout(function(){ document.addEventListener('click', invKitPopOutside, true); }, 0);
 }
 
 function invKitModal(itemId) {
