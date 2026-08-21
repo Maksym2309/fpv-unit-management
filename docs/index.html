@@ -256,6 +256,9 @@ textarea { height: 54px; resize: vertical; }
 
 /* ── Інвентар: режим редагування ── */
 .inv-mode { display: flex; margin-left: auto; border: 1px solid var(--line-2); background: var(--panel); }
+/* Панель дій розділу «Інформація»: режими ліворуч, дії праворуч */
+.info-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.info-acts { margin-left: auto; display: flex; gap: 4px; }
 .inv-mode-btn { padding: 5px 12px; font-family: var(--font-data); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: transparent; border: none; color: var(--muted); cursor: pointer; }
 .inv-mode-btn.active { background: var(--accent); color: var(--on-accent); }
 .inv-status-sel { width: 100%; min-width: 110px; background: var(--panel-3); border: 1px solid var(--line-2); color: var(--text); font-family: var(--font-data); font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 3px 4px; cursor: pointer; }
@@ -652,7 +655,10 @@ var SVG_ICONS = {
   // Мала «i»: крапка + ніжка з підставкою, як на класичному знаку інформації.
   // Розмір у em і currentColor — щоб бралися розмір і колір з місця вставки
   // (у плитці головної це акцентний жовтий, як і в решти іконок).
-  info: '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><circle cx="12" cy="4.2" r="2.7"/><path d="M8.5 9.3h6.2v9.8h2v3.1H7.3v-3.1h2v-6.7h-1.8z"/></svg>'
+  info: '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><circle cx="12" cy="4.2" r="2.7"/><path d="M8.5 9.3h6.2v9.8h2v3.1H7.3v-3.1h2v-6.7h-1.8z"/></svg>',
+  // Тека з плюсом і вивантаження — для панелі дій розділу «Інформація»
+  folderAdd: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M12 11v6M9 14h6"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>'
 };
 function svgIcon(n) { return SVG_ICONS[n] || ''; }
 /* ── Режим транспорту ─────────────────────────────────────────
@@ -1436,23 +1442,24 @@ function renderInfo(c) {
     });
     if (!rows) rows = '<div class="empty">Тека порожня</div>';
 
-    // Перемикач режимів — той самий патерн, що в Інвентарі
-    var actions =
-      '<div class="btn-row" style="margin-bottom:10px">'+
-        '<button class="inv-mode-btn'+(!edit?' active':'')+'" onclick="infoSetMode(\'view\')">Перегляд</button>'+
-        '<button class="inv-mode-btn'+(edit?' active':'')+'" onclick="infoSetMode(\'edit\')">Редагування</button>'+
-      '</div>';
-
-    // Створення й завантаження — лише в режимі редагування, у ПОТОЧНІЙ теці.
+    // Панель дій одним рядком: перемикач режимів ліворуч, дії праворуч —
+    // як на сторінці екіпажів. Створення й завантаження діють у ПОТОЧНІЙ
+    // теці, тій, що видно в крихтах.
     // Прихований input: свій вигляд кнопки замість системного «Огляд».
-    if (edit) {
-      actions +=
-        '<div class="btn-row" style="margin-bottom:10px">'+
-          '<button class="btn btn-mini btn-sec" onclick="infoNewFolderModal()">📁 Нова тека</button>'+
-          '<button class="btn btn-mini btn-sec" onclick="infoPickFile()">⬆ Завантажити файл</button>'+
-          '<input type="file" id="infoFileInput" style="display:none" onchange="infoDoUpload(this)">'+
-        '</div>';
-    }
+    var actions =
+      '<div class="info-bar">'+
+        '<div class="inv-mode" style="margin-left:0">'+
+          '<button class="inv-mode-btn'+(!edit?' active':'')+'" onclick="infoSetMode(\'view\')">Перегляд</button>'+
+          '<button class="inv-mode-btn'+(edit?' active':'')+'" onclick="infoSetMode(\'edit\')">Редагування</button>'+
+        '</div>'+
+        (edit
+          ? '<div class="info-acts">'+
+              '<button class="icon-btn" title="Нова тека" style="background:var(--accent);color:var(--on-accent)" onclick="infoNewFolderModal()">'+svgIcon('folderAdd')+'</button>'+
+              '<button class="icon-btn" title="Завантажити файл" style="background:var(--accent);color:var(--on-accent)" onclick="infoPickFile()">'+svgIcon('upload')+'</button>'+
+              '<input type="file" id="infoFileInput" style="display:none" onchange="infoDoUpload(this)">'+
+            '</div>'
+          : '')+
+      '</div>';
 
     // Смужка завантаження на пристрій (великий файл іде частинами)
     if (infoDl.active) {
