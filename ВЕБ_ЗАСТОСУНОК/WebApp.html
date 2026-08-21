@@ -789,9 +789,10 @@ var DEMO_DATA = {
     // Долучаємо створене/завантажене в демо-режимі
     var extra = (DEMO_DATA.__infoExtra || {})[String(id||'')] || {folders:[], files:[]};
     var ren = DEMO_DATA.__infoRenames || {};
-    var folders = t.folders.concat(extra.folders).map(function(f){
-      return ren[f.id] ? {id:f.id, name:ren[f.id]} : f;
-    });
+    var trash = DEMO_DATA.__infoTrashed || {};
+    var folders = t.folders.concat(extra.folders)
+      .filter(function(f){ return !trash[f.id]; })
+      .map(function(f){ return ren[f.id] ? {id:f.id, name:ren[f.id]} : f; });
     return { configured:true, folderId:String(id||''), path:t.path,
              folders:folders, files:t.files.concat(extra.files) };
   },
@@ -810,6 +811,20 @@ var DEMO_DATA = {
   // Демо: сесії немає, тож застосунок сам відкотиться на запасний шлях —
   // це заразом і перевірка того відкату.
   infoUploadSession: function(){ throw new Error('Демо: прямого завантаження немає'); },
+  infoTrashFolder: function(folderId){
+    var t = DEMO_DATA.__infoTrashed || (DEMO_DATA.__infoTrashed = {});
+    t[String(folderId)] = true;
+    return { id:folderId, name:'тека', files:2, folders:0 };
+  },
+  infoFileInfo: function(id){
+    return { id:id, name:'великий-'+id+'.bin', mime:'application/octet-stream',
+             size: 30 * 1024 * 1024, chunk: 6 * 1024 * 1024 };
+  },
+  infoGetFileChunk: function(id, start, len){
+    // повертаємо рівно стільки нулів, скільки просять
+    var s = ''; for (var i = 0; i < len; i++) s += '\0';
+    return { start:start, data: btoa(s) };
+  },
   infoRenameFolder: function(folderId, name){
     var t = DEMO_DATA.__infoRenames || (DEMO_DATA.__infoRenames = {});
     t[String(folderId)] = name;
@@ -1286,6 +1301,10 @@ function renderHome(c) {
 // тому розмежування живе в нашому коді, а не в шаренні Drive. З тієї ж
 // причини файл відкривається вмістом через API, а не посиланням на Drive.
 var infoState = { folderId: '', data: null, loading: false, err: '' };
+// Режими як у решті застосунку: перегляд нічого не змінює, редагування
+// відкриває дії. Кнопки створення й видалення живуть лише в редагуванні.
+var infoMode = 'view';   // 'view' | 'edit'
+function infoSetMode(m) { infoMode = m; renderView(); }
 
 function infoIcon(kind) {
   return kind === 'image' ? '🖼' : kind === 'pdf' ? '📕' : kind === 'video' ? '🎞'
@@ -1349,36 +1368,69 @@ function renderInfo(c) {
                   : '<a href="#" onclick="infoOpenFolder(\''+esc(p.id)+'\');return false;" style="color:var(--blue-soft)">'+esc(p.name)+'</a>';
     }).join(' <span class="hint">/</span> ');
 
+    var edit = (infoMode === 'edit');
+
     var rows = '';
     (d.folders || []).forEach(function(f){
-      // event.stopPropagation() обов'язковий: рядок клікабельний цілком,
-      // інакше натиск на олівець ще й провалювався б у теку.
+      // event.stopPropagation() обов'язковий: рядок клікабельний цілком —
+      // інакше натиск на олівець чи смітник ще й провалювався б у теку.
       rows += '<div class="member-row" style="cursor:pointer" onclick="infoOpenFolder(\''+esc(f.id)+'\')">'+
         '<div style="flex:1"><div class="member-cs">📁 <b>'+esc(f.name)+'</b></div></div>'+
-        '<div class="inv-acts">'+
-          '<button class="inv-act" title="Перейменувати теку" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
-            'onclick="event.stopPropagation();infoRenameModal(this.dataset.id, this.dataset.name)">'+svgIcon('edit')+'</button>'+
-        '</div></div>';
+        (edit
+          ? '<div class="inv-acts">'+
+              '<button class="inv-act" title="Перейменувати теку" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
+                'onclick="event.stopPropagation();infoRenameModal(this.dataset.id, this.dataset.name)">'+svgIcon('edit')+'</button>'+
+              '<button class="inv-act inv-act--del" title="Видалити теку" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
+                'onclick="event.stopPropagation();infoTrashModal(this.dataset.id, this.dataset.name)">'+svgIcon('trash')+'</button>'+
+            '</div>'
+          : '<div class="hint">тека</div>')+
+      '</div>';
     });
     (d.files || []).forEach(function(f){
+      // Завантажити можна завжди — навіть те, що завелике для перегляду.
+      // Раніше такий файл просто позначався «завеликий» і забрати його
+      // із застосунку було неможливо взагалі.
       rows += '<div class="member-row">'+
         '<div style="flex:1"><div class="member-cs">'+infoIcon(f.kind)+' '+esc(f.name)+'</div>'+
-        '<div class="member-name">'+esc(f.date)+(f.size?' · '+infoSize(f.size):'')+'</div></div>'+
-        (f.tooBig
-          ? '<div class="hint">завеликий</div>'
-          : '<div class="inv-acts"><button class="inv-act" title="Відкрити" onclick="infoOpen(\''+esc(f.id)+'\', this)">↗</button></div>')+
+        '<div class="member-name">'+esc(f.date)+(f.size?' · '+infoSize(f.size):'')+
+          (f.tooBig ? ' · <span class="hint">завеликий для перегляду</span>' : '')+'</div></div>'+
+        '<div class="inv-acts">'+
+          (f.tooBig ? '' : '<button class="inv-act" title="Переглянути" onclick="infoOpen(\''+esc(f.id)+'\', this)">↗</button>')+
+          '<button class="inv-act" title="Завантажити" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" data-size="'+(f.size||0)+'" '+
+            'onclick="infoDownload(this.dataset.id, this.dataset.name, +this.dataset.size, this)">⬇</button>'+
+        '</div>'+
       '</div>';
     });
     if (!rows) rows = '<div class="empty">Тека порожня</div>';
 
-    // Дії створюють у ПОТОЧНІЙ теці — тій, що видно в крихтах.
-    // Прихований input: свій вигляд кнопки замість системного «Огляд».
+    // Перемикач режимів — той самий патерн, що в Інвентарі
     var actions =
       '<div class="btn-row" style="margin-bottom:10px">'+
-        '<button class="btn btn-mini btn-sec" onclick="infoNewFolderModal()">📁 Нова тека</button>'+
-        '<button class="btn btn-mini btn-sec" onclick="infoPickFile()">⬆ Завантажити файл</button>'+
-        '<input type="file" id="infoFileInput" style="display:none" onchange="infoDoUpload(this)">'+
+        '<button class="inv-mode-btn'+(!edit?' active':'')+'" onclick="infoSetMode(\'view\')">Перегляд</button>'+
+        '<button class="inv-mode-btn'+(edit?' active':'')+'" onclick="infoSetMode(\'edit\')">Редагування</button>'+
       '</div>';
+
+    // Створення й завантаження — лише в режимі редагування, у ПОТОЧНІЙ теці.
+    // Прихований input: свій вигляд кнопки замість системного «Огляд».
+    if (edit) {
+      actions +=
+        '<div class="btn-row" style="margin-bottom:10px">'+
+          '<button class="btn btn-mini btn-sec" onclick="infoNewFolderModal()">📁 Нова тека</button>'+
+          '<button class="btn btn-mini btn-sec" onclick="infoPickFile()">⬆ Завантажити файл</button>'+
+          '<input type="file" id="infoFileInput" style="display:none" onchange="infoDoUpload(this)">'+
+        '</div>';
+    }
+
+    // Смужка завантаження на пристрій (великий файл іде частинами)
+    if (infoDl.active) {
+      actions +=
+        '<div style="margin-bottom:10px">'+
+          '<div class="hint" id="infoDlTxt" style="margin-bottom:4px">⬇ '+esc(infoDl.name)+' — '+infoDl.pct+'%</div>'+
+          '<div style="height:6px;background:var(--panel-3);border:1px solid var(--line)">'+
+            '<div id="infoDlBar" style="height:100%;width:'+infoDl.pct+'%;background:var(--blue);transition:width .2s"></div>'+
+          '</div>'+
+        '</div>';
+    }
 
     // Смужка прогресу: без неї великий файл виглядав як «висить»
     if (infoUp.active) {
@@ -1460,6 +1512,104 @@ function infoOpen(fileId, btn) {
     } catch(e) { toast('❌ '+e.message, true); }
   }, function(e){
     if (btn) { btn.disabled = false; btn.textContent = '↗'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+/* ── Завантаження файлу на пристрій ──────────────────────────
+   Маленький файл беремо одним запитом. Великий — частинами: стеля
+   infoGetFile упирається в те, що Apps Script тримає всю відповідь у
+   пам'яті, і без цього завеликий архів забрати із застосунку було
+   неможливо взагалі. */
+var infoDl = { active: false, name: '', pct: 0 };
+
+function infoDlSet(pct) {
+  infoDl.active = true; infoDl.pct = pct;
+  var bar = $('infoDlBar'), txt = $('infoDlTxt');
+  if (bar) { bar.style.width = pct + '%'; if (txt) txt.textContent = '⬇ ' + infoDl.name + ' — ' + pct + '%'; }
+  else renderView();
+}
+function infoSaveBlob(blob, name) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = name || 'file';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+}
+
+function infoDownload(fileId, name, size, btn) {
+  if (infoDl.active) { toast('⚠ Зачекай — інше завантаження ще йде', true); return; }
+  infoDl.name = name || 'файл';
+  // 25 МБ — та сама стеля, що й у infoGetFile
+  if (size && size > 25 * 1024 * 1024) { infoDownloadChunked(fileId, name); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  rpc('infoGetFile', [fileId], function(res){
+    if (btn) { btn.disabled = false; btn.textContent = '⬇'; }
+    if (!res || !res.data) { toast('❌ Порожня відповідь', true); return; }
+    var bin = atob(res.data), arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    infoSaveBlob(new Blob([arr], { type: res.mime || 'application/octet-stream' }), res.name || name);
+    toast('⬇ Збережено: '+(res.name || name));
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '⬇'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+function infoDownloadChunked(fileId, name) {
+  infoDlSet(0);
+  rpc('infoFileInfo', [fileId], function(info){
+    if (!info || !info.size) { infoDl.active = false; toast('❌ Не вдалося дізнатися розмір', true); renderView(); return; }
+    var parts = [], pos = 0;
+    function step() {
+      if (pos >= info.size) {
+        infoDl.active = false;
+        infoSaveBlob(new Blob(parts, { type: info.mime || 'application/octet-stream' }), info.name || name);
+        toast('⬇ Збережено: '+(info.name || name));
+        renderView();
+        return;
+      }
+      var len = Math.min(info.chunk, info.size - pos);
+      rpc('infoGetFileChunk', [fileId, pos, len], function(res){
+        var bin = atob(res.data || ''), arr = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        if (!arr.length) {  // захист від безкінечного циклу
+          infoDl.active = false; toast('❌ Drive повернув порожній шматок', true); renderView(); return;
+        }
+        parts.push(arr);
+        pos += arr.length;                 // саме довжина отриманого, а не запитаного
+        infoDlSet(Math.min(100, Math.round(pos / info.size * 100)));
+        step();
+      }, function(e){
+        infoDl.active = false; toast('❌ '+e.message, true); renderView();
+      });
+    }
+    step();
+  }, function(e){
+    infoDl.active = false; toast('❌ '+e.message, true); renderView();
+  });
+}
+
+/* ── Видалення теки ──────────────────────────────────────────── */
+function infoTrashModal(folderId, name) {
+  openModal('🗑 Видалити теку',
+    '<div class="warn" style="margin-bottom:10px">Тека <b class="mono">'+esc(name)+'</b> разом із вмістом переїде в кошик Google Drive.</div>'+
+    '<div class="hint" style="margin-bottom:10px">Звідти її можна повернути — остаточно нічого не стирається.</div>'+
+    '<button class="btn btn-red" id="itBtn" onclick="infoDoTrash(\''+esc(folderId)+'\')">🗑 Видалити</button>'
+  );
+}
+function infoDoTrash(folderId) {
+  var btn = $('itBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('infoTrashFolder', [folderId], function(res){
+    closeModal();
+    var extra = (res && (res.files || res.folders))
+      ? ' (у кошик разом із вмістом: файлів '+(res.files||0)+', тек '+(res.folders||0)+')' : '';
+    toast('🗑 Видалено: '+((res && res.name) || folderId)+extra);
+    infoState.data = null; infoLoad();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '🗑 Видалити'; }
     toast('❌ '+e.message, true);
   });
 }

@@ -5345,3 +5345,73 @@ function infoUploadSession(parentId, name, mime) {
 
   return { uploadUrl: loc, name: finalName, renamed: finalName !== clean };
 }
+
+// ── Видалення теки ────────────────────────────────────────────
+// setTrashed, а не остаточне видалення: тека їде в кошик Drive і її
+// можна повернути. Втратити чужі документи через випадковий клік гірше,
+// ніж мати кошик, який колись треба почистити.
+function infoTrashFolder(folderId) {
+  infoAssertAccess_();
+  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+
+  const id = String(folderId || '').trim();
+  if (!id || id === INFO_ROOT_ID) throw new Error('Кореневу теку видалити не можна');
+
+  const folder = DriveApp.getFolderById(id);
+  infoAssertInsideRoot_(folder);
+
+  // Рахуємо вміст, щоб застосунок міг попередити, що саме зникає
+  let files = 0, folders = 0;
+  const fit = folder.getFiles();   while (fit.hasNext()) { fit.next(); files++; }
+  const dit = folder.getFolders(); while (dit.hasNext()) { dit.next(); folders++; }
+
+  const name = folder.getName();
+  folder.setTrashed(true);
+  return { id: id, name: name, files: files, folders: folders };
+}
+
+// ── Дозавантаження великого файлу частинами ───────────────────
+// Стеля infoGetFile (25 МБ) впирається в те, що Apps Script тримає всю
+// відповідь у пам'яті. Тут читаємо файл діапазонами байтів і віддаємо
+// шматками — браузер збирає їх назад. Повільно, зате великий архів можна
+// забрати, не відкриваючи теку «за посиланням».
+const INFO_CHUNK_MB = 6;
+
+function infoFileInfo(fileId) {
+  infoAssertAccess_();
+  const file = DriveApp.getFileById(String(fileId));
+  const parents = file.getParents();
+  if (!parents.hasNext()) throw new Error('Файл поза спільною текою');
+  infoAssertInsideRoot_(parents.next());
+  return {
+    id: file.getId(), name: file.getName(),
+    mime: file.getMimeType(), size: Number(file.getSize() || 0),
+    chunk: INFO_CHUNK_MB * 1024 * 1024,
+  };
+}
+
+function infoGetFileChunk(fileId, start, length) {
+  infoAssertAccess_();
+  const file = DriveApp.getFileById(String(fileId));
+  const parents = file.getParents();
+  if (!parents.hasNext()) throw new Error('Файл поза спільною текою');
+  infoAssertInsideRoot_(parents.next());
+
+  const from = Math.max(0, Number(start) || 0);
+  const len  = Math.min(Number(length) || 0, INFO_CHUNK_MB * 1024 * 1024);
+  if (len <= 0) throw new Error('Порожній діапазон');
+  const to = from + len - 1;
+
+  const res = UrlFetchApp.fetch(
+    'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(file.getId()) +
+    '?alt=media&supportsAllDrives=true', {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken(), Range: 'bytes=' + from + '-' + to },
+      muteHttpExceptions: true,
+    });
+
+  const code = res.getResponseCode();
+  // 206 — частковий вміст (очікуване), 200 — сервер віддав файл цілком
+  if (code !== 206 && code !== 200) throw new Error('Drive не віддав шматок (' + code + ')');
+
+  return { start: from, data: Utilities.base64Encode(res.getContent()) };
+}
