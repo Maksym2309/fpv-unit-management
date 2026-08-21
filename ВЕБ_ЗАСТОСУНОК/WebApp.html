@@ -2959,6 +2959,7 @@ var TRK_STATUSES = ['Робочий','Зламаний','Втрачений'];
    свого ID там не має. Через це в її рядку колонка виглядала порожньою,
    хоча комплект існує. Тому головному показуємо, скільки в нього
    складників, а не порожнечу. */
+var invKitHead = '';   // головний предмет відкритої модалки комплекту
 function invKitMembers(headId) {
   if (!headId) return [];
   return S.items.filter(function(x){ return String(x.kit||'').trim() === headId; });
@@ -3059,26 +3060,50 @@ function invKitModal(itemId) {
         }).join('')
       : '<div class="empty">Комплект порожній</div>';
 
-    // Кандидати: вільні предмети, крім самого себе
-    var free = S.items.filter(function(x){ return x.id !== it.id && !String(x.kit||'').trim(); });
-    var opts = '<option value="">— обери предмет —</option>' + free.map(function(x){
-      return '<option value="'+esc(x.id)+'">'+esc(x.id)+' — '+esc(x.name)+'</option>';
-    }).join('');
-
+    // Пошук замість випадаючого списку: інвентар великий, гортати його
+    // селектом незручно. Патерн той самий, що й у «додати борт до екіпажу».
+    invKitHead = it.id;
     body = '<div class="hint" style="margin-bottom:8px">Комплект <b class="mono">'+esc(it.id)+'</b> — '+esc(it.name)+'</div>'+
       list +
-      '<div class="f" style="margin-top:12px"><label>Додати до комплекту</label><select id="kitPick">'+opts+'</select></div>'+
-      '<button class="btn btn-green" id="kitBtn" onclick="invKitAdd(\''+esc(it.id)+'\')">🔗 Додати</button>'+
-      (members.length ? '' : '<div class="hint" style="margin-top:8px">Комплект створюється сам, щойно додаси перший складник</div>');
+      '<div class="f" style="margin-top:12px"><label>Додати до комплекту</label>'+
+        '<div class="ac-wrap">'+
+          '<input type="text" id="kitSearch" placeholder="ID або назва…" oninput="invKitFilter()" onfocus="invKitFilter()" autocomplete="off">'+
+          '<div class="ac-list" id="kitDd"></div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="hint">Вибір зі списку одразу додає предмет — можна додавати підряд</div>'+
+      (members.length ? '' : '<div class="hint" style="margin-top:6px">Комплект створюється сам, щойно додаси перший складник</div>');
   }
   openModal('🔗 Комплект · '+esc(it.id), body);
+  if (!inKit) setTimeout(function(){ var i = $('kitSearch'); if (i) i.focus(); }, 60);
 }
 
-function invKitAdd(headId) {
-  var compId = $('kitPick').value;
-  if (!compId) { toast('⚠ Обери предмет', true); return; }
-  var btn = $('kitBtn');
-  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+// Підбір кандидатів: лише вільні предмети, крім самого головного
+function invKitFilter() {
+  var dd = $('kitDd');
+  if (!dd) return;
+  var q = ($('kitSearch').value || '').toLowerCase().trim();
+  var free = S.items.filter(function(x){
+    if (x.id === invKitHead || String(x.kit||'').trim()) return false;
+    if (!q) return true;
+    return x.id.toLowerCase().indexOf(q) !== -1 ||
+           String(x.name||'').toLowerCase().indexOf(q) !== -1 ||
+           String(x.type||'').toLowerCase().indexOf(q) !== -1;
+  }).slice(0, 10);
+
+  if (!free.length) { dd.style.display = 'none'; return; }
+  // onmousedown, а не onclick: blur інпута сховав би список раніше за клік
+  dd.innerHTML = free.map(function(x){
+    return '<div class="ac-item" data-id="'+esc(x.id)+'" onmousedown="invKitAdd(this.dataset.id)">'+
+      '<div class="ac-id">'+esc(x.id)+' — '+esc(x.name)+'</div></div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function invKitAdd(compId) {
+  var headId = invKitHead;
+  if (!compId || !headId) return;
+  var dd = $('kitDd'); if (dd) dd.style.display = 'none';
   rpc('assignToKit', [compId, headId], function(){
     var it = S.items.find(function(x){ return x.id === compId; });
     if (it) it.kit = headId;
@@ -3086,7 +3111,6 @@ function invKitAdd(headId) {
     invKitModal(headId);      // лишаємось у модалці — зручно додавати підряд
     renderView();
   }, function(e){
-    if (btn) { btn.disabled = false; btn.textContent = '🔗 Додати'; }
     toast('❌ '+e.message, true);
   });
 }
