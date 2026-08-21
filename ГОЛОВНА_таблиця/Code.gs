@@ -5264,3 +5264,31 @@ function infoUploadFile(parentId, name, mime, dataBase64) {
   const created = folder.createFile(blob);
   return { id: created.getId(), name: created.getName(), renamed: finalName !== clean };
 }
+
+// Перейменування теки. Коренева не чіпається: вона задана INFO_ROOT_ID,
+// і зміна її імені збила б орієнтир у крихтах.
+function infoRenameFolder(folderId, newName) {
+  infoAssertAccess_();
+  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+
+  const id = String(folderId || '').trim();
+  if (!id || id === INFO_ROOT_ID) throw new Error('Кореневу теку перейменувати не можна');
+
+  const folder = DriveApp.getFolderById(id);
+  infoAssertInsideRoot_(folder);
+
+  const clean = infoCleanName_(newName);
+  if (clean === folder.getName()) return { id: id, name: clean };
+
+  // Сусідня тека з таким іменем — відмовляємо, щоб не плодити двійників
+  const parents = folder.getParents();
+  if (parents.hasNext()) {
+    const twin = parents.next().getFoldersByName(clean);
+    while (twin.hasNext()) {
+      if (twin.next().getId() !== id) throw new Error('Тека «' + clean + '» тут уже є');
+    }
+  }
+
+  folder.setName(clean);
+  return { id: id, name: clean };
+}

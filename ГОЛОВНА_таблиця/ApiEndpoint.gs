@@ -40,7 +40,7 @@ const API_FUNCTIONS = [
   'webSetItemNote', 'webSetTrackerNote', 'webLogStatusChange', 'getLostMapData',
   'webUpdateLossRecord',
   // інформація (документи підрозділу) — права перевіряють самі функції
-  'infoListFolder', 'infoGetFile', 'infoCreateFolder', 'infoUploadFile',
+  'infoListFolder', 'infoGetFile', 'infoCreateFolder', 'infoUploadFile', 'infoRenameFolder',
   // витратники
   'getConsumablesList', 'getCompatOptions', 'webUpdateConsumable',
   'webAddConsumable', 'webWriteOffConsumable', 'webDeleteConsumable',

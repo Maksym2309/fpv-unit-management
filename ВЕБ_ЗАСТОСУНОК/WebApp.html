@@ -765,8 +765,12 @@ var DEMO_DATA = {
     var t = tree[String(id||'')] || tree[''];
     // Долучаємо створене/завантажене в демо-режимі
     var extra = (DEMO_DATA.__infoExtra || {})[String(id||'')] || {folders:[], files:[]};
+    var ren = DEMO_DATA.__infoRenames || {};
+    var folders = t.folders.concat(extra.folders).map(function(f){
+      return ren[f.id] ? {id:f.id, name:ren[f.id]} : f;
+    });
     return { configured:true, folderId:String(id||''), path:t.path,
-             folders:t.folders.concat(extra.folders), files:t.files.concat(extra.files) };
+             folders:folders, files:t.files.concat(extra.files) };
   },
   infoGetFile: function(id){
     var txt = 'Демо-файл ' + id + '\nСправжній вміст приходить з Google Drive.';
@@ -779,6 +783,11 @@ var DEMO_DATA = {
     var key = String(parentId||''), id = 'NF'+(Date.now()%10000);
     (t[key] || (t[key] = {folders:[], files:[]})).folders.push({id:id, name:name});
     return { id:id, name:name };
+  },
+  infoRenameFolder: function(folderId, name){
+    var t = DEMO_DATA.__infoRenames || (DEMO_DATA.__infoRenames = {});
+    t[String(folderId)] = name;
+    return { id:folderId, name:name };
   },
   infoUploadFile: function(parentId, name, mime, b64){
     var t = DEMO_DATA.__infoExtra || (DEMO_DATA.__infoExtra = {});
@@ -1313,9 +1322,14 @@ function renderInfo(c) {
 
     var rows = '';
     (d.folders || []).forEach(function(f){
+      // event.stopPropagation() обов'язковий: рядок клікабельний цілком,
+      // інакше натиск на олівець ще й провалювався б у теку.
       rows += '<div class="member-row" style="cursor:pointer" onclick="infoOpenFolder(\''+esc(f.id)+'\')">'+
         '<div style="flex:1"><div class="member-cs">📁 <b>'+esc(f.name)+'</b></div></div>'+
-        '<div class="hint">тека</div></div>';
+        '<div class="inv-acts">'+
+          '<button class="inv-act" title="Перейменувати теку" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
+            'onclick="event.stopPropagation();infoRenameModal(this.dataset.id, this.dataset.name)">'+svgIcon('edit')+'</button>'+
+        '</div></div>';
     });
     (d.files || []).forEach(function(f){
       rows += '<div class="member-row">'+
@@ -1428,6 +1442,28 @@ function infoDoCreateFolder() {
     infoState.data = null; infoLoad();
   }, function(e){
     if (btn) { btn.disabled = false; btn.textContent = '📁 Створити'; }
+    toast('❌ '+e.message, true);
+  });
+}
+
+function infoRenameModal(folderId, curName) {
+  openModal('✏️ Назва теки',
+    '<div class="f"><label>Назва</label><input type="text" id="irName" value="'+esc(curName||'')+'" onkeydown="if(event.key===\'Enter\')infoDoRename(\''+esc(folderId)+'\')"></div>'+
+    '<button class="btn btn-green" id="irBtn" onclick="infoDoRename(\''+esc(folderId)+'\')">💾 Зберегти</button>'
+  );
+  setTimeout(function(){ var i = $('irName'); if (i) { i.focus(); i.select(); } }, 60);
+}
+function infoDoRename(folderId) {
+  var v = $('irName').value.trim();
+  if (!v) { toast('⚠ Вкажи назву', true); return; }
+  var btn = $('irBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('infoRenameFolder', [folderId, v], function(){
+    closeModal();
+    toast('✏️ Теку перейменовано: '+v);
+    infoState.data = null; infoLoad();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
     toast('❌ '+e.message, true);
   });
 }
