@@ -5122,47 +5122,75 @@ function infoFileKind_(mime) {
 }
 
 // Вміст теки: підтеки + файли. folderId порожній — коренева тека.
+// ── Читання через Drive API, а не DriveApp ────────────────────
+// DriveApp лінивий: getSize(), getMimeType(), getLastUpdated() на кожному
+// файлі — це окремі звернення всередині Apps Script. На теці з двох
+// десятків файлів набігали десятки round-trip'ів, звідси й повільне
+// відкриття. files.list віддає всі поля одним запитом.
+function infoApi_(pathAndQuery) {
+  const res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/' + pathAndQuery, {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true,
+  });
+  const code = res.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error('Drive API ' + code + ': ' + res.getContentText().slice(0, 200));
+  return JSON.parse(res.getContentText());
+}
+
+// Ланцюг батьків від теки до кореня. Заразом і перевірка належності,
+// і «хлібні крихти» — один прохід замість двох.
+function infoChainToRoot_(id) {
+  const chain = [];
+  let cur = String(id), hops = 0;
+  while (cur && hops < 25) {
+    const f = infoApi_('files/' + encodeURIComponent(cur) +
+      '?supportsAllDrives=true&fields=' + encodeURIComponent('id,name,parents'));
+    chain.unshift({ id: f.id, name: f.name });
+    if (f.id === INFO_ROOT_ID) return chain;
+    cur = (f.parents && f.parents.length) ? f.parents[0] : null;
+    hops++;
+  }
+  throw new Error('Тека поза межами спільної теки підрозділу');
+}
+
+const INFO_FOLDER_MIME = 'application/vnd.google-apps.folder';
+
 function infoListFolder(folderId) {
   infoAssertAccess_();
   if (!INFO_ROOT_ID) return { configured: false, folders: [], files: [] };
 
   const id = String(folderId || '').trim() || INFO_ROOT_ID;
-  const folder = DriveApp.getFolderById(id);
-  if (id !== INFO_ROOT_ID) infoAssertInsideRoot_(folder);
+  // Шлях і перевірка «всередині спільної теки» — одним проходом
+  const path = (id === INFO_ROOT_ID)
+    ? infoChainToRoot_(INFO_ROOT_ID)
+    : infoChainToRoot_(id);
 
-  const folders = [];
-  const it = folder.getFolders();
-  while (it.hasNext()) {
-    const f = it.next();
-    folders.push({ id: f.getId(), name: f.getName() });
-  }
+  const folders = [], files = [];
+  const cap = INFO_MAX_FILE_MB * 1024 * 1024;
+  let pageToken = '';
+  do {
+    const q = encodeURIComponent("'" + id + "' in parents and trashed = false");
+    const data = infoApi_('files?q=' + q +
+      '&pageSize=1000&orderBy=folder,name' +
+      '&supportsAllDrives=true&includeItemsFromAllDrives=true' +
+      '&fields=' + encodeURIComponent('nextPageToken,files(id,name,mimeType,size,modifiedTime)') +
+      (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : ''));
 
-  const files = [];
-  const fit = folder.getFiles();
-  while (fit.hasNext()) {
-    const f = fit.next();
-    const size = Number(f.getSize() || 0);
-    files.push({
-      id: f.getId(), name: f.getName(), mime: f.getMimeType(),
-      kind: infoFileKind_(f.getMimeType()), size: size,
-      tooBig: size > INFO_MAX_FILE_MB * 1024 * 1024,
-      date: Utilities.formatDate(f.getLastUpdated(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    (data.files || []).forEach(f => {
+      if (f.mimeType === INFO_FOLDER_MIME) {
+        folders.push({ id: f.id, name: f.name });
+        return;
+      }
+      const size = Number(f.size || 0);   // у Google-документів розміру немає
+      files.push({
+        id: f.id, name: f.name, mime: f.mimeType,
+        kind: infoFileKind_(f.mimeType), size: size,
+        tooBig: size > cap,
+        date: String(f.modifiedTime || '').slice(0, 10),
+      });
     });
-  }
-
-  folders.sort((a, b) => a.name.localeCompare(b.name));
-  files.sort((a, b) => a.name.localeCompare(b.name));
-
-  // Шлях від кореня — для «хлібних крихт» у застосунку
-  const path = [];
-  let cur = folder, hops = 0;
-  while (cur && hops < 25) {
-    path.unshift({ id: cur.getId(), name: cur.getName() });
-    if (cur.getId() === INFO_ROOT_ID) break;
-    const parents = cur.getParents();
-    cur = parents.hasNext() ? parents.next() : null;
-    hops++;
-  }
+    pageToken = data.nextPageToken || '';
+  } while (pageToken);
 
   return { configured: true, folderId: id, path: path, folders: folders, files: files };
 }

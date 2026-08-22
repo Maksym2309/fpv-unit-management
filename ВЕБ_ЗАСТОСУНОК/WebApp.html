@@ -1340,25 +1340,76 @@ function infoSize(n) {
   return (n / 1024 / 1024).toFixed(1) + ' МБ';
 }
 
+// Кеш вмісту тек. Повернення назад не має нічого чекати: тека, у якій
+// уже були, показується миттєво, а свіжість перевіряється тихо у фоні.
+var infoCache = {};
+
 function infoOpenFolder(id) {
   infoState.folderId = id || '';
+  infoState.err = '';
+  var hit = infoCache[infoState.folderId];
+  if (hit) {
+    infoState.data = hit;
+    renderView();
+    infoLoad(true);          // тиха перевірка, без спінера
+  } else {
+    infoState.data = null;
+    infoLoad();
+  }
+}
+
+// Після власної зміни (створив, перейменував, видалив, завантажив)
+// кеш цієї теки більше не дійсний
+function infoReload() {
+  delete infoCache[infoState.folderId];
   infoState.data = null;
   infoLoad();
 }
 
-function infoLoad() {
+function infoLoad(silent) {
   if (infoState.loading) return;
-  infoState.loading = true; infoState.err = '';
-  renderView();
-  rpc('infoListFolder', [infoState.folderId], function(res){
+  if (!silent) { infoState.loading = true; infoState.err = ''; renderView(); }
+  var want = infoState.folderId;          // користувач міг піти далі, поки чекали
+  rpc('infoListFolder', [want], function(res){
     infoState.loading = false;
+    if (infoState.folderId !== want) return;
+    if (res) infoCache[want] = res;
+    // Тихе оновлення не перемальовує список, якщо нічого не змінилось —
+    // інакше воно смикало б сторінку просто так
+    var same = silent && infoState.data && JSON.stringify(res) === JSON.stringify(infoState.data);
     infoState.data = res || null;
-    renderView();
+    if (!same) renderView();
   }, function(e){
     infoState.loading = false;
+    if (infoState.folderId !== want) return;
+    if (silent) return;                    // тиха перевірка не показує помилок
     infoState.err = e.message || 'Помилка';
     renderView();
   });
+}
+
+// Малює смужки прогресу в готовий контейнер. Ніякого renderView —
+// саме тому список під час завантаження стоїть спокійно.
+function infoProgRender() {
+  var box = $('infoProg');
+  if (!box) return;
+  var h = '';
+  if (infoDl.active) {
+    h += '<div style="margin-bottom:10px">'+
+      '<div class="hint" style="margin-bottom:4px">⬇ '+esc(infoDl.name)+' — '+infoDl.pct+'%</div>'+
+      '<div style="height:6px;background:var(--panel-3);border:1px solid var(--line)">'+
+        '<div style="height:100%;width:'+infoDl.pct+'%;background:var(--blue);transition:width .2s"></div>'+
+      '</div></div>';
+  }
+  if (infoUp.active) {
+    h += '<div style="margin-bottom:10px">'+
+      '<div class="hint" style="margin-bottom:4px">'+esc(infoUp.name)+' — '+infoUp.pct+'%'+
+        (infoUp.mode === 'slow' ? ' (запасний шлях)' : '')+'</div>'+
+      '<div style="height:6px;background:var(--panel-3);border:1px solid var(--line)">'+
+        '<div style="height:100%;width:'+infoUp.pct+'%;background:var(--accent);transition:width .2s"></div>'+
+      '</div></div>';
+  }
+  box.innerHTML = h;
 }
 
 function renderInfo(c) {
@@ -1419,14 +1470,15 @@ function renderInfo(c) {
             'onclick="infoRenameFileModal(this.dataset.id, this.dataset.name)">'+svgIcon('edit')+'</button>'+
           '<button class="inv-act inv-act--del" title="Видалити файл" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
             'onclick="infoTrashFileModal(this.dataset.id, this.dataset.name)">'+svgIcon('trash')+'</button>'
-        : (f.tooBig ? '' : '<button class="inv-act" title="Переглянути" onclick="infoOpen(\''+esc(f.id)+'\', this)">↗</button>')+
+        : '<button class="inv-act" title="Переглянути" data-id="'+esc(f.id)+'" data-size="'+(f.size||0)+'" '+
+            'onclick="infoOpen(this.dataset.id, this, +this.dataset.size)">↗</button>'+
           '<button class="inv-act" title="Завантажити" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" data-size="'+(f.size||0)+'" '+
             'onclick="infoDownload(this.dataset.id, this.dataset.name, +this.dataset.size, this)">⬇</button>';
 
       rows += '<div class="member-row">'+
         '<div style="flex:1"><div class="member-cs">'+infoIcon(f.kind)+' '+esc(f.name)+'</div>'+
         '<div class="member-name">'+esc(f.date)+(f.size?' · '+infoSize(f.size):'')+
-          (f.tooBig ? ' · <span class="hint">завеликий для перегляду</span>' : '')+'</div></div>'+
+          (f.tooBig ? ' · <span class="hint">перегляд довантажує цілком</span>' : '')+'</div></div>'+
         '<div class="inv-acts">'+acts+'</div>'+
       '</div>';
     });
@@ -1451,28 +1503,10 @@ function renderInfo(c) {
           : '')+
       '</div>';
 
-    // Смужка завантаження на пристрій (великий файл іде частинами)
-    if (infoDl.active) {
-      actions +=
-        '<div style="margin-bottom:10px">'+
-          '<div class="hint" id="infoDlTxt" style="margin-bottom:4px">⬇ '+esc(infoDl.name)+' — '+infoDl.pct+'%</div>'+
-          '<div style="height:6px;background:var(--panel-3);border:1px solid var(--line)">'+
-            '<div id="infoDlBar" style="height:100%;width:'+infoDl.pct+'%;background:var(--blue);transition:width .2s"></div>'+
-          '</div>'+
-        '</div>';
-    }
-
-    // Смужка прогресу: без неї великий файл виглядав як «висить»
-    if (infoUp.active) {
-      actions +=
-        '<div style="margin-bottom:10px">'+
-          '<div class="hint" id="infoUpTxt" style="margin-bottom:4px">'+esc(infoUp.name)+' — '+infoUp.pct+'%'+
-            (infoUp.mode === 'slow' ? ' (запасний шлях)' : '')+'</div>'+
-          '<div style="height:6px;background:var(--panel-3);border:1px solid var(--line)">'+
-            '<div id="infoUpBar" style="height:100%;width:'+infoUp.pct+'%;background:var(--accent);transition:width .2s"></div>'+
-          '</div>'+
-        '</div>';
-    }
+    // Контейнер прогресу існує ЗАВЖДИ, навіть порожній: оновлення відсотків
+    // тоді точково пише в нього і не перемальовує весь список під час
+    // завантаження — раніше саме це й смикало сторінку.
+    actions += '<div id="infoProg"></div>';
 
     body = (crumbs ? '<div class="hint" style="margin-bottom:8px">'+crumbs+'</div>' : '') + actions + rows;
   } else {
@@ -1499,20 +1533,68 @@ function infoDownloadCurrent(name) {
   document.body.appendChild(a); a.click(); a.remove();
 }
 
-function infoOpen(fileId, btn) {
+// Перегляд. Стеля 25 МБ була не в перегляді як такому, а в тому, що файл
+// їхав одним куском через памʼять Apps Script. Великий файл тепер
+// довантажується частинами — тим самим шляхом, що й збереження, — тож
+// показати можна будь-що, лише довше.
+var INFO_ONESHOT_MB = 25;
+
+function infoOpen(fileId, btn, size) {
+  size = Number(size) || 0;
+  if (size > INFO_ONESHOT_MB * 1024 * 1024) {
+    if (infoDl.active) { toast('⚠ Зачекай — інше завантаження ще йде', true); return; }
+    if (!confirm('Файл '+(size/1024/1024).toFixed(1)+' МБ. Щоб показати, його треба завантажити цілком — це займе час. Продовжити?')) return;
+    infoDl.name = 'перегляд';
+    infoOpenChunked(fileId);
+    return;
+  }
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳'; }
   rpc('infoGetFile', [fileId], function(res){
     if (btn) { btn.disabled = false; btn.textContent = '↗'; }
     if (!res || !res.data) { toast('❌ Порожня відповідь', true); return; }
-    try {
-      var bin = atob(res.data), len = bin.length, bytes = new Uint8Array(len);
-      for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
-      var mime = res.mime || 'application/octet-stream';
-      infoRevokeBlob();
-      infoBlobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    var bin = atob(res.data), len = bin.length, bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+    infoShowViewer(res.name || 'файл', res.mime || 'application/octet-stream', [bytes], res.exported);
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '↗'; }
+    toast('❌ '+e.message, true);
+  });
+}
 
-      var nameEsc = esc(res.name || 'файл');
-      var view;
+// Довантаження частинами саме для перегляду
+function infoOpenChunked(fileId) {
+  infoDlSet(0);
+  rpc('infoFileInfo', [fileId], function(info){
+    if (!info || !info.size) { infoDl.active = false; infoProgRender(); toast('❌ Не вдалося дізнатися розмір', true); return; }
+    infoDl.name = info.name || 'перегляд';
+    var parts = [], pos = 0;
+    function step() {
+      if (pos >= info.size) {
+        infoDl.active = false; infoProgRender();
+        infoShowViewer(info.name, info.mime || 'application/octet-stream', parts, false);
+        return;
+      }
+      rpc('infoGetFileChunk', [fileId, pos, Math.min(info.chunk, info.size - pos)], function(res){
+        var bin = atob(res.data || ''), arr = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        if (!arr.length) { infoDl.active = false; infoProgRender(); toast('❌ Drive повернув порожній шматок', true); return; }
+        parts.push(arr); pos += arr.length;
+        infoDlSet(Math.min(100, Math.round(pos / info.size * 100)));
+        step();
+      }, function(e){ infoDl.active = false; infoProgRender(); toast('❌ '+e.message, true); });
+    }
+    step();
+  }, function(e){ infoDl.active = false; infoProgRender(); toast('❌ '+e.message, true); });
+}
+
+// Саме вікно перегляду. parts — масив Uint8Array (один або багато шматків).
+function infoShowViewer(name, mime, parts, exported) {
+  try {
+    infoRevokeBlob();
+    infoBlobUrl = URL.createObjectURL(new Blob(parts, { type: mime }));
+
+    var nameEsc = esc(name || 'файл');
+    var view;
       if (mime.indexOf('image/') === 0) {
         view = '<img src="'+infoBlobUrl+'" alt="'+nameEsc+'" style="max-width:100%;max-height:70vh;display:block;margin:0 auto">';
       } else if (mime === 'application/pdf') {
@@ -1526,24 +1608,26 @@ function infoOpen(fileId, btn) {
         view = '<audio src="'+infoBlobUrl+'" controls style="width:100%"></audio>';
       } else if (mime.indexOf('text/') === 0 || mime.indexOf('json') !== -1) {
         var txt = '';
-        try { txt = new TextDecoder('utf-8').decode(bytes); } catch(e) { txt = bin; }
+        try {
+          var total = 0, k;
+          for (k = 0; k < parts.length; k++) total += parts[k].length;
+          var all = new Uint8Array(total), off = 0;
+          for (k = 0; k < parts.length; k++) { all.set(parts[k], off); off += parts[k].length; }
+          txt = new TextDecoder('utf-8').decode(all);
+        } catch(e) { txt = '(не вдалося прочитати як текст)'; }
         view = '<pre style="max-height:70vh;overflow:auto;white-space:pre-wrap;word-break:break-word;'+
                'background:var(--bg-low);border:1px solid var(--line);padding:10px;font-size:12px">'+esc(txt)+'</pre>';
       } else {
         view = '<div class="empty">Цей тип не показується в застосунку — збережи файл, щоб відкрити.</div>';
       }
 
-      openModal('📄 '+nameEsc,
-        (res.exported ? '<div class="hint" style="margin-bottom:8px">Google-документ показано як PDF</div>' : '')+
-        view+
-        '<div class="btn-row" style="margin-top:10px">'+
-          '<button class="btn btn-sec" onclick="infoDownloadCurrent(\''+esc(res.name||'file').replace(/'/g,"\\'")+'\')">⬇ Зберегти</button>'+
-        '</div>', true);
-    } catch(e) { toast('❌ '+e.message, true); }
-  }, function(e){
-    if (btn) { btn.disabled = false; btn.textContent = '↗'; }
-    toast('❌ '+e.message, true);
-  });
+    openModal('📄 '+nameEsc,
+      (exported ? '<div class="hint" style="margin-bottom:8px">Google-документ показано як PDF</div>' : '')+
+      view+
+      '<div class="btn-row" style="margin-top:10px">'+
+        '<button class="btn btn-sec" onclick="infoDownloadCurrent(\''+esc(name||'file').replace(/'/g,"\\'")+'\')">⬇ Зберегти</button>'+
+      '</div>', true);
+  } catch(e) { toast('❌ '+e.message, true); }
 }
 
 /* ── Завантаження файлу на пристрій ──────────────────────────
@@ -1555,9 +1639,7 @@ var infoDl = { active: false, name: '', pct: 0 };
 
 function infoDlSet(pct) {
   infoDl.active = true; infoDl.pct = pct;
-  var bar = $('infoDlBar'), txt = $('infoDlTxt');
-  if (bar) { bar.style.width = pct + '%'; if (txt) txt.textContent = '⬇ ' + infoDl.name + ' — ' + pct + '%'; }
-  else renderView();
+  infoProgRender();          // точково, без перемальовки списку
 }
 function infoSaveBlob(blob, name) {
   var url = URL.createObjectURL(blob);
@@ -1637,7 +1719,7 @@ function infoDoTrash(folderId) {
     var extra = (res && (res.files || res.folders))
       ? ' (у кошик разом із вмістом: файлів '+(res.files||0)+', тек '+(res.folders||0)+')' : '';
     toast('🗑 Видалено: '+((res && res.name) || folderId)+extra);
-    infoState.data = null; infoLoad();
+    infoReload();
   }, function(e){
     if (btn) { btn.disabled = false; btn.textContent = '🗑 Видалити'; }
     toast('❌ '+e.message, true);
@@ -1668,7 +1750,7 @@ function infoDoRenameFile(fileId) {
   rpc('infoRenameFile', [fileId, v], function(){
     closeModal();
     toast('✏️ Файл перейменовано: '+v);
-    infoState.data = null; infoLoad();
+    infoReload();
   }, function(e){
     if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
     toast('❌ '+e.message, true);
@@ -1688,7 +1770,7 @@ function infoDoTrashFile(fileId) {
   rpc('infoTrashFile', [fileId], function(res){
     closeModal();
     toast('🗑 Видалено: '+((res && res.name) || fileId));
-    infoState.data = null; infoLoad();
+    infoReload();
   }, function(e){
     if (btn) { btn.disabled = false; btn.textContent = '🗑 Видалити'; }
     toast('❌ '+e.message, true);
@@ -1711,7 +1793,7 @@ function infoDoCreateFolder() {
   rpc('infoCreateFolder', [infoState.folderId, v], function(){
     closeModal();
     toast('📁 Теку створено: '+v);
-    infoState.data = null; infoLoad();
+    infoReload();
   }, function(e){
     if (btn) { btn.disabled = false; btn.textContent = '📁 Створити'; }
     toast('❌ '+e.message, true);
@@ -1733,7 +1815,7 @@ function infoDoRename(folderId) {
   rpc('infoRenameFolder', [folderId, v], function(){
     closeModal();
     toast('✏️ Теку перейменовано: '+v);
-    infoState.data = null; infoLoad();
+    infoReload();
   }, function(e){
     if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
     toast('❌ '+e.message, true);
@@ -1753,19 +1835,12 @@ var infoUp = { active: false, name: '', pct: 0, mode: '' };
 
 function infoUpSet(pct, mode) {
   infoUp.active = true; infoUp.pct = pct; infoUp.mode = mode || infoUp.mode;
-  var el = $('infoUpBar');
-  if (el) {
-    el.style.width = pct + '%';
-    var t = $('infoUpTxt');
-    if (t) t.textContent = infoUp.name + ' — ' + pct + '%' + (infoUp.mode === 'slow' ? ' (запасний шлях)' : '');
-  } else {
-    renderView();
-  }
+  infoProgRender();          // точково, без перемальовки списку
 }
 function infoUpDone(msg, isErr) {
   infoUp.active = false; infoUp.pct = 0;
   toast(msg, isErr);
-  infoState.data = null; infoLoad();
+  infoReload();
 }
 
 function infoDoUpload(input) {
@@ -5538,6 +5613,10 @@ authInit();
 // Автооновлення: НЕ чіпаємо, поки відкрита модалка або користувач щось
 // друкує — інакше перемальовка збиває заповнення форми
 function userIsBusy() {
+  // Завантаження файлу — теж «зайнято»: автооновлення перемальовувало
+  // розділ просто посеред процесу і збивало роботу
+  if ((typeof infoUp !== 'undefined' && infoUp.active) ||
+      (typeof infoDl !== 'undefined' && infoDl.active)) return true;
   if ($('modalBg') && $('modalBg').classList.contains('open')) return true;
   var a = document.activeElement;
   return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'));
