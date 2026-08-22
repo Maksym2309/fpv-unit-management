@@ -9,3 +9,6 @@ Thumbs.db
 # Cloudflare Worker: локальні секрети (ключі Google, TICKET_SECRET)
 .dev.vars
 .wrangler/
+# JSON-ключ сервісного акаунта Google — доступ до теки, у git не місце
+CLOUDFLARE_WORKER/*.json
+*service-account*.json

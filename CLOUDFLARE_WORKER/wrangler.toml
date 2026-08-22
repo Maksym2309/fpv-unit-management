@@ -9,7 +9,6 @@ compatibility_date = "2026-01-01"
 ALLOWED_ORIGIN = ""
 
 # Секрети сюди НЕ пишуться — вони задаються окремо і не потрапляють у git:
-#   wrangler secret put GOOGLE_CLIENT_ID
-#   wrangler secret put GOOGLE_CLIENT_SECRET
-#   wrangler secret put GOOGLE_REFRESH_TOKEN
-#   wrangler secret put TICKET_SECRET
+#   wrangler secret put GOOGLE_SA_EMAIL        (client_email із JSON-ключа)
+#   wrangler secret put GOOGLE_SA_PRIVATE_KEY  (private_key із JSON-ключа)
+#   wrangler secret put TICKET_SECRET          (спільний із INFO_MEDIA_SECRET)

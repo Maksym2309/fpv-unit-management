@@ -21,25 +21,68 @@
 
 const DRIVE_MEDIA = 'https://www.googleapis.com/drive/v3/files/';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 
-// Токен Google живе годину. Тримаємо в памʼяті ізоляту, щоб не ходити
-// за ним на кожен Range-запит (їх у відео десятки).
+// ЧОМУ СЕРВІСНИЙ АКАУНТ, А НЕ OAuth. drive.readonly — чутливий scope.
+// Зі звичайним Google-акаунтом застосунок лишається в статусі Testing,
+// а там refresh token протухає приблизно раз на тиждень: усе працює,
+// а потім раптом файли перестають відкриватись. Опублікувати застосунок
+// із таким scope — це верифікація в Google, зайва для внутрішнього
+// інструмента. Сервісний акаунт цього не має взагалі: він сам собі
+// видає токен і бачить рівно ту теку, яку йому розшарили.
 let tokenCache = { value: '', exp: 0 };
+
+function b64url(bytes) {
+  let s = '';
+  const a = new Uint8Array(bytes);
+  for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// PEM із JSON-ключа. Через wrangler його вставляють по-різному: як
+// справжні переноси або як послідовність \n — приймаємо обидва варіанти.
+async function importPrivateKey(pem) {
+  const clean = String(pem)
+    .replace(/\\n/g, '\n')
+    .replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '')
+    .replace(/\s+/g, '');
+  const bin = atob(clean);
+  const der = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) der[i] = bin.charCodeAt(i);
+  return crypto.subtle.importKey(
+    'pkcs8', der.buffer,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false, ['sign']);
+}
+
+async function makeAssertion(email, pem) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })));
+  const claim = b64url(new TextEncoder().encode(JSON.stringify({
+    iss: email, scope: SCOPE, aud: TOKEN_URL, iat: now, exp: now + 3600,
+  })));
+  const data = header + '.' + claim;
+  const key = await importPrivateKey(pem);
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(data));
+  return data + '.' + b64url(sig);
+}
 
 async function getAccessToken(env) {
   const now = Date.now();
   if (tokenCache.value && tokenCache.exp > now + 60_000) return tokenCache.value;
+  if (!env.GOOGLE_SA_EMAIL || !env.GOOGLE_SA_PRIVATE_KEY) {
+    throw new Error('не задано GOOGLE_SA_EMAIL / GOOGLE_SA_PRIVATE_KEY');
+  }
 
-  const body = new URLSearchParams({
-    client_id: env.GOOGLE_CLIENT_ID,
-    client_secret: env.GOOGLE_CLIENT_SECRET,
-    refresh_token: env.GOOGLE_REFRESH_TOKEN,
-    grant_type: 'refresh_token',
-  });
+  const assertion = await makeAssertion(env.GOOGLE_SA_EMAIL, env.GOOGLE_SA_PRIVATE_KEY);
   const r = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: assertion,
+    }).toString(),
   });
   if (!r.ok) throw new Error('token ' + r.status + ' ' + (await r.text()).slice(0, 200));
   const j = await r.json();

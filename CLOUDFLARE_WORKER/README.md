@@ -28,32 +28,35 @@ Worker нікого не пускає «за id файлу». Право «Ін�
 
 ## Розгортання
 
-### 1. Отримати доступ Google
+### 1. Отримати доступ Google (сервісний акаунт)
+
+**Чому саме сервісний акаунт, а не «вхід через Google».** `drive.readonly` —
+чутливий scope. Зі звичайним акаунтом `@gmail.com` застосунок лишається в
+статусі Testing, а там **refresh token протухає приблизно раз на тиждень**:
+усе працює, а потім раптом файли перестають відкриватись. Опублікувати
+застосунок із таким scope — це верифікація в Google, зайва для внутрішнього
+інструмента. Сервісний акаунт цього не має взагалі: ані consent screen, ані
+test users, ані верифікації, ані протухання.
 
 1. https://console.cloud.google.com → створи проєкт (або візьми наявний).
 2. APIs & Services → Library → увімкни саме **Google Drive API**
    («Create and manage resources in Google Drive»). Drive Activity API,
    Drive Labels API і Marketplace SDK — не те, вмикати не треба.
-3. Далі — розділ **Google Auth Platform** (не «Identity platform»!).
-   Google переніс туди те, що в старих інструкціях зветься
-   «OAuth consent screen», і перейменував підрозділи:
-     Branding    — назва застосунку й пошта підтримки (колишній consent screen)
-     Audience    — тип External + **Test users** (додай себе обовʼязково)
-     Data access — scopes (тут можна нічого не додавати)
-     Clients     — колишній Credentials
-4. Clients → Create client → **Web application**.
-   В Authorized redirect URIs додай `https://developers.google.com/oauthplayground`.
-   Збережи **Client ID** і **Client secret**.
+3. IAM & Admin → **Service Accounts** → Create service account.
+   Назва будь-яка, ролі проєкту не потрібні — тисни Done.
+4. Відкрий створений акаунт → вкладка **Keys** → Add key → Create new key →
+   **JSON** → файл завантажиться. У ньому потрібні два поля:
+   `client_email` і `private_key`.
+5. **Розшар теку сервісному акаунту.** Відкрий свою теку в Drive →
+   Поділитися → встав `client_email` (виду `...@...iam.gserviceaccount.com`) →
+   права **Читач** → Надіслати.
 
-   ⚠ Поки застосунок у статусі **Testing**, refresh token протухає
-   приблизно раз на тиждень — і Worker раптом перестане віддавати файли.
-   Або додай себе в Test users і памʼятай про це, або опублікуй
-   застосунок (Audience → Publish), і токен житиме постійно.
-5. https://developers.google.com/oauthplayground → ⚙ (справа вгорі) →
-   постав «Use your own OAuth credentials», встав Client ID і Secret.
-   У списку зліва обери scope `https://www.googleapis.com/auth/drive.readonly`
-   → Authorize APIs → увійди **тим акаунтом, що володіє текою** →
-   Exchange authorization code for tokens → скопіюй **Refresh token**.
+   Це і є межа доступу: сервісний акаунт бачить рівно цю теку, і нічого
+   більше у твоєму Drive. Consent screen на цьому шляху не потрібен зовсім —
+   крок «Google Auth Platform» пропускай.
+
+⚠ JSON-ключ — це доступ до теки. Не клади його в git; він потрібен лише
+один раз, щоб перенести два поля в секрети Worker.
 
 ### 2. Розгорнути Worker
 
@@ -66,11 +69,15 @@ wrangler deploy
 Далі задай секрети (їх не видно в коді й не потрапляють у git):
 
 ```
-wrangler secret put GOOGLE_CLIENT_ID
-wrangler secret put GOOGLE_CLIENT_SECRET
-wrangler secret put GOOGLE_REFRESH_TOKEN
+wrangler secret put GOOGLE_SA_EMAIL
+wrangler secret put GOOGLE_SA_PRIVATE_KEY
 wrangler secret put TICKET_SECRET
 ```
+
+`GOOGLE_SA_EMAIL` — поле `client_email` із JSON-ключа.
+`GOOGLE_SA_PRIVATE_KEY` — поле `private_key` звідти ж, разом із рядками
+`-----BEGIN PRIVATE KEY-----` / `-----END PRIVATE KEY-----`. Можна вставити
+як є (з `\n` усередині) або справжніми переносами — Worker розуміє обидва.
 
 `TICKET_SECRET` — довільний довгий рядок, який ти сам вигадуєш. Він має
 збігатися з `INFO_MEDIA_SECRET` у Code.gs.
