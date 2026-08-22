@@ -31,11 +31,24 @@ Worker нікого не пускає «за id файлу». Право «Ін�
 ### 1. Отримати доступ Google
 
 1. https://console.cloud.google.com → створи проєкт (або візьми наявний).
-2. APIs & Services → Library → увімкни **Google Drive API**.
-3. OAuth consent screen → External → заповни мінімум → додай себе в Test users.
-4. Credentials → Create credentials → **OAuth client ID** → Web application.
+2. APIs & Services → Library → увімкни саме **Google Drive API**
+   («Create and manage resources in Google Drive»). Drive Activity API,
+   Drive Labels API і Marketplace SDK — не те, вмикати не треба.
+3. Далі — розділ **Google Auth Platform** (не «Identity platform»!).
+   Google переніс туди те, що в старих інструкціях зветься
+   «OAuth consent screen», і перейменував підрозділи:
+     Branding    — назва застосунку й пошта підтримки (колишній consent screen)
+     Audience    — тип External + **Test users** (додай себе обовʼязково)
+     Data access — scopes (тут можна нічого не додавати)
+     Clients     — колишній Credentials
+4. Clients → Create client → **Web application**.
    В Authorized redirect URIs додай `https://developers.google.com/oauthplayground`.
    Збережи **Client ID** і **Client secret**.
+
+   ⚠ Поки застосунок у статусі **Testing**, refresh token протухає
+   приблизно раз на тиждень — і Worker раптом перестане віддавати файли.
+   Або додай себе в Test users і памʼятай про це, або опублікуй
+   застосунок (Audience → Publish), і токен житиме постійно.
 5. https://developers.google.com/oauthplayground → ⚙ (справа вгорі) →
    постав «Use your own OAuth credentials», встав Client ID і Secret.
    У списку зліва обери scope `https://www.googleapis.com/auth/drive.readonly`
