@@ -1,0 +1,15 @@
+name = "wh-media"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+# Звідки дозволено тягнути файли. Постав адресу свого GitHub Pages —
+# тоді сторонній сайт не зможе використати квиток, навіть перехопивши його.
+# Порожньо або "*" — дозволено звідусіль (квиток усе одно потрібен).
+ALLOWED_ORIGIN = ""
+
+# Секрети сюди НЕ пишуться — вони задаються окремо і не потрапляють у git:
+#   wrangler secret put GOOGLE_CLIENT_ID
+#   wrangler secret put GOOGLE_CLIENT_SECRET
+#   wrangler secret put GOOGLE_REFRESH_TOKEN
+#   wrangler secret put TICKET_SECRET

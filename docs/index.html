@@ -834,6 +834,8 @@ var DEMO_DATA = {
   // Демо: сесії немає, тож застосунок сам відкотиться на запасний шлях —
   // це заразом і перевірка того відкату.
   infoUploadSession: function(){ throw new Error('Демо: прямого завантаження немає'); },
+  // Worker у демо не налаштований — застосунок має тихо піти запасним шляхом
+  infoMediaTicket: function(){ return { available:false }; },
   infoRenameFile: function(id, name){
     var t = DEMO_DATA.__infoFileRenames || (DEMO_DATA.__infoFileRenames = {});
     t[String(id)] = name;
@@ -1549,7 +1551,29 @@ function infoDownloadCurrent(name) {
 // показати можна будь-що, лише довше.
 var INFO_ONESHOT_MB = 25;
 
+// Прямий потік через Worker, якщо він налаштований. Тоді байти не йдуть
+// через Apps Script узагалі: відео перемотується, файли кешуються
+// браузером і завантажуються на повній швидкості. Не налаштований —
+// усе працює як раніше, просто повільніше.
+function infoTryStream(fileId, forDownload, ok, fail) {
+  rpc('infoMediaTicket', [fileId, !!forDownload], function(t){
+    if (t && t.available && t.url) ok(t); else fail();
+  }, function(){ fail(); });
+}
+
 function infoOpen(fileId, btn, size) {
+  size = Number(size) || 0;
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳'; }
+  infoTryStream(fileId, false, function(t){
+    if (btn) { btn.disabled = false; btn.textContent = '↗'; }
+    infoShowViewerUrl(t.name, t.mime, t.url);
+  }, function(){
+    if (btn) { btn.disabled = false; btn.textContent = '↗'; }
+    infoOpenSlow(fileId, null, size);
+  });
+}
+
+function infoOpenSlow(fileId, btn, size) {
   size = Number(size) || 0;
   if (size > INFO_ONESHOT_MB * 1024 * 1024) {
     if (infoDl.active) { toast('⚠ Зачекай — інше завантаження ще йде', true); return; }
@@ -1595,6 +1619,45 @@ function infoOpenChunked(fileId) {
     }
     step();
   }, function(e){ infoDl.active = false; infoProgRender(); toast('❌ '+e.message, true); });
+}
+
+// Перегляд напряму за адресою (Worker). Головна відмінність від blob:
+// відео тягне лише потрібні шматки й перемотується, бо Worker підтримує
+// Range. Нічого попередньо завантажувати не треба.
+function infoShowViewerUrl(name, mime, url) {
+  var nameEsc = esc(name || 'файл');
+  mime = mime || 'application/octet-stream';
+  var view;
+  if (mime.indexOf('image/') === 0) {
+    view = '<img src="'+esc(url)+'" alt="'+nameEsc+'" style="max-width:100%;max-height:70vh;display:block;margin:0 auto">';
+  } else if (mime === 'application/pdf') {
+    view = '<iframe src="'+esc(url)+'" style="width:100%;height:70vh;border:1px solid var(--line);background:#fff"></iframe>';
+  } else if (mime.indexOf('video/') === 0) {
+    view = '<video src="'+esc(url)+'" controls preload="metadata" style="max-width:100%;max-height:70vh;display:block;margin:0 auto"></video>';
+  } else if (mime.indexOf('audio/') === 0) {
+    view = '<audio src="'+esc(url)+'" controls preload="metadata" style="width:100%"></audio>';
+  } else if (mime.indexOf('text/') === 0 || mime.indexOf('json') !== -1) {
+    view = '<pre id="infoTextView" style="max-height:70vh;overflow:auto;white-space:pre-wrap;word-break:break-word;'+
+           'background:var(--bg-low);border:1px solid var(--line);padding:10px;font-size:12px">завантаження…</pre>';
+  } else {
+    view = '<div class="empty">Цей тип не показується в застосунку — збережи файл, щоб відкрити.</div>';
+  }
+
+  openModal('📄 '+nameEsc,
+    view+
+    '<div class="btn-row" style="margin-top:10px">'+
+      '<a class="btn btn-sec" href="'+esc(url)+(url.indexOf('dl=1')===-1?'&dl=1':'')+'" '+
+        'download="'+nameEsc+'" style="text-align:center;text-decoration:none">⬇ Зберегти</a>'+
+    '</div>', true);
+
+  // Текст читаємо окремо — його треба показати як текст, а не як файл
+  if ($('infoTextView')) {
+    fetch(url).then(function(r){ return r.text(); }).then(function(t){
+      var el = $('infoTextView'); if (el) el.textContent = t;
+    }).catch(function(e){
+      var el = $('infoTextView'); if (el) el.textContent = 'Не вдалося прочитати: ' + e.message;
+    });
+  }
 }
 
 // Саме вікно перегляду. parts — масив Uint8Array (один або багато шматків).
@@ -1661,6 +1724,25 @@ function infoSaveBlob(blob, name) {
 
 function infoDownload(fileId, name, size, btn) {
   if (infoDl.active) { toast('⚠ Зачекай — інше завантаження ще йде', true); return; }
+  infoDl.name = name || 'файл';
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳'; }
+
+  // Спершу прямий потік: браузер качає сам, на повній швидкості,
+  // з власним індикатором і без обмежень на розмір
+  infoTryStream(fileId, true, function(t){
+    if (btn) { btn.disabled = false; btn.textContent = '⬇'; }
+    var a = document.createElement('a');
+    a.href = t.url; a.download = t.name || name || 'file';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('⬇ Завантаження почалося: '+(t.name || name));
+  }, function(){
+    if (btn) { btn.disabled = false; btn.textContent = '⬇'; }
+    infoDownloadSlow(fileId, name, size, btn);
+  });
+}
+
+// Запасний шлях — через Apps Script (base64), зі стелею й частинами
+function infoDownloadSlow(fileId, name, size, btn) {
   infoDl.name = name || 'файл';
   // 25 МБ — та сама стеля, що й у infoGetFile
   if (size && size > 25 * 1024 * 1024) { infoDownloadChunked(fileId, name); return; }

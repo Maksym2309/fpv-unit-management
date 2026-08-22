@@ -5484,3 +5484,55 @@ function infoTrashFile(fileId) {
   file.setTrashed(true);
   return { id: String(fileId), name: name };
 }
+
+// ── Медіа-квиток для Cloudflare Worker ────────────────────────
+// Apps Script не вміє віддавати бінарні дані, тому файл ішов через нього
+// в base64: без перемотки, без кешу браузера, з +33% обсягу. Worker
+// прибирає його зі шляху даних і віддає файл потоком.
+//
+// Щоб Worker не став відкритим проксі до Drive, він нікого не пускає
+// «за id файлу»: право «Інформація» перевіряється ТУТ, і лише тоді
+// видається квиток — HMAC-підпис від "<fileId>.<коли протухає>".
+// Worker перевіряє підпис своїм примірником секрету. Квиток дійсний на
+// один файл і недовго; токен власника Drive браузеру не потрапляє.
+//
+// НАЛАШТУВАННЯ (обидва рядки — інакше застосунок тихо працює як раніше):
+//   INFO_MEDIA_WORKER_URL — адреса Worker, напр. https://xxx.workers.dev
+//   INFO_MEDIA_SECRET     — той самий рядок, що в секреті TICKET_SECRET
+const INFO_MEDIA_WORKER_URL = '';
+const INFO_MEDIA_SECRET = '';
+const INFO_TICKET_TTL_MIN = 30;
+
+function infoMediaConfigured_() {
+  return !!(INFO_MEDIA_WORKER_URL && INFO_MEDIA_SECRET);
+}
+
+function infoMediaTicket(fileId, forDownload) {
+  infoAssertAccess_();
+  if (!infoMediaConfigured_()) return { available: false };
+
+  const file = DriveApp.getFileById(String(fileId));
+  infoFileParent_(file);                 // файл має бути в спільній теці
+
+  const id = file.getId();
+  const exp = Math.floor(Date.now() / 1000) + INFO_TICKET_TTL_MIN * 60;
+  const sig = Utilities.base64EncodeWebSafe(
+    Utilities.computeHmacSha256Signature(id + '.' + exp, INFO_MEDIA_SECRET)
+  ).replace(/=+$/, '');
+
+  const isGoogleDoc = String(file.getMimeType()).indexOf('google-apps') !== -1;
+  // Google-документи бінарного вмісту не мають — їх Worker не віддасть,
+  // для них лишається старий шлях з експортом у PDF
+  if (isGoogleDoc) return { available: false, reason: 'gdoc' };
+
+  let url = INFO_MEDIA_WORKER_URL +
+    (INFO_MEDIA_WORKER_URL.indexOf('?') === -1 ? '?' : '&') +
+    'f=' + encodeURIComponent(id) + '&e=' + exp + '&s=' + sig;
+  if (forDownload) url += '&dl=1&n=' + encodeURIComponent(file.getName());
+
+  return {
+    available: true, url: url,
+    name: file.getName(), mime: file.getMimeType(),
+    size: Number(file.getSize() || 0),
+  };
+}
