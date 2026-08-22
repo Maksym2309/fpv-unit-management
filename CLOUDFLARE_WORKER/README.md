@@ -60,6 +60,29 @@ test users, ані верифікації, ані протухання.
 
 ### 2. Розгорнути Worker
 
+Два способи. **Через панель — простіший і не потребує Node.js.**
+
+#### Спосіб А: веб-панель Cloudflare (рекомендовано)
+
+1. https://dash.cloudflare.com → зареєструйся або увійди (безкоштовного
+   тарифу вистачає з запасом).
+2. **Workers & Pages** → Create → **Worker** → назви `wh-media` → Deploy.
+   Cloudflare створить заготовку «Hello World» — це нормально.
+3. **Edit code** → виділи весь вміст редактора і встав туди `worker.js`
+   із цієї теки цілком → **Deploy**.
+4. Worker → **Settings** → **Variables and Secrets**:
+   - тип **Secret** (зашифровано): `GOOGLE_SA_EMAIL`, `GOOGLE_SA_PRIVATE_KEY`,
+     `TICKET_SECRET`
+   - тип **Text** (звичайна змінна): `ALLOWED_ORIGIN` — адреса твого
+     GitHub Pages, напр. `https://нік.github.io`
+5. Скопіюй адресу Worker — вона виду `https://wh-media.<щось>.workers.dev`.
+
+`private_key` зручніше вставляти **одним рядком просто з JSON-файлу**
+(там він уже записаний із `\n` усередині) — так нічого не поламається
+при копіюванні. Worker розуміє і такий запис, і справжні переноси.
+
+#### Спосіб Б: командний рядок (потрібен Node.js)
+
 ```
 npm install -g wrangler
 wrangler login
