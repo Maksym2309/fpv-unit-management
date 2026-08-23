@@ -1101,6 +1101,43 @@ function freqGridNames() { return Object.keys(FREQ_GRIDS); }
 // можна лише там, де борт це справді тягне.
 var GRID_ONLY_BANDS = ['B Sting'];
 
+// Сітка екіпажу. Якщо явно не задана — виводимо з бортів пулу, щоб
+// наявні екіпажі не треба було відкривати й перезберігати руками.
+// Явний вибір у формі завжди головніший за автовизначення.
+function crewGrid(cr) {
+  if (!cr) return '';
+  if (cr.grid) return cr.grid;
+  var ids = String(cr.drones || '').split('|').map(function(s){ return s.trim(); }).filter(Boolean);
+  for (var i = 0; i < ids.length; i++) {
+    var it = S.items.find(function(x){ return x.id === ids[i]; });
+    if (isStingAnalog(it)) return 'Sting';
+  }
+  return '';
+}
+
+// Бенди для карти: беремо з бекенду, але додаємо ті, яких він ще не знає.
+// Інакше новий бенд зʼявився б лише після перезаливки Code.gs, хоча це
+// суто довідкові дані й фронтенд має їх сам.
+function allBands(d) {
+  var out = {};
+  var src = (d && d.bands) || BANDS;
+  Object.keys(src).forEach(function(b){ out[b] = src[b]; });
+  Object.keys(BANDS).forEach(function(b){ if (!out[b]) out[b] = BANDS[b]; });
+  return out;
+}
+function allBandOrder(d) {
+  var order = (d && d.bandOrder) ? d.bandOrder.slice() : Object.keys(BANDS);
+  Object.keys(BANDS).forEach(function(b, i){
+    if (order.indexOf(b) !== -1) return;
+    // ставимо новий бенд туди ж, де він у локальному переліку
+    var localIdx = Object.keys(BANDS).indexOf(b);
+    var before = Object.keys(BANDS)[localIdx - 1];
+    var at = before ? order.indexOf(before) + 1 : order.length;
+    order.splice(at < 0 ? order.length : at, 0, b);
+  });
+  return order;
+}
+
 // Чи дозволений бенд у цій сітці
 function gridAllowsBand(grid, band) {
   var g = FREQ_GRIDS[grid];
@@ -2728,8 +2765,8 @@ function renderFreq(c) {
   var d = S.freq;
   if (!d) { c.innerHTML = '<div class="empty">Дані частот недоступні</div>'; return; }
   var active = d.active || [];
-  var bands = d.bands || BANDS;
-  var bandOrder = (d.bandOrder || Object.keys(bands)).filter(function(b){ return bands[b]; });
+  var bands = allBands(d);
+  var bandOrder = allBandOrder(d).filter(function(b){ return bands[b]; });
   var warningFreqs = d.warningFreqs || {};
   var reserves = d.reserves || [];
 
@@ -5222,8 +5259,8 @@ function systemAllowsBand(system, band) {
 // відправляємо в 3.3 ГГц); якщо частот немає — розглядаємо всі.
 function recommendFreqs(cr, limit) {
   var d = S.freq || {};
-  var bands = d.bands || BANDS;
-  var order = (d.bandOrder || Object.keys(bands)).filter(function(b){ return bands[b]; });
+  var bands = allBands(d);
+  var order = allBandOrder(d).filter(function(b){ return bands[b]; });
   var occ = occupiedFreqsExcept(cr);
   var myList = crewFreqList(cr);
   var mine = myList.map(function(x){ return x.code; });
@@ -5231,10 +5268,10 @@ function recommendFreqs(cr, limit) {
   var items = [];
   order.forEach(function(band){
     if (!systemAllowsBand(cr.system, band)) return; // цифра/HV — тільки свої бенди
-    if (!gridAllowsBand(cr.grid, band)) return;     // радити те, чого борт не тягне, — гірше ніж мовчати
+    if (!gridAllowsBand(crewGrid(cr), band)) return;     // радити те, чого борт не тягне, — гірше ніж мовчати
     bands[band].forEach(function(f, i){
       var code = band + (i + 1);
-      if (!gridAllowsFreq(cr.grid, band, f)) return;
+      if (!gridAllowsFreq(crewGrid(cr), band, f)) return;
       var ef = f;
       if (mine.indexOf(code) !== -1) return;
       var c = classifyFreq(ef, occ, d.warningFreqs);
@@ -5351,18 +5388,18 @@ function crewFreqPickModal(crewId, kind, replaceCode) {
   var cr = crewById(crewId);
   if (!cr) return;
   var d = S.freq || {};
-  var bands = d.bands || BANDS;
-  var order = (d.bandOrder || Object.keys(bands)).filter(function(b){ return bands[b]; });
+  var bands = allBands(d);
+  var order = allBandOrder(d).filter(function(b){ return bands[b]; });
   var occ = occupiedFreqsExcept(cr);
   var mine = crewFreqList(cr).map(function(x){ return x.code; });
 
   var items = [];
   order.forEach(function(band){
     if (!systemAllowsBand(cr.system, band)) return; // тільки бенди відеосистеми екіпажу
-    if (!gridAllowsBand(cr.grid, band)) return;     // і тільки те, що тягне VTX борту
+    if (!gridAllowsBand(crewGrid(cr), band)) return;     // і тільки те, що тягне VTX борту
     bands[band].forEach(function(f, i){
       var code = band + (i + 1);
-      if (!gridAllowsFreq(cr.grid, band, f)) return;
+      if (!gridAllowsFreq(crewGrid(cr), band, f)) return;
       var ef = f;
       if (mine.indexOf(code) !== -1 && code !== replaceCode) return;
       items.push({ code: code, freq: ef, c: classifyFreq(ef, occ, d.warningFreqs), dist: freqMinDist(ef, occ) });
@@ -5606,13 +5643,13 @@ function renderCrewForm() {
     '<div class="f"><label>Сітка каналів</label><select id="cfGrid" onchange="cfSystemChange()">'+
       '<option value="">— повна (усі канали системи) —</option>'+
       freqGridNames().map(function(g){
-        return '<option value="'+esc(g)+'"'+(cr && cr.grid===g?' selected':'')+'>'+esc(g)+'</option>';
+        return '<option value="'+esc(g)+'"'+(cr && crewGrid(cr)===g?' selected':'')+'>'+esc(g)+'</option>';
       }).join('')+
     '</select>'+
       '<div class="hint">Не всі борти тягнуть увесь діапазон. Обери сітку — і зайві канали зникнуть зі списку. Змішаний пул: став сітку слабшого борту.</div></div>'+
-    '<div class="f"><label>Основна частота</label><select id="cfFreq" onchange="freqWarn(this)"><option value="">— не вказано —</option>'+freqOptionsHtml(cr ? cr.system : '', cr ? cr.grid : '')+'</select></div>'+
+    '<div class="f"><label>Основна частота</label><select id="cfFreq" onchange="freqWarn(this)"><option value="">— не вказано —</option>'+freqOptionsHtml(cr ? cr.system : '', cr ? crewGrid(cr) : '')+'</select></div>'+
     '<div class="f"><label>📻 Резервні VTX (до 10)</label>'+
-      '<select id="cfReserveSel" onchange="cfAddReserve()"><option value="">+ додати резервну</option>'+freqOptionsHtml(cr ? cr.system : '', cr ? cr.grid : '')+'</select>'+
+      '<select id="cfReserveSel" onchange="cfAddReserve()"><option value="">+ додати резервну</option>'+freqOptionsHtml(cr ? cr.system : '', cr ? crewGrid(cr) : '')+'</select>'+
       '<div id="cfReserveList" style="margin-top:6px"></div></div>'+
     (editing
       ? '<div class="btn-row"><button class="btn btn-green" id="cfBtn" onclick="doSaveCrew()">💾 Зберегти</button>'+
