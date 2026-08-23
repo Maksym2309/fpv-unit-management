@@ -594,6 +594,10 @@ var VIDEO_SYSTEMS = ['Аналог','HDZero','DJI','Walksnail','Hornet Vision'];
 var BANDS = {
   'A':[5865,5845,5825,5805,5785,5765,5745,5725],
   'B':[5733,5752,5771,5790,5809,5828,5847,5866],
+  // У VTX Sting п'ятий канал бенда B перебитий: 5999 замість 5809.
+  // Окремий рядок, а не підміна всередині B: так частота видна на карті
+  // й одразу зрозуміло, що канал нестандартний і чий саме він.
+  'B Sting':[5999],
   'E':[5705,5685,5665,5645,5885,5905,5925,5945],
   'F':[5740,5760,5780,5800,5820,5840,5860,5880],
   'R':[5658,5695,5732,5769,5806,5843,5880,5917],
@@ -1083,35 +1087,32 @@ var FREQ_GRIDS = {
   // За таблицею VTX Sting (STRIDERF7V2): 7 бендів зі стандартними частотами.
   // Немає H, HV-H, HV-L, L (Foxeer), U, O, S і всього 3.3 ГГц.
   'Sting': {
-    bands: ['A','B','E','F','R','L','X'],
-    // B5 у цього VTX не стандартний: 5999 замість 5809. Не виключаємо
-    // канал, а підміняємо частоту — інакше застосунок рахував би конфлікти
-    // для 5809, а борт світив би на 5999. У код частоти йде саме 5999,
-    // тож і бекенд (codeToFreq читає число в дужках) рахує правильно.
-    override: { 'B5': 5999 }
+    bands: ['A','B','B Sting','E','F','R','L','X'],
+    // Стандартного B5 (5809) у цього борту немає — замість нього 5999,
+    // винесений в окремий бенд «B Sting». Тому 5809 тут виключений:
+    // інакше застосунок рахував би конфлікт для частоти, якої борт не має.
+    skip: [5809]
   }
 };
 function freqGridNames() { return Object.keys(FREQ_GRIDS); }
 
+// Бенди, що існують тільки в межах конкретної сітки. На карті частот вони
+// видимі завжди (щоб зайнята частота мала свою клітинку), але обрати їх
+// можна лише там, де борт це справді тягне.
+var GRID_ONLY_BANDS = ['B Sting'];
+
 // Чи дозволений бенд у цій сітці
 function gridAllowsBand(grid, band) {
   var g = FREQ_GRIDS[grid];
-  if (!g) return true;                       // повна сітка
+  if (!g) return GRID_ONLY_BANDS.indexOf(band) === -1;   // повна сітка
   return g.bands.indexOf(band) !== -1;
 }
 // Чи дозволений канал (бенд є і канал не виключений)
 function gridAllowsFreq(grid, band, freq) {
+  if (!gridAllowsBand(grid, band)) return false;
   var g = FREQ_GRIDS[grid];
   if (!g) return true;
-  if (g.bands.indexOf(band) === -1) return false;
   return !(g.skip && g.skip.indexOf(Number(freq)) !== -1);
-}
-// Фактична частота каналу в цій сітці: стандартна або підмінена
-function gridFreq(grid, band, idx, stdFreq) {
-  var g = FREQ_GRIDS[grid];
-  if (!g || !g.override) return stdFreq;
-  var v = g.override[band + idx];
-  return v === undefined ? stdFreq : v;
 }
 
 function freqOptionsHtml(system, grid) {
@@ -1135,9 +1136,7 @@ function freqOptionsHtml(system, grid) {
       var opts = '';
       BANDS[band].forEach(function(f, i){
         if (!gridAllowsFreq(grid, band, f)) return;
-        var ef = gridFreq(grid, band, i + 1, f);
-        var mark = ef !== f ? ' ⚙' : '';   // канал перебитий у цьому VTX
-        opts += '<option value="'+band+(i+1)+' ('+ef+')">'+band+(i+1)+' — '+ef+' МГц'+mark+'</option>';
+        opts += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
       });
       if (!opts) return;                    // бенд лишився без каналів
       html += '<optgroup label="Бенд '+band+'">'+opts+'</optgroup>';
@@ -5236,7 +5235,7 @@ function recommendFreqs(cr, limit) {
     bands[band].forEach(function(f, i){
       var code = band + (i + 1);
       if (!gridAllowsFreq(cr.grid, band, f)) return;
-      var ef = gridFreq(cr.grid, band, i + 1, f);
+      var ef = f;
       if (mine.indexOf(code) !== -1) return;
       var c = classifyFreq(ef, occ, d.warningFreqs);
       if (c.lvl === 'free') items.push({ code: code, freq: ef, dist: freqMinDist(ef, occ), grp: freqGroupOf(ef) });
@@ -5364,7 +5363,7 @@ function crewFreqPickModal(crewId, kind, replaceCode) {
     bands[band].forEach(function(f, i){
       var code = band + (i + 1);
       if (!gridAllowsFreq(cr.grid, band, f)) return;
-      var ef = gridFreq(cr.grid, band, i + 1, f);   // фактична частота цього VTX
+      var ef = f;
       if (mine.indexOf(code) !== -1 && code !== replaceCode) return;
       items.push({ code: code, freq: ef, c: classifyFreq(ef, occ, d.warningFreqs), dist: freqMinDist(ef, occ) });
     });
