@@ -1082,12 +1082,14 @@ function statusChip(st) {
 var FREQ_GRIDS = {
   // За таблицею VTX Sting (STRIDERF7V2): 7 бендів зі стандартними частотами.
   // Немає H, HV-H, HV-L, L (Foxeer), U, O, S і всього 3.3 ГГц.
-  'Sting': { bands: ['A','B','E','F','R','L','X'],
-             // B5 у таблиці борту стоїть 5999 замість стандартних 5809 —
-             // схоже на одрук у конфігу. Поки не підтверджено, канал
-             // виключено: краще на один менше, ніж хибний розрахунок
-             // конфлікту (застосунок рахував би 5809, а борт світив 5999).
-             skip: [5809] }
+  'Sting': {
+    bands: ['A','B','E','F','R','L','X'],
+    // B5 у цього VTX не стандартний: 5999 замість 5809. Не виключаємо
+    // канал, а підміняємо частоту — інакше застосунок рахував би конфлікти
+    // для 5809, а борт світив би на 5999. У код частоти йде саме 5999,
+    // тож і бекенд (codeToFreq читає число в дужках) рахує правильно.
+    override: { 'B5': 5999 }
+  }
 };
 function freqGridNames() { return Object.keys(FREQ_GRIDS); }
 
@@ -1097,12 +1099,19 @@ function gridAllowsBand(grid, band) {
   if (!g) return true;                       // повна сітка
   return g.bands.indexOf(band) !== -1;
 }
-// Чи дозволена конкретна частота (бенд є, але канал виключено)
+// Чи дозволений канал (бенд є і канал не виключений)
 function gridAllowsFreq(grid, band, freq) {
   var g = FREQ_GRIDS[grid];
   if (!g) return true;
   if (g.bands.indexOf(band) === -1) return false;
   return !(g.skip && g.skip.indexOf(Number(freq)) !== -1);
+}
+// Фактична частота каналу в цій сітці: стандартна або підмінена
+function gridFreq(grid, band, idx, stdFreq) {
+  var g = FREQ_GRIDS[grid];
+  if (!g || !g.override) return stdFreq;
+  var v = g.override[band + idx];
+  return v === undefined ? stdFreq : v;
 }
 
 function freqOptionsHtml(system, grid) {
@@ -1126,7 +1135,9 @@ function freqOptionsHtml(system, grid) {
       var opts = '';
       BANDS[band].forEach(function(f, i){
         if (!gridAllowsFreq(grid, band, f)) return;
-        opts += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
+        var ef = gridFreq(grid, band, i + 1, f);
+        var mark = ef !== f ? ' ⚙' : '';   // канал перебитий у цьому VTX
+        opts += '<option value="'+band+(i+1)+' ('+ef+')">'+band+(i+1)+' — '+ef+' МГц'+mark+'</option>';
       });
       if (!opts) return;                    // бенд лишився без каналів
       html += '<optgroup label="Бенд '+band+'">'+opts+'</optgroup>';
@@ -5225,9 +5236,10 @@ function recommendFreqs(cr, limit) {
     bands[band].forEach(function(f, i){
       var code = band + (i + 1);
       if (!gridAllowsFreq(cr.grid, band, f)) return;
+      var ef = gridFreq(cr.grid, band, i + 1, f);
       if (mine.indexOf(code) !== -1) return;
-      var c = classifyFreq(f, occ, d.warningFreqs);
-      if (c.lvl === 'free') items.push({ code: code, freq: f, dist: freqMinDist(f, occ), grp: freqGroupOf(f) });
+      var c = classifyFreq(ef, occ, d.warningFreqs);
+      if (c.lvl === 'free') items.push({ code: code, freq: ef, dist: freqMinDist(ef, occ), grp: freqGroupOf(ef) });
     });
   });
   // Група 5.8/5.0/3.3 — вторинний фільтр; для Hornet Vision не застосовуємо
@@ -5352,8 +5364,9 @@ function crewFreqPickModal(crewId, kind, replaceCode) {
     bands[band].forEach(function(f, i){
       var code = band + (i + 1);
       if (!gridAllowsFreq(cr.grid, band, f)) return;
+      var ef = gridFreq(cr.grid, band, i + 1, f);   // фактична частота цього VTX
       if (mine.indexOf(code) !== -1 && code !== replaceCode) return;
-      items.push({ code: code, freq: f, c: classifyFreq(f, occ, d.warningFreqs), dist: freqMinDist(f, occ) });
+      items.push({ code: code, freq: ef, c: classifyFreq(ef, occ, d.warningFreqs), dist: freqMinDist(ef, occ) });
     });
   });
   var recSet = {};
@@ -5660,6 +5673,25 @@ function cfSystemChange() {
   cfRebuildFreqs($('cfSystem').value);
 }
 // Авто-визначення відеосистеми екіпажу по назвах бортів у пулі
+// Чи це Sting з аналоговим VTX — саме в нього звужена сітка.
+// Тип STNG або «Sting» у назві + аналоговий суфікс (AD/AT).
+function isStingAnalog(it) {
+  if (!it) return false;
+  var name = String(it.name || '');
+  var isSting = String(it.type || '').indexOf('STNG') === 0 || /sting/i.test(name);
+  return isSting && detectSystemFromName(name) === 'Аналог';
+}
+
+// Сітка за бортами пулу. Змішаний пул навмисно тягне до вужчої сітки:
+// частота має підійти ВСІМ бортам екіпажу, тож вирішує слабший.
+function detectGridFromDrones() {
+  for (var i = 0; i < crewForm.drones.length; i++) {
+    var it = S.items.find(function(x){ return x.id === crewForm.drones[i]; });
+    if (isStingAnalog(it)) return 'Sting';
+  }
+  return '';
+}
+
 function cfAutoDetectSystem() {
   var sel = $('cfSystem');
   if (!sel) return;
@@ -5669,11 +5701,25 @@ function cfAutoDetectSystem() {
     var d = detectSystemFromName(it ? it.name : '');
     if (d) { detected = d; break; }
   }
+
+  // Сітка визначається так само автоматично, як і відеосистема
+  var grid = detectGridFromDrones();
+  var gsel = $('cfGrid');
+  var gridHint = '';
+  if (gsel && grid && gsel.value !== grid) {
+    gsel.value = grid;
+    gridHint = ' · сітка <b>'+esc(grid)+'</b> (звужена під VTX борту)';
+  }
+
   if (detected) {
     sel.value = detected;
     var hint = $('cfSysHint');
-    if (hint) hint.innerHTML = '✅ Авто з борту: <b>'+esc(detected)+'</b>';
+    if (hint) hint.innerHTML = '✅ Авто з борту: <b>'+esc(detected)+'</b>'+gridHint;
     cfRebuildFreqs(detected);
+  } else if (gridHint) {
+    var h2 = $('cfSysHint');
+    if (h2) h2.innerHTML = '✅ Авто з борту:'+gridHint;
+    cfRebuildFreqs(sel.value);
   }
 }
 function cfFilterDrones() {
