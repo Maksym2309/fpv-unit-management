@@ -1924,9 +1924,15 @@ function infoPickFile() { var i = $('infoFileInput'); if (i) i.click(); }
 // Стеля для повільного (запасного) шляху: там файл їде через Apps Script
 // у base64 і цілком лежить у його пам'яті.
 var INFO_SLOW_MAX_MB = 25;
-// Стеля для прямого шляху — байти йдуть повз Apps Script, тож обмеження
-// лише практичне (час на аплінку).
-var INFO_FAST_MAX_MB = 512;
+// Прямий шлях стелі не має: Drive приймає до 5 ТБ, а байти йдуть повз
+// Apps Script. Лишається запобіжник від явно випадкового вибору файлу.
+var INFO_FAST_MAX_MB = 5120;
+// З якого розміру перепитувати. Не заборона — просто щоб великий файл
+// не поїхав по мобільному інтернету непомітно для людини.
+var INFO_BIG_WARN_MB = 100;
+// Шматок вивантаження. Google вимагає кратність 256 КБ для проміжних
+// шматків — 8 МБ підходить і дає притомну зернистість прогресу.
+var INFO_UPLOAD_CHUNK = 8 * 1024 * 1024;
 
 var infoUp = { active: false, name: '', pct: 0, mode: '' };
 
@@ -1950,6 +1956,13 @@ function infoDoUpload(input) {
     return;
   }
 
+  if (file.size > INFO_BIG_WARN_MB * 1024 * 1024) {
+    if (!confirm('Файл ' + (file.size/1024/1024).toFixed(0) + ' МБ.\n\n' +
+        'Він піде шматками по 8 МБ — прогрес буде видно, а якщо звʼязок обірветься, ' +
+        'завантаження продовжиться з того самого місця, а не з нуля.\n\n' +
+        'Але на мобільному інтернеті це надовго. Завантажувати?')) return;
+  }
+
   infoUp.name = file.name;
   infoUpSet(0, 'fast');
 
@@ -1958,27 +1971,84 @@ function infoDoUpload(input) {
   rpc('infoUploadSession', [infoState.folderId, file.name, file.type || 'application/octet-stream'],
     function(s){
       if (!s || !s.uploadUrl) { infoUploadSlow(file); return; }
-      var xhr = new XMLHttpRequest();
-      xhr.open('PUT', s.uploadUrl, true);
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-      xhr.upload.onprogress = function(ev){
-        if (ev.lengthComputable) infoUpSet(Math.round(ev.loaded / ev.total * 100), 'fast');
-      };
-      xhr.onload = function(){
-        if (xhr.status >= 200 && xhr.status < 300) {
-          infoUpDone('⬆ Завантажено: '+(s.name || file.name)+(s.renamed ? ' (перейменовано — таке ім\'я вже було)' : ''));
-        } else {
-          infoAfterPut(file, s, 'HTTP '+xhr.status);
-        }
-      };
-      // Байти вже пішли нагору, тож помилка тут ще не означає провал:
-      // найчастіше це браузер не зміг ПРОЧИТАТИ відповідь Google (CORS),
-      // хоча файл уже створився. Тому не вантажимо наосліп удруге.
-      xhr.onerror = function(){ infoAfterPut(file, s, 'мережа/CORS'); };
-      xhr.send(file);
+      infoPutChunk(file, s, 0, 0);
     },
     function(){ infoUploadSlow(file); }   // сесію взагалі не відкрили
   );
+}
+
+/* ── Вивантаження шматками з продовженням ─────────────────────
+   Раніше файл ішов одним суцільним PUT: обрив на 400-му мегабайті
+   означав почати спочатку, а «100% і провал» неможливо було відрізнити
+   від справжньої невдачі. Resumable-сесія Google саме для цього й
+   існує — шлемо шматками з Content-Range, а після збою питаємо, скільки
+   вже дійшло, і продовжуємо з того місця. */
+
+// Скільки байтів Google підтвердив: заголовок Range виду "bytes=0-8388607".
+// Якщо CORS не дає його прочитати — повертаємо null, і тоді довіряємо
+// власному лічильнику: наступний шматок Google або прийме, або поправить.
+function infoAckedEnd(xhr) {
+  var r = '';
+  try { r = xhr.getResponseHeader('Range') || ''; } catch (e) { r = ''; }
+  var m = /bytes=\d+-(\d+)/.exec(r);
+  return m ? Number(m[1]) + 1 : null;
+}
+
+function infoPutChunk(file, session, offset, retries) {
+  if (offset >= file.size) { infoAfterPut(file, session, 'кінець без підтвердження'); return; }
+
+  var end = Math.min(offset + INFO_UPLOAD_CHUNK, file.size);
+  var xhr = new XMLHttpRequest();
+  xhr.open('PUT', session.uploadUrl, true);
+  xhr.setRequestHeader('Content-Range', 'bytes ' + offset + '-' + (end - 1) + '/' + file.size);
+
+  xhr.upload.onprogress = function(ev){
+    if (ev.lengthComputable) {
+      infoUpSet(Math.min(99, Math.round((offset + ev.loaded) / file.size * 100)), 'fast');
+    }
+  };
+  xhr.onload = function(){
+    if (xhr.status === 200 || xhr.status === 201) {
+      infoUpDone('⬆ Завантажено: '+(session.name || file.name)+
+        (session.renamed ? ' (перейменовано — таке ім\'я вже було)' : ''));
+      return;
+    }
+    if (xhr.status === 308) {              // «шматок прийняв, давай далі»
+      var next = infoAckedEnd(xhr);
+      infoPutChunk(file, session, next === null ? end : next, 0);
+      return;
+    }
+    infoResumeQuery(file, session, retries);
+  };
+  xhr.onerror = function(){ infoResumeQuery(file, session, retries); };
+  xhr.send(file.slice(offset, end));
+}
+
+// Збій. Питаємо Google, скільки байтів у нього вже є, і продовжуємо.
+function infoResumeQuery(file, session, retries) {
+  if (retries >= 4) { infoAfterPut(file, session, 'звʼязок не відновився'); return; }
+  infoUpSet(infoUp.pct, 'fast');
+
+  var xhr = new XMLHttpRequest();
+  xhr.open('PUT', session.uploadUrl, true);
+  xhr.setRequestHeader('Content-Range', 'bytes */' + file.size);
+  xhr.onload = function(){
+    if (xhr.status === 200 || xhr.status === 201) {
+      infoUpDone('⬆ Завантажено: '+(session.name || file.name));
+      return;
+    }
+    if (xhr.status === 308) {
+      var next = infoAckedEnd(xhr);
+      infoPutChunk(file, session, next === null ? 0 : next, retries + 1);
+      return;
+    }
+    infoAfterPut(file, session, 'HTTP '+xhr.status);
+  };
+  // Пауза перед повтором росте — щоб не добивати вже впалий звʼязок
+  xhr.onerror = function(){
+    setTimeout(function(){ infoResumeQuery(file, session, retries + 1); }, 1500 * (retries + 1));
+  };
+  xhr.send();
 }
 
 // PUT завершився не так, як хотілося. Перш ніж вантажити повторно —
