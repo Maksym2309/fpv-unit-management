@@ -1072,7 +1072,40 @@ function statusChip(st) {
   else if (st==='Втрачений'||st==='Втрачена'||st==='Списаний') cls='st-dark';
   return '<span class="st-chip '+cls+'">'+esc(st||'—')+'</span>';
 }
-function freqOptionsHtml(system) {
+/* ── Сітки каналів ────────────────────────────────────────────
+   Відеосистема — це модуляція (аналог, DJI…) і мінімальний рознос.
+   Сітка — які канали фізично тягне VTX конкретного борту. Це різні
+   речі: Sting буває і аналоговий, і Hornet Vision, а екіпаж може мати
+   в пулі і Sting, і звичайний борт — тоді ставимо сітку Sting, і список
+   звужується до того, що витягнуть обидва.
+   Порожня назва = повна сітка (усі бенди системи). */
+var FREQ_GRIDS = {
+  // За таблицею VTX Sting (STRIDERF7V2): 7 бендів зі стандартними частотами.
+  // Немає H, HV-H, HV-L, L (Foxeer), U, O, S і всього 3.3 ГГц.
+  'Sting': { bands: ['A','B','E','F','R','L','X'],
+             // B5 у таблиці борту стоїть 5999 замість стандартних 5809 —
+             // схоже на одрук у конфігу. Поки не підтверджено, канал
+             // виключено: краще на один менше, ніж хибний розрахунок
+             // конфлікту (застосунок рахував би 5809, а борт світив 5999).
+             skip: [5809] }
+};
+function freqGridNames() { return Object.keys(FREQ_GRIDS); }
+
+// Чи дозволений бенд у цій сітці
+function gridAllowsBand(grid, band) {
+  var g = FREQ_GRIDS[grid];
+  if (!g) return true;                       // повна сітка
+  return g.bands.indexOf(band) !== -1;
+}
+// Чи дозволена конкретна частота (бенд є, але канал виключено)
+function gridAllowsFreq(grid, band, freq) {
+  var g = FREQ_GRIDS[grid];
+  if (!g) return true;
+  if (g.bands.indexOf(band) === -1) return false;
+  return !(g.skip && g.skip.indexOf(Number(freq)) !== -1);
+}
+
+function freqOptionsHtml(system, grid) {
   var html = '';
   if (system === 'Hornet Vision') {
     // Тільки HV частоти
@@ -1089,11 +1122,14 @@ function freqOptionsHtml(system) {
   } else {
     Object.keys(BANDS).forEach(function(band){
       if (band.indexOf('HV-') === 0) return; // HV бенди тільки для Hornet Vision
-      html += '<optgroup label="Бенд '+band+'">';
+      if (!gridAllowsBand(grid, band)) return;
+      var opts = '';
       BANDS[band].forEach(function(f, i){
-        html += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
+        if (!gridAllowsFreq(grid, band, f)) return;
+        opts += '<option value="'+band+(i+1)+' ('+f+')">'+band+(i+1)+' — '+f+' МГц</option>';
       });
-      html += '</optgroup>';
+      if (!opts) return;                    // бенд лишився без каналів
+      html += '<optgroup label="Бенд '+band+'">'+opts+'</optgroup>';
     });
   }
   return html;
@@ -5185,8 +5221,10 @@ function recommendFreqs(cr, limit) {
   var items = [];
   order.forEach(function(band){
     if (!systemAllowsBand(cr.system, band)) return; // цифра/HV — тільки свої бенди
+    if (!gridAllowsBand(cr.grid, band)) return;     // радити те, чого борт не тягне, — гірше ніж мовчати
     bands[band].forEach(function(f, i){
       var code = band + (i + 1);
+      if (!gridAllowsFreq(cr.grid, band, f)) return;
       if (mine.indexOf(code) !== -1) return;
       var c = classifyFreq(f, occ, d.warningFreqs);
       if (c.lvl === 'free') items.push({ code: code, freq: f, dist: freqMinDist(f, occ), grp: freqGroupOf(f) });
@@ -5310,8 +5348,10 @@ function crewFreqPickModal(crewId, kind, replaceCode) {
   var items = [];
   order.forEach(function(band){
     if (!systemAllowsBand(cr.system, band)) return; // тільки бенди відеосистеми екіпажу
+    if (!gridAllowsBand(cr.grid, band)) return;     // і тільки те, що тягне VTX борту
     bands[band].forEach(function(f, i){
       var code = band + (i + 1);
+      if (!gridAllowsFreq(cr.grid, band, f)) return;
       if (mine.indexOf(code) !== -1 && code !== replaceCode) return;
       items.push({ code: code, freq: f, c: classifyFreq(f, occ, d.warningFreqs), dist: freqMinDist(f, occ) });
     });
@@ -5551,9 +5591,16 @@ function renderCrewForm() {
       '<div class="hint">💡 Перевірка: SMS 669000 на номер SIM → ID і координати</div></div>'+
     '<div class="f"><label>Відеосистема</label><select id="cfSystem" onchange="cfSystemChange()">'+sysOpts+'</select>'+
       '<div class="hint" id="cfSysHint"></div></div>'+
-    '<div class="f"><label>Основна частота</label><select id="cfFreq" onchange="freqWarn(this)"><option value="">— не вказано —</option>'+freqOptionsHtml(cr ? cr.system : '')+'</select></div>'+
+    '<div class="f"><label>Сітка каналів</label><select id="cfGrid" onchange="cfSystemChange()">'+
+      '<option value="">— повна (усі канали системи) —</option>'+
+      freqGridNames().map(function(g){
+        return '<option value="'+esc(g)+'"'+(cr && cr.grid===g?' selected':'')+'>'+esc(g)+'</option>';
+      }).join('')+
+    '</select>'+
+      '<div class="hint">Не всі борти тягнуть увесь діапазон. Обери сітку — і зайві канали зникнуть зі списку. Змішаний пул: став сітку слабшого борту.</div></div>'+
+    '<div class="f"><label>Основна частота</label><select id="cfFreq" onchange="freqWarn(this)"><option value="">— не вказано —</option>'+freqOptionsHtml(cr ? cr.system : '', cr ? cr.grid : '')+'</select></div>'+
     '<div class="f"><label>📻 Резервні VTX (до 10)</label>'+
-      '<select id="cfReserveSel" onchange="cfAddReserve()"><option value="">+ додати резервну</option>'+freqOptionsHtml(cr ? cr.system : '')+'</select>'+
+      '<select id="cfReserveSel" onchange="cfAddReserve()"><option value="">+ додати резервну</option>'+freqOptionsHtml(cr ? cr.system : '', cr ? cr.grid : '')+'</select>'+
       '<div id="cfReserveList" style="margin-top:6px"></div></div>'+
     (editing
       ? '<div class="btn-row"><button class="btn btn-green" id="cfBtn" onclick="doSaveCrew()">💾 Зберегти</button>'+
@@ -5578,13 +5625,34 @@ function cfSetFreqValue(freq) {
 // Перебудувати списки частот (основна + резервні) під відеосистему
 function cfRebuildFreqs(system) {
   var fs = $('cfFreq'), rs = $('cfReserveSel');
-  var opts = freqOptionsHtml(system);
+  var grid = $('cfGrid') ? $('cfGrid').value : '';
+  var opts = freqOptionsHtml(system, grid);
   if (fs) {
     var cur = fs.value;
     fs.innerHTML = '<option value="">— не вказано —</option>' + opts;
-    if (cur) cfSetFreqValue(cur);
+    // Раніше обрана частота може бути поза новою сіткою — тоді cfSetFreqValue
+    // її не знайде, і поле лишиться порожнім. Кажемо про це прямо, щоб
+    // людина не думала, що частота просто «збереглась десь».
+    if (cur) {
+      cfSetFreqValue(cur);
+      if (fs.value !== cur) {
+        toast('⚠ Частота '+cur+' не входить у сітку — обери іншу', true);
+      }
+    }
   }
   if (rs) rs.innerHTML = '<option value="">+ додати резервну</option>' + opts;
+  cfWarnReservesOutOfGrid(grid);
+}
+
+// Резервні, що випали за межі сітки, — позначаємо, але не стираємо мовчки
+function cfWarnReservesOutOfGrid(grid) {
+  if (!grid || !crewForm.reserves || !crewForm.reserves.length) return;
+  var bad = crewForm.reserves.filter(function(code){
+    var m = /^(.+?)\d+\s*\((\d+)\)/.exec(code);
+    if (!m) return false;
+    return !gridAllowsFreq(grid, m[1].trim(), Number(m[2]));
+  });
+  if (bad.length) toast('⚠ Поза сіткою: '+bad.join(', ')+' — прибери або зміни сітку', true);
 }
 function cfSystemChange() {
   var hint = $('cfSysHint');
@@ -5707,7 +5775,7 @@ function doSaveCrew() {
   var data = {
     gnst: $('cfGnst').value, bind: $('cfBind').value.trim(),
     drones: crewForm.drones.join('|'), tracker: crewForm.trackers.join('|'),
-    system: $('cfSystem').value, freq: $('cfFreq').value, reserves: crewForm.reserves.join('|'),
+    system: $('cfSystem').value, grid: ($('cfGrid') ? $('cfGrid').value : ''), freq: $('cfFreq').value, reserves: crewForm.reserves.join('|'),
     crewName: $('cfName') ? $('cfName').value.trim() : undefined,
     main: $('cfMain') ? $('cfMain').value : undefined
   };

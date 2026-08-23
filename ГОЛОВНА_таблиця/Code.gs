@@ -3663,7 +3663,7 @@ function getFlightList() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) return [];
-  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 22).getValues()
+  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 24).getValues()
     .filter(row => String(row[0]).trim() !== '')
     .map(row => ({
       id:           String(row[0]),
@@ -3687,6 +3687,7 @@ function getFlightList() {
       main:         String(row[19] || ''), // col T — Головний відповідальний (OP-ID)
       members:      String(row[20] || ''), // col U — Члени екіпажу (OP-ID через |)
       crewName:     String(row[21] || ''), // col V — Назва екіпажу
+      grid:         String(row[23] || ''), // col X — Сітка каналів VTX
     }));
 }
 
@@ -3817,9 +3818,10 @@ function createCrew(data) {
   ]);
   const newRow = sheet.getLastRow();
   if (data.note) touchFlightNote(sheet, newRow);
-  // S:Спорядження, T:Головний, U:Члени, V:Назва, W:_TS_CREW
-  sheet.getRange(newRow, 19, 1, 5).setValues([[
-    data.equip || '', data.main || '', data.members || '', data.crewName || '', nowTS()
+  // S:Спорядження, T:Головний, U:Члени, V:Назва, W:_TS_CREW, X:Сітка каналів
+  sheet.getRange(newRow, 19, 1, 6).setValues([[
+    data.equip || '', data.main || '', data.members || '', data.crewName || '', nowTS(),
+    data.grid || ''
   ]]);
   return crewId;
   });
@@ -3856,6 +3858,7 @@ function updateCrew(crewId, data, token) {
   if (data.main    !== undefined) sheet.getRange(row, 20).setValue(data.main);   // col T — Головний
   if (data.members !== undefined) sheet.getRange(row, 21).setValue(data.members);// col U — Члени
   if (data.crewName!== undefined) sheet.getRange(row, 22).setValue(data.crewName);// col V — Назва
+  if (data.grid    !== undefined) sheet.getRange(row, 24).setValue(data.grid);   // col X — Сітка каналів VTX
   sheet.getRange(row, 23).setValue(nowTS()); // col W — _TS_CREW: визначення екіпажу оновлено
   return { id: crewId };
 }
