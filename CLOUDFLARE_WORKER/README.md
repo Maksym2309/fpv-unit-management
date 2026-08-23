@@ -103,14 +103,15 @@ wrangler secret put TICKET_SECRET
 як є (з `\n` усередині) або справжніми переносами — Worker розуміє обидва.
 
 `TICKET_SECRET` — довільний довгий рядок, який ти сам вигадуєш. Він має
-збігатися з `INFO_MEDIA_SECRET` у Code.gs.
+збігатися з `INFO_MEDIA_SECRET` у Config.gs.
 
 У `wrangler.toml` заповни `ALLOWED_ORIGIN` адресою свого GitHub Pages —
 тоді тягнути файли зможе тільки застосунок, а не будь-яка стороння сторінка.
 
 ### 3. Під'єднати до застосунку
 
-У `Code.gs` (головна таблиця):
+У `Config.gs` (головна таблиця; це окремий файл констант — оновлення
+`Code.gs` його не чіпає):
 
 ```js
 const INFO_MEDIA_WORKER_URL = 'https://твій-worker.workers.dev';

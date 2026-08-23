@@ -14,6 +14,9 @@ HTML ФОРМИ:
   SyncForm — синхронізація
 
 ВАЖЛИВО:
-  - У Code.gs заміни ADMIN_EMAIL на свій email
+  - Свої значення (ADMIN_EMAIL, INFO_ROOT_ID, адреса й секрет Worker)
+    живуть у Config.gs — додай його ОДИН раз (Файли → «+» → Script →
+    назви Config) і заповни. Оновлення Code.gs їх більше не затирає.
+    ⚠ Без Config.gs оновлений Code.gs впаде з «ADMIN_EMAIL is not defined»
   - Журнал польоту має 17 колонок (A-Q), останні: O=Відеосистема, P=Частота, Q=Резервні VTX
   - Sinotrack має приховану колонку I (_TS timestamp), SIM — колонку F (_TS)
