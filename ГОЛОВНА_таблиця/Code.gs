@@ -5555,3 +5555,69 @@ function infoUploadCheck(parentId, name) {
   const f = (data.files || [])[0];
   return f ? { found: true, id: f.id, name: f.name, size: Number(f.size || 0) } : { found: false };
 }
+
+// ── Переміщення теки або файлу ────────────────────────────────
+// Drive не перезаливає вміст: у файла просто змінюється батько, тому
+// переміщення миттєве навіть для гігабайтного відео.
+function infoQuoteName_(name) {
+  // Імʼя йде в лапках усередині запиту Drive — екрануємо зворотну
+  // скісну й апостроф, інакше «Памʼятка.pdf» зламала б запит
+  return String(name || '').split('\\').join('\\\\').split("'").join("\\'");
+}
+
+function infoMove(itemId, targetFolderId) {
+  infoAssertAccess_();
+  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+
+  const id = String(itemId || '').trim();
+  const target = String(targetFolderId || '').trim() || INFO_ROOT_ID;
+  if (!id) throw new Error('Не вказано, що переміщувати');
+  if (id === INFO_ROOT_ID) throw new Error('Кореневу теку перемістити не можна');
+
+  // Обидва кінці мають бути всередині спільної теки — інакше знаючи чужий
+  // id можна було б витягти файл із чужої теки або закинути свій кудись
+  const chain = infoChainToRoot_(target);
+  infoChainToRoot_(id);
+
+  const meta = infoApi_('files/' + encodeURIComponent(id) +
+    '?supportsAllDrives=true&fields=' + encodeURIComponent('id,name,mimeType,parents'));
+
+  const parents = meta.parents || [];
+  const from = parents[0] || '';
+  if (from === target) throw new Error('Уже в цій теці');
+
+  // Тека в саму себе або у власну підтеку — так гілка зникла б з дерева
+  if (meta.mimeType === INFO_FOLDER_MIME) {
+    for (let i = 0; i < chain.length; i++) {
+      if (chain[i].id === id) throw new Error('Не можна перемістити теку в саму себе або всередину себе');
+    }
+  }
+
+  // Тезка в призначенні — відмовляємо, як і при перейменуванні
+  const q = "'" + target + "' in parents and trashed = false and name = '" + infoQuoteName_(meta.name) + "'";
+  const dup = infoApi_('files?q=' + encodeURIComponent(q) +
+    '&supportsAllDrives=true&pageSize=1&fields=' + encodeURIComponent('files(id)'));
+  if ((dup.files || []).length) {
+    throw new Error('У теці призначення вже є «' + meta.name + '»');
+  }
+
+  const url = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id) +
+    '?supportsAllDrives=true&addParents=' + encodeURIComponent(target) +
+    (from ? '&removeParents=' + encodeURIComponent(from) : '') +
+    '&fields=' + encodeURIComponent('id,name');
+
+  const res = UrlFetchApp.fetch(url, {
+    method: 'patch',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload: '{}',
+    muteHttpExceptions: true,
+  });
+  const code = res.getResponseCode();
+  if (code < 200 || code >= 300) {
+    throw new Error('Drive не перемістив (' + code + '): ' + res.getContentText().slice(0, 150));
+  }
+
+  return { id: id, name: meta.name, from: from, to: target,
+           isFolder: meta.mimeType === INFO_FOLDER_MIME };
+}

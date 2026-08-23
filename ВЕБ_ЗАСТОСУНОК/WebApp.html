@@ -827,6 +827,11 @@ var DEMO_DATA = {
   // Worker у демо не налаштований — застосунок має тихо піти запасним шляхом
   infoMediaTicket: function(){ return { available:false }; },
   infoUploadCheck: function(){ return { found:false }; },
+  infoMove: function(id, target){
+    var t = DEMO_DATA.__infoMoved || (DEMO_DATA.__infoMoved = {});
+    t[String(id)] = String(target || '');
+    return { id:id, name:'переміщене', from:'', to:target, isFolder:false };
+  },
   infoRenameFile: function(id, name){
     var t = DEMO_DATA.__infoFileRenames || (DEMO_DATA.__infoFileRenames = {});
     t[String(id)] = name;
@@ -1332,6 +1337,34 @@ var infoState = { folderId: '', data: null, loading: false, err: '' };
 var infoMode = 'view';   // 'view' | 'edit'
 function infoSetMode(m) { infoMode = m; renderView(); }
 
+// Що зараз «вирізано». Клік по рядку теки не можна було зайняти під це:
+// він відкриває теку, а щоб перенести — треба саме дійти до призначення.
+// Тому позначаємо кнопкою, а навігація лишається звичайною.
+var infoClip = null;     // { id, name, isFolder }
+
+function infoCut(id, name, isFolder) {
+  infoClip = { id: id, name: name, isFolder: !!isFolder };
+  renderView();
+}
+function infoCutCancel() { infoClip = null; renderView(); }
+
+function infoPasteHere() {
+  if (!infoClip) return;
+  var btn = $('infoPasteBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'зачекай…'; }
+  rpc('infoMove', [infoClip.id, infoState.folderId], function(res){
+    var what = (res && res.name) || infoClip.name;
+    infoClip = null;
+    // Змінилися дві теки — вихідна й ця. Переміщення рідкісне, тож
+    // простіше й надійніше скинути кеш цілком, ніж вгадувати, чий саме.
+    infoCache = {};
+    toast('Переміщено: ' + what);
+    infoReload();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = 'Вставити сюди'; }
+    toast('Помилка: ' + e.message, true);
+  });
+}
 function infoIcon(kind) {
   return kind === 'image' ? '🖼' : kind === 'pdf' ? '📕' : kind === 'video' ? '🎞'
        : kind === 'text' ? '📄' : kind === 'gdoc' ? '📘' : '📎';
@@ -1455,6 +1488,8 @@ function renderInfo(c) {
         '<div style="flex:1"><div class="member-cs">📁 <b>'+esc(f.name)+'</b></div></div>'+
         (edit
           ? '<div class="inv-acts">'+
+              '<button class="inv-act" title="Перемістити теку" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
+                'onclick="event.stopPropagation();infoCut(this.dataset.id, this.dataset.name, true)">⤴</button>'+
               '<button class="inv-act" title="Перейменувати теку" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
                 'onclick="event.stopPropagation();infoRenameModal(this.dataset.id, this.dataset.name)">'+svgIcon('edit')+'</button>'+
               '<button class="inv-act inv-act--del" title="Видалити теку" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
@@ -1469,7 +1504,9 @@ function renderInfo(c) {
       // Завантажити можна й те, що завелике для перегляду: раніше такий
       // файл позначався «завеликий» і забрати його було неможливо взагалі.
       var acts = edit
-        ? '<button class="inv-act" title="Перейменувати файл" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
+        ? '<button class="inv-act" title="Перемістити файл" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
+            'onclick="infoCut(this.dataset.id, this.dataset.name, false)">⤴</button>'+
+          '<button class="inv-act" title="Перейменувати файл" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
             'onclick="infoRenameFileModal(this.dataset.id, this.dataset.name)">'+svgIcon('edit')+'</button>'+
           '<button class="inv-act inv-act--del" title="Видалити файл" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
             'onclick="infoTrashFileModal(this.dataset.id, this.dataset.name)">'+svgIcon('trash')+'</button>'
@@ -1510,6 +1547,21 @@ function renderInfo(c) {
     // тоді точково пише в нього і не перемальовує весь список під час
     // завантаження — раніше саме це й смикало сторінку.
     actions += '<div id="infoProg"></div>';
+
+    // Смужка «переміщується». Видно на будь-якій теці, поки не вставиш
+    // або не скасуєш — саме вона й тримає стан між переходами.
+    if (infoClip) {
+      var here = (d.folderId || '') === (infoState.folderId || '');
+      var inside = (d.path || []).some(function(p){ return p.id === infoClip.id; });
+      actions +=
+        '<div class="warn" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+          '<span style="flex:1">'+(infoClip.isFolder?'📁':'📄')+' Переміщується: <b>'+esc(infoClip.name)+'</b></span>'+
+          (inside
+            ? '<span class="hint">не можна вставити всередину себе</span>'
+            : '<button class="btn btn-mini btn-green" id="infoPasteBtn" onclick="infoPasteHere()">Вставити сюди</button>')+
+          '<button class="btn btn-mini btn-sec" onclick="infoCutCancel()">Скасувати</button>'+
+        '</div>';
+    }
 
     body = (crumbs ? '<div class="hint" style="margin-bottom:8px">'+crumbs+'</div>' : '') + actions + rows;
   } else {
