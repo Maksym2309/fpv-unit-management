@@ -607,7 +607,7 @@ var BANDS = {
   // У VTX Sting п'ятий канал бенда B перебитий: 5999 замість 5809.
   // Окремий рядок, а не підміна всередині B: так частота видна на карті
   // й одразу зрозуміло, що канал нестандартний і чий саме він.
-  'B Sting':[5999],
+  'B Sting':[null,null,null,null,5999],
   'E':[5705,5685,5665,5645,5885,5905,5925,5945],
   'F':[5740,5760,5780,5800,5820,5840,5860,5880],
   'R':[5658,5695,5732,5769,5806,5843,5880,5917],
@@ -1154,8 +1154,9 @@ function gridAllowsBand(grid, band) {
   if (!g) return GRID_ONLY_BANDS.indexOf(band) === -1;   // повна сітка
   return g.bands.indexOf(band) !== -1;
 }
-// Чи дозволений канал (бенд є і канал не виключений)
+// Чи дозволений канал (бенд є, позиція не порожня, канал не виключений)
 function gridAllowsFreq(grid, band, freq) {
+  if (!freq) return false;                 // порожня позиція в бенді
   if (!gridAllowsBand(grid, band)) return false;
   var g = FREQ_GRIDS[grid];
   if (!g) return true;
@@ -2858,6 +2859,10 @@ function renderFreq(c) {
   visibleBands.forEach(function(band){
     m += '<tr><td class="band">'+esc(band)+'</td>';
     bands[band].forEach(function(freq, idx){
+      // Порожня позиція: бенд може мати канал не з першої колонки
+      // (у «B Sting» єдиний канал стоїть п'ятим, під тим самим номером,
+      // що й B5, — щоб на карті вони були один під одним)
+      if (!freq) { m += '<td></td>'; return; }
       var code = band + (idx + 1);
       var lvl = freqLevel(freq, code);
       var src = codeSource[code] || codeSource['_mhz_'+freq];
