@@ -5536,3 +5536,22 @@ function infoMediaTicket(fileId, forDownload) {
     size: Number(file.getSize() || 0),
   };
 }
+
+// Чи зʼявився файл у теці. Потрібно після прямого завантаження: браузер
+// шле байти в Drive сам, і буває, що PUT проходить, а відповідь прочитати
+// не вдається (CORS). Без цієї перевірки застосунок вважав би це провалом
+// і вантажив файл удруге — дублікат і марні хвилини на великому файлі.
+function infoUploadCheck(parentId, name) {
+  infoAssertAccess_();
+  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+  const folder = infoTargetFolder_(parentId);
+  // У запиті Drive імʼя йде в лапках, тож зворотну скісну й апостроф
+  // треба екранувати — інакше файл «Пам'ятка.pdf» зламав би запит
+  const safe = String(name || '').split('\\').join('\\\\').split("'").join("\\'");
+  const q = "'" + folder.getId() + "' in parents and trashed = false and name = '" + safe + "'";
+  const data = infoApi_('files?q=' + encodeURIComponent(q) +
+    '&supportsAllDrives=true&includeItemsFromAllDrives=true&pageSize=1' +
+    '&fields=' + encodeURIComponent('files(id,name,size)'));
+  const f = (data.files || [])[0];
+  return f ? { found: true, id: f.id, name: f.name, size: Number(f.size || 0) } : { found: false };
+}

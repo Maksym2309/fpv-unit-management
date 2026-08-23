@@ -42,7 +42,7 @@ const API_FUNCTIONS = [
   // комплекти (перевіряють право «Інвентар» усередині)
   'assignToKit', 'removeFromKit',
   // інформація (документи підрозділу) — права перевіряють самі функції
-  'infoListFolder', 'infoGetFile', 'infoCreateFolder', 'infoUploadFile', 'infoRenameFolder', 'infoUploadSession', 'infoTrashFolder', 'infoFileInfo', 'infoGetFileChunk', 'infoRenameFile', 'infoTrashFile', 'infoMediaTicket',
+  'infoListFolder', 'infoGetFile', 'infoCreateFolder', 'infoUploadFile', 'infoRenameFolder', 'infoUploadSession', 'infoTrashFolder', 'infoFileInfo', 'infoGetFileChunk', 'infoRenameFile', 'infoTrashFile', 'infoMediaTicket', 'infoUploadCheck',
   // витратники
   'getConsumablesList', 'getCompatOptions', 'webUpdateConsumable',
   'webAddConsumable', 'webWriteOffConsumable', 'webDeleteConsumable',

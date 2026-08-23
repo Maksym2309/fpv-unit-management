@@ -826,6 +826,7 @@ var DEMO_DATA = {
   infoUploadSession: function(){ throw new Error('Демо: прямого завантаження немає'); },
   // Worker у демо не налаштований — застосунок має тихо піти запасним шляхом
   infoMediaTicket: function(){ return { available:false }; },
+  infoUploadCheck: function(){ return { found:false }; },
   infoRenameFile: function(id, name){
     var t = DEMO_DATA.__infoFileRenames || (DEMO_DATA.__infoFileRenames = {});
     t[String(id)] = name;
@@ -1516,6 +1517,10 @@ function renderInfo(c) {
   }
 
   c.innerHTML = head + '<div class="side-panel" style="margin-top:14px"><div class="side-panel-body">'+body+'</div></div>';
+  // Перемальовка створює контейнер прогресу порожнім. Без цього рядка
+  // смужка зникала при перемиканні режиму, хоча завантаження тривало —
+  // процес ішов, а показати його не було де.
+  infoProgRender();
 }
 
 // Відкриття файлу: бекенд віддає вміст (base64) після перевірки прав,
@@ -1953,16 +1958,37 @@ function infoDoUpload(input) {
         if (xhr.status >= 200 && xhr.status < 300) {
           infoUpDone('⬆ Завантажено: '+(s.name || file.name)+(s.renamed ? ' (перейменовано — таке ім\'я вже було)' : ''));
         } else {
-          infoUploadSlow(file);   // Google не прийняв — пробуємо запасним
+          infoAfterPut(file, s, 'HTTP '+xhr.status);
         }
       };
-      // Найімовірніша причина — CORS чи обрив мережі. Не показуємо помилку
-      // одразу: у запасного шляху інша механіка, він може пройти.
-      xhr.onerror = function(){ infoUploadSlow(file); };
+      // Байти вже пішли нагору, тож помилка тут ще не означає провал:
+      // найчастіше це браузер не зміг ПРОЧИТАТИ відповідь Google (CORS),
+      // хоча файл уже створився. Тому не вантажимо наосліп удруге.
+      xhr.onerror = function(){ infoAfterPut(file, s, 'мережа/CORS'); };
       xhr.send(file);
     },
-    function(){ infoUploadSlow(file); }
+    function(){ infoUploadSlow(file); }   // сесію взагалі не відкрили
   );
+}
+
+// PUT завершився не так, як хотілося. Перш ніж вантажити повторно —
+// питаємо, чи файл усе-таки зʼявився в теці. Без цього великий файл
+// їхав удруге запасним шляхом і впирався в стелю 25 МБ, а малий
+// створювався дублікатом.
+function infoAfterPut(file, session, why) {
+  infoUpSet(100, 'fast');
+  rpc('infoUploadCheck', [infoState.folderId, session.name || file.name], function(res){
+    if (res && res.found) {
+      infoUpDone('⬆ Завантажено: '+(res.name || file.name)+
+        (session.renamed ? ' (перейменовано — таке ім\'я вже було)' : ''));
+      return;
+    }
+    toast('⚠ Пряме завантаження не дійшло ('+why+') — пробую запасним шляхом', true);
+    infoUploadSlow(file);
+  }, function(){
+    // Навіть перевірку не змогли зробити — лишається запасний шлях
+    infoUploadSlow(file);
+  });
 }
 
 // Запасний шлях — той самий, що був: base64 через Apps Script.
