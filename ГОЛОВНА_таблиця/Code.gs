@@ -5090,6 +5090,20 @@ function addMissingSheets() {
 // щоб оновлення цього файлу не затирало твоє значення.
 // Порожній INFO_ROOT_ID — розділ показує «сховище не під'єднане».
 
+// ID кореневої теки з Config.gs, нормалізований. Люди природно вставляють
+// у INFO_ROOT_ID всю адресу теки з браузера — і Drive API тоді повертав
+// «File not found: https://drive.google.com/…», бо шукав файл з ID-URLом.
+// Приймаємо обидва варіанти: і чистий ID, і повну адресу.
+function infoRoot_() {
+  const s = String(typeof INFO_ROOT_ID === 'undefined' ? '' : INFO_ROOT_ID).trim();
+  if (!s) return '';
+  let m = s.match(/\/folders\/([-\w]+)/);   // …/drive/folders/<ID>
+  if (m) return m[1];
+  m = s.match(/[?&]id=([-\w]+)/);           // старий формат …?id=<ID>
+  if (m) return m[1];
+  return s.replace(/[?#].*$/, '');          // чистий ID (зрізаємо хвости)
+}
+
 // Стеля на віддачу файлу. Apps Script тримає відповідь у пам'яті, а base64
 // роздуває розмір на третину — тому великі відео так не віддати.
 const INFO_MAX_FILE_MB = 25;
@@ -5106,7 +5120,7 @@ function infoAssertAccess_() {
 // Тека має лежати всередині кореневої — інакше знаючи чужий ID можна було б
 // прочитати будь-що з Drive власника.
 function infoAssertInsideRoot_(folder) {
-  const rootId = INFO_ROOT_ID;
+  const rootId = infoRoot_();
   let cur = folder, hops = 0;
   while (cur && hops < 25) {
     if (cur.getId() === rootId) return true;
@@ -5152,7 +5166,7 @@ function infoChainToRoot_(id) {
     const f = infoApi_('files/' + encodeURIComponent(cur) +
       '?supportsAllDrives=true&fields=' + encodeURIComponent('id,name,parents'));
     chain.unshift({ id: f.id, name: f.name });
-    if (f.id === INFO_ROOT_ID) return chain;
+    if (f.id === infoRoot_()) return chain;
     cur = (f.parents && f.parents.length) ? f.parents[0] : null;
     hops++;
   }
@@ -5163,12 +5177,12 @@ const INFO_FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 function infoListFolder(folderId) {
   infoAssertAccess_();
-  if (!INFO_ROOT_ID) return { configured: false, folders: [], files: [] };
+  if (!infoRoot_()) return { configured: false, folders: [], files: [] };
 
-  const id = String(folderId || '').trim() || INFO_ROOT_ID;
+  const id = String(folderId || '').trim() || infoRoot_();
   // Шлях і перевірка «всередині спільної теки» — одним проходом
-  const path = (id === INFO_ROOT_ID)
-    ? infoChainToRoot_(INFO_ROOT_ID)
+  const path = (id === infoRoot_())
+    ? infoChainToRoot_(infoRoot_())
     : infoChainToRoot_(id);
 
   const folders = [], files = [];
@@ -5204,7 +5218,7 @@ function infoListFolder(folderId) {
 // Вміст файлу в base64 — застосунок відкриває його сам, без Drive-посилання.
 function infoGetFile(fileId) {
   infoAssertAccess_();
-  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+  if (!infoRoot_()) throw new Error('Сховище не під\'єднане');
 
   const file = DriveApp.getFileById(String(fileId));
   const parents = file.getParents();
@@ -5248,10 +5262,10 @@ function infoCleanName_(name) {
 }
 
 function infoTargetFolder_(parentId) {
-  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
-  const id = String(parentId || '').trim() || INFO_ROOT_ID;
+  if (!infoRoot_()) throw new Error('Сховище не під\'єднане');
+  const id = String(parentId || '').trim() || infoRoot_();
   const folder = DriveApp.getFolderById(id);
-  if (id !== INFO_ROOT_ID) infoAssertInsideRoot_(folder);
+  if (id !== infoRoot_()) infoAssertInsideRoot_(folder);
   return folder;
 }
 
@@ -5309,10 +5323,10 @@ function infoUploadFile(parentId, name, mime, dataBase64) {
 // і зміна її імені збила б орієнтир у крихтах.
 function infoRenameFolder(folderId, newName) {
   infoAssertAccess_();
-  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+  if (!infoRoot_()) throw new Error('Сховище не під\'єднане');
 
   const id = String(folderId || '').trim();
-  if (!id || id === INFO_ROOT_ID) throw new Error('Кореневу теку перейменувати не можна');
+  if (!id || id === infoRoot_()) throw new Error('Кореневу теку перейменувати не можна');
 
   const folder = DriveApp.getFolderById(id);
   infoAssertInsideRoot_(folder);
@@ -5386,10 +5400,10 @@ function infoUploadSession(parentId, name, mime) {
 // ніж мати кошик, який колись треба почистити.
 function infoTrashFolder(folderId) {
   infoAssertAccess_();
-  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+  if (!infoRoot_()) throw new Error('Сховище не під\'єднане');
 
   const id = String(folderId || '').trim();
-  if (!id || id === INFO_ROOT_ID) throw new Error('Кореневу теку видалити не можна');
+  if (!id || id === infoRoot_()) throw new Error('Кореневу теку видалити не можна');
 
   const folder = DriveApp.getFolderById(id);
   infoAssertInsideRoot_(folder);
@@ -5463,7 +5477,7 @@ function infoFileParent_(file) {
 
 function infoRenameFile(fileId, newName) {
   infoAssertAccess_();
-  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+  if (!infoRoot_()) throw new Error('Сховище не під\'єднане');
 
   const file = DriveApp.getFileById(String(fileId));
   const parent = infoFileParent_(file);
@@ -5481,7 +5495,7 @@ function infoRenameFile(fileId, newName) {
 
 function infoTrashFile(fileId) {
   infoAssertAccess_();
-  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+  if (!infoRoot_()) throw new Error('Сховище не під\'єднане');
 
   const file = DriveApp.getFileById(String(fileId));
   infoFileParent_(file);            // перевірка, що файл усередині спільної теки
@@ -5548,7 +5562,7 @@ function infoMediaTicket(fileId, forDownload) {
 // і вантажив файл удруге — дублікат і марні хвилини на великому файлі.
 function infoUploadCheck(parentId, name) {
   infoAssertAccess_();
-  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+  if (!infoRoot_()) throw new Error('Сховище не під\'єднане');
   const folder = infoTargetFolder_(parentId);
   // У запиті Drive імʼя йде в лапках, тож зворотну скісну й апостроф
   // треба екранувати — інакше файл «Пам'ятка.pdf» зламав би запит
@@ -5572,12 +5586,12 @@ function infoQuoteName_(name) {
 
 function infoMove(itemId, targetFolderId) {
   infoAssertAccess_();
-  if (!INFO_ROOT_ID) throw new Error('Сховище не під\'єднане');
+  if (!infoRoot_()) throw new Error('Сховище не під\'єднане');
 
   const id = String(itemId || '').trim();
-  const target = String(targetFolderId || '').trim() || INFO_ROOT_ID;
+  const target = String(targetFolderId || '').trim() || infoRoot_();
   if (!id) throw new Error('Не вказано, що переміщувати');
-  if (id === INFO_ROOT_ID) throw new Error('Кореневу теку перемістити не можна');
+  if (id === infoRoot_()) throw new Error('Кореневу теку перемістити не можна');
 
   // Обидва кінці мають бути всередині спільної теки — інакше знаючи чужий
   // id можна було б витягти файл із чужої теки або закинути свій кудись
