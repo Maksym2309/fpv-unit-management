@@ -650,6 +650,8 @@ var SVG_ICONS = {
   // Розмір у em і currentColor — щоб бралися розмір і колір з місця вставки
   // (у плитці головної це акцентний жовтий, як і в решти іконок).
   info: '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><circle cx="12" cy="4.2" r="2.7"/><path d="M8.5 9.3h6.2v9.8h2v3.1H7.3v-3.1h2v-6.7h-1.8z"/></svg>',
+  // Суцільний трикутник відтворення (як у YouTube) — кнопка перегляду файлу
+  play: '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M8 5.2c0-.8.9-1.3 1.6-.9l10 6.8c.6.4.6 1.4 0 1.8l-10 6.8c-.7.4-1.6-.1-1.6-.9z"/></svg>',
   // Тека з плюсом і вивантаження — для панелі дій розділу «Інформація»
   folderAdd: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M12 11v6M9 14h6"/></svg>',
   upload: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>'
@@ -1583,7 +1585,7 @@ function renderInfo(c) {
       '</div>';
     });
     (d.files || []).forEach(function(f){
-      // Симетрично до тек: у перегляді — робота з файлом (↗ ⬇),
+      // Симетрично до тек: у перегляді — робота з файлом (▶ ⬇),
       // у редагуванні — робота НАД файлом (✎ 🗑).
       // Завантажити можна й те, що завелике для перегляду: раніше такий
       // файл позначався «завеликий» і забрати його було неможливо взагалі.
@@ -1595,7 +1597,7 @@ function renderInfo(c) {
           '<button class="inv-act inv-act--del" title="Видалити файл" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" '+
             'onclick="infoTrashFileModal(this.dataset.id, this.dataset.name)">'+svgIcon('trash')+'</button>'
         : '<button class="inv-act" title="Переглянути" data-id="'+esc(f.id)+'" data-size="'+(f.size||0)+'" '+
-            'onclick="infoOpen(this.dataset.id, this, +this.dataset.size)">↗</button>'+
+            'onclick="infoOpen(this.dataset.id, this, +this.dataset.size)">'+svgIcon('play')+'</button>'+
           '<button class="inv-act" title="Завантажити" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" data-size="'+(f.size||0)+'" '+
             'onclick="infoDownload(this.dataset.id, this.dataset.name, +this.dataset.size, this)">⬇</button>';
 
@@ -1696,10 +1698,10 @@ function infoOpen(fileId, btn, size) {
   size = Number(size) || 0;
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳'; }
   infoTryStream(fileId, false, function(t){
-    if (btn) { btn.disabled = false; btn.textContent = '↗'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = svgIcon('play'); }
     infoShowViewerUrl(t.name, t.mime, t.url);
   }, function(){
-    if (btn) { btn.disabled = false; btn.textContent = '↗'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = svgIcon('play'); }
     infoOpenSlow(fileId, null, size);
   });
 }
@@ -1715,13 +1717,13 @@ function infoOpenSlow(fileId, btn, size) {
   }
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳'; }
   rpc('infoGetFile', [fileId], function(res){
-    if (btn) { btn.disabled = false; btn.textContent = '↗'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = svgIcon('play'); }
     if (!res || !res.data) { toast('❌ Порожня відповідь', true); return; }
     var bin = atob(res.data), len = bin.length, bytes = new Uint8Array(len);
     for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
     infoShowViewer(res.name || 'файл', res.mime || 'application/octet-stream', [bytes], res.exported);
   }, function(e){
-    if (btn) { btn.disabled = false; btn.textContent = '↗'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = svgIcon('play'); }
     toast('❌ '+e.message, true);
   });
 }
