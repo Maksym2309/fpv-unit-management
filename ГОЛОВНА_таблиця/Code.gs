@@ -5640,3 +5640,24 @@ function infoMove(itemId, targetFolderId) {
   return { id: id, name: meta.name, from: from, to: target,
            isFolder: meta.mimeType === INFO_FOLDER_MIME };
 }
+
+// ── Усі дані одним запитом ────────────────────────────────────
+// Старт застосунку робив 9 окремих POST на /exec: кожен — власний
+// round-trip до script.google.com, власна перевірка сесії (а authSession
+// щоразу читає аркуш «Персонал») і власне звернення до таблиці.
+// Тут усе збирається за один виклик: одна сесія, один round-trip.
+// needCaps — чи потрібні права інвентарю (фронтенд тягне їх раз за сесію).
+function getAllData(needCaps) {
+  const out = {
+    me:        getCurrentUserEmail(),
+    admin:     getAdminEmail(),
+    items:     getInventoryList(),
+    trackers:  getSinotrackList(),
+    flights:   getFlightList(),
+    sims:      getSimList(),
+    freq:      getFrequencyAnalysis(),
+    personnel: getPersonnelList(),
+  };
+  if (needCaps) out.caps = getInventoryCaps();
+  return out;
+}

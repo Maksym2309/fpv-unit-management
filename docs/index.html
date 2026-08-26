@@ -792,6 +792,15 @@ var DEMO_DATA = {
     {id:'CONS-004', name:'Термозбіжка 8мм', category:'Електрика', compat:'FPV, GNST', trackType:'Кількісний', qty:45, minQty:15, status:'Мало', note:''}
   ],
   getCompatOptions: ['FPV', 'STNG', 'WING', 'RMT', 'TX', 'GNST', 'TRK', 'ANT', 'VRX', 'GGL', 'PC', 'Універсальне'],
+  // Пакетний старт — збирається з тих самих демо-полів
+  getAllData: function(needCaps){
+    var D = DEMO_DATA;
+    var out = { me:D.getCurrentUserEmail, admin:D.getAdminEmail, items:D.getInventoryList,
+      trackers:D.getSinotrackList, flights:D.getFlightList, sims:D.getSimList,
+      freq:D.getFrequencyAnalysis, personnel:D.getPersonnelList };
+    if (needCaps) out.caps = D.getInventoryCaps;
+    return JSON.parse(JSON.stringify(out));
+  },
   // Демо-сховище «Інформації»: дві теки й кілька файлів, щоб розділ можна
   // було подивитись без справжньої теки Drive.
   infoListFolder: function(id){
@@ -1226,6 +1235,17 @@ function freqWarn(sel) {
 var _loading = 0;
 var _loadPending = false;   // запит на оновлення прийшов, поки тривало інше — виконати після
 var _loadStarted = 0;
+// Завершення будь-якого шляху завантаження — спільне
+function _loadFinish(showToast, silent) {
+  S.loadedAt = new Date();
+  $('syncTime').textContent = S.loadedAt.toTimeString().slice(0,8);
+  updateTopStats();
+  saveSnapshot();
+  if (!silent) renderView();
+  if (showToast) toast('✅ Дані оновлено');
+  if (_loadPending) { _loadPending = false; setTimeout(function(){ loadAll(); }, 200); }
+}
+
 function loadAll(showToast, silent) {
   if (_loading) {
     // Якщо завантаження триває — не губимо запит, а ставимо в чергу.
@@ -1234,16 +1254,37 @@ function loadAll(showToast, silent) {
     _loading = 0;
   }
   _loadStarted = Date.now();
+  _loading = 1;
+  var needCaps = S.invCaps === undefined;
+  // Один пакетний запит замість девʼяти: кожен окремий POST — це власний
+  // round-trip і власна перевірка сесії з читанням аркуша «Персонал».
+  rpc('getAllData', [needCaps], function(d){
+    if (!d || d.items === undefined) { loadAllLegacy(showToast, silent); return; }
+    S.me = d.me || ''; $('userEmail').textContent = S.me;
+    S.admin = d.admin || '';
+    S.items = d.items || [];
+    S.trackers = d.trackers || [];
+    S.flights = d.flights || [];
+    S.sims = d.sims || [];
+    S.freq = d.freq || null;
+    S.personnel = Array.isArray(d.personnel) ? d.personnel : [];
+    if (needCaps) S.invCaps = (d.caps && d.caps.mode) ? d.caps : null;
+    _loading = 0;
+    _loadFinish(showToast, silent);
+  }, function(){
+    // Старий бекенд без getAllData — тихо їдемо по-старому, по одному
+    loadAllLegacy(showToast, silent);
+  });
+}
+
+// Старий шлях: девʼять окремих запитів. Лишається як запасний, поки
+// в таблиці може стояти Code.gs без getAllData.
+function loadAllLegacy(showToast, silent) {
   _loading = 5;
   function done() {
     _loading--;
     if (_loading > 0) return;
-    S.loadedAt = new Date();
-    $('syncTime').textContent = S.loadedAt.toTimeString().slice(0,8);
-    updateTopStats();
-    if (!silent) renderView();
-    if (showToast) toast('✅ Дані оновлено');
-    if (_loadPending) { _loadPending = false; setTimeout(function(){ loadAll(); }, 200); }
+    _loadFinish(showToast, silent);
   }
   rpc('getCurrentUserEmail', [], function(v){ S.me = v || ''; $('userEmail').textContent = S.me; done(); }, function(){ done(); });
   rpc('getAdminEmail', [], function(v){ S.admin = v || ''; done(); }, function(){ done(); });
@@ -1251,6 +1292,44 @@ function loadAll(showToast, silent) {
   rpc('getSinotrackList', [], function(v){ S.trackers = v || []; done(); }, function(){ S.trackers=[]; done(); });
   rpc('getFlightList', [], function(v){ S.flights = v || []; loadFreqAndSims(done); }, function(){ S.flights=[]; loadFreqAndSims(done); });
 }
+
+/* ── Снапшот у localStorage: миттєвий старт ───────────────────
+   Поки їде свіже (холодний Apps Script — це секунди), застосунок
+   показує останні відомі дані, а не порожній екран. Оновлення приходить
+   слідом і перемальовує. Дані живуть на тому ж пристрої, що й токен
+   сесії, — модель загроз та сама. */
+var SNAP_KEY = 'wh_snapshot';
+function saveSnapshot() {
+  if (MODE !== 'api') return;
+  try {
+    localStorage.setItem(SNAP_KEY, JSON.stringify({
+      ts: Date.now(), me: S.me, admin: S.admin, items: S.items,
+      trackers: S.trackers, sims: S.sims, flights: S.flights,
+      freq: S.freq, personnel: S.personnel, invCaps: S.invCaps,
+    }));
+  } catch(e) {}   // квота/приватний режим — просто без снапшота
+}
+function loadSnapshot() {
+  if (MODE !== 'api') return false;
+  try {
+    var d = JSON.parse(localStorage.getItem(SNAP_KEY) || 'null');
+    if (!d || !d.ts) return false;
+    // Понад добу — краще чесний спінер, ніж дуже стара картина
+    if (Date.now() - d.ts > 24 * 3600 * 1000) return false;
+    S.me = d.me || ''; S.admin = d.admin || '';
+    S.items = d.items || []; S.trackers = d.trackers || [];
+    S.sims = d.sims || []; S.flights = d.flights || [];
+    S.freq = d.freq || null;
+    S.personnel = Array.isArray(d.personnel) ? d.personnel : [];
+    S.invCaps = d.invCaps;
+    S.loadedAt = new Date(d.ts);
+    $('userEmail').textContent = S.me;
+    $('syncTime').textContent = S.loadedAt.toTimeString().slice(0,8) + ' (кеш)';
+    updateTopStats();
+    return true;
+  } catch(e) { return false; }
+}
+function clearSnapshot() { try { localStorage.removeItem(SNAP_KEY); } catch(e) {} }
 function loadFreqAndSims(done) {
   // Права на інвентар не змінюються — тягнемо один раз за сесію
   var needCaps = S.invCaps === undefined;
@@ -1371,6 +1450,7 @@ function doLogin() {
 function doLogout() {
   rpc('authLogout', [authToken()], function(){}, function(){});
   setAuthToken('');
+  clearSnapshot();   // вихід = спільний пристрій: дані підрозділу не лишаємо
   S.auth = null;
   toast('👋 Вихід виконано');
   setView('home');
@@ -6004,6 +6084,8 @@ if (MODE === 'api' && !authToken()) {
   renderView();
   openLoginModal();
 } else {
+  // Снапшот з минулого разу — на екрані одразу, свіже доїде слідом
+  if (loadSnapshot()) renderView();
   loadAll();
 }
 authInit();

@@ -23,7 +23,7 @@ const API_FUNCTIONS = [
   // читання
   'getCurrentUserEmail', 'getAdminEmail', 'getInventoryList', 'getInventoryCaps',
   'getSinotrackList', 'getSimList', 'getFlightList', 'getFrequencyAnalysis',
-  'getPersonnelList',
+  'getPersonnelList', 'getAllData',
   // персонал (адмінські функції самі перевіряють права)
   'adminListPersonnel', 'adminSavePerson', 'adminDeletePerson',
   'setPersonStatus', 'setPersonRole',
