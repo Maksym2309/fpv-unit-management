@@ -386,6 +386,16 @@ textarea { height: 54px; resize: vertical; }
 #modalBg.open { display: flex; }
 .modal { background: #1a1a1a; border: 1px solid var(--blue); padding: 18px; width: 460px; max-width: 100%; box-shadow: 0 12px 48px rgba(0,0,0,.85); }
 .modal.wide { width: 560px; }
+/* Повний екран для переглядача. Через CSS, а не requestFullscreen:
+   рідний fullscreen для iframe на iOS Safari не працює, а розтягнута
+   модалка працює скрізь однаково. */
+.viewer-frame { width: 100%; height: 70vh; border: 1px solid var(--line); background: #fff; }
+.modal.modal-full {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  max-width: none; max-height: none; margin: 0; border: none;
+  display: flex; flex-direction: column;
+}
+.modal.modal-full .viewer-frame { height: auto; flex: 1 1 auto; min-height: 0; }
 .modal-title { font-family: var(--font-data); font-weight: 700; color: var(--accent); font-size: 13px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; text-transform: uppercase; letter-spacing: .08em; }
 .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--dim); line-height: 1; }
 .modal-close:hover { color: var(--red); }
@@ -909,7 +919,7 @@ var DEMO_DATA = {
     {id:'SIM-03', contact:'Life-3', number:'+380631234567', status:'Невідомо', binding:''}
   ],
   getFlightList: [
-    {id:'CRW-001', date:'2026-07-23', crew:'CRW-001', gnst:'GNST-01', drones:'FPV-101|FPV-102', bind:'hornet-7', pilot:'', tracker:'SNT-001', trackerOk:'Перевірено', start:'', end:'', status:'Активний', note:'', creatorEmail:'pilot@unit.mil', system:'Аналог', freq:'R6 (5843)', reserves:'A1 (5865)|B2 (5752)', main:'OP-001', members:'OP-002', crewName:'АЛЬФА'},
+    {id:'CRW-001', date:'2026-07-23', crew:'CRW-001', gnst:'GNST-01', drones:'FPV-101|FPV-102', bind:'hornet-7', pilot:'', tracker:'SNT-001', trackerOk:'Перевірено', start:'', end:'', status:'Активний', note:'', creatorEmail:'pilot@unit.mil', system:'Аналог', freq:'R6 (5843)', reserves:'A1 (5865)|B2 (5752)', main:'OP-001', members:'OP-002', crewName:'АЛЬФА', mainDrone:'FPV-101'},
     {id:'CRW-002', date:'2026-07-23', crew:'CRW-002', gnst:'GNST-02', drones:'FPV-205', bind:'thunder-2', pilot:'', tracker:'SNT-002', trackerOk:'', start:'', end:'', status:'Активний', note:'', creatorEmail:'other@unit.mil', system:'DJI', freq:'E4 (5645)', reserves:'E7 (5925)', main:'OP-004', members:'', crewName:'БРАВО'},
     {id:'FLT-0041', date:'2026-07-23', crew:'CRW-001', gnst:'GNST-01', drones:'FPV-101', bind:'hornet-7', pilot:'Сокіл', tracker:'SNT-001', trackerOk:'Перевірено', start:'14:22', end:'', status:'Активний', note:'', creatorEmail:'pilot@unit.mil', system:'Аналог', freq:'R6 (5843)', reserves:''},
     {id:'FLT-0040', date:'2026-07-23', crew:'CRW-002', gnst:'GNST-02', drones:'FPV-205', bind:'thunder-2', pilot:'Грім', tracker:'', trackerOk:'', start:'12:03', end:'12:41', status:'Завершено', note:'', creatorEmail:'other@unit.mil', system:'DJI', freq:'E4 (5645)', reserves:''},
@@ -1844,7 +1854,7 @@ function infoShowViewerUrl(name, mime, url) {
   if (mime.indexOf('image/') === 0) {
     view = '<img src="'+esc(url)+'" alt="'+nameEsc+'" style="max-width:100%;max-height:70vh;display:block;margin:0 auto">';
   } else if (mime === 'application/pdf') {
-    view = '<iframe src="'+esc(url)+'" style="width:100%;height:70vh;border:1px solid var(--line);background:#fff"></iframe>';
+    view = '<iframe src="'+esc(url)+'" class="viewer-frame"></iframe>';
   } else if (mime.indexOf('video/') === 0) {
     view = '<video src="'+esc(url)+'" controls preload="metadata" style="max-width:100%;max-height:70vh;display:block;margin:0 auto"></video>';
   } else if (mime.indexOf('audio/') === 0) {
@@ -1859,6 +1869,8 @@ function infoShowViewerUrl(name, mime, url) {
   openModal('📄 '+nameEsc,
     view+
     '<div class="btn-row" style="margin-top:10px">'+
+      (mime === 'application/pdf'
+        ? '<button class="btn btn-sec" onclick="viewerToggleFull(this)">⛶ На весь екран</button>' : '')+
       '<a class="btn btn-sec" href="'+esc(url)+(url.indexOf('dl=1')===-1?'&dl=1':'')+'" '+
         'download="'+nameEsc+'" style="text-align:center;text-decoration:none">⬇ Зберегти</a>'+
     '</div>', true);
@@ -1886,7 +1898,7 @@ function infoShowViewer(name, mime, parts, exported) {
       } else if (mime === 'application/pdf') {
         // Вбудований переглядач браузера. На iOS Safari iframe із PDF
         // буває примхливим — тому поруч завжди лишається «Зберегти».
-        view = '<iframe src="'+infoBlobUrl+'" style="width:100%;height:70vh;border:1px solid var(--line);background:#fff"></iframe>';
+        view = '<iframe src="'+infoBlobUrl+'" class="viewer-frame"></iframe>';
       } else if (mime.indexOf('video/') === 0) {
         // Без перемотки наперед: файл приходить цілком, стрімінгу тут немає.
         view = '<video src="'+infoBlobUrl+'" controls style="max-width:100%;max-height:70vh;display:block;margin:0 auto"></video>';
@@ -1911,9 +1923,18 @@ function infoShowViewer(name, mime, parts, exported) {
       (exported ? '<div class="hint" style="margin-bottom:8px">Google-документ показано як PDF</div>' : '')+
       view+
       '<div class="btn-row" style="margin-top:10px">'+
+        (mime === 'application/pdf'
+          ? '<button class="btn btn-sec" onclick="viewerToggleFull(this)">⛶ На весь екран</button>' : '')+
         '<button class="btn btn-sec" onclick="infoDownloadCurrent(\''+esc(name||'file').replace(/'/g,"\\'")+'\')">⬇ Зберегти</button>'+
       '</div>', true);
   } catch(e) { toast('❌ '+e.message, true); }
+}
+
+// Перемикач повного екрана для переглядача. openModal ставить className
+// заново, тож наступна модалка завжди відкривається звичайним вікном.
+function viewerToggleFull(btn) {
+  var on = $('modalBox').classList.toggle('modal-full');
+  if (btn) btn.textContent = on ? '🗗 Вікном' : '⛶ На весь екран';
 }
 
 /* ── Завантаження файлу на пристрій ──────────────────────────
@@ -2656,7 +2677,7 @@ function nfCrewChange() {
     (c.system?'📹 '+esc(c.system)+'<br>':'')+
     (c.freq?'📻 Основна: <b>'+esc(c.freq)+'</b><br>':'')+
     (c.reserves?'🔄 Резервні: '+esc(c.reserves.split('|').join(', '))+'<br>':'')+
-    '🛸 Пул: '+esc(dl.join(', '))+
+    '🛸 Пул: '+esc(dl.map(function(x){ return x===c.mainDrone ? '⭐'+x : x; }).join(', '))+
   '</div></div>';
 
   if (c.system) $('nfSystem').value = c.system;
@@ -2679,8 +2700,13 @@ function nfCrewChange() {
   $('nfDrone').innerHTML = '<option value="">— оберіть —</option>' + dl.map(function(did){
     var it = S.items.find(function(i){ return i.id===did; });
     var inFlight = busy[did];
-    return '<option value="'+esc(did)+'">'+esc(did)+(it?' — '+esc(it.name):'')+(inFlight?' ✈ вже в повітрі':'')+'</option>';
+    var star = (c.mainDrone === did) ? '⭐ ' : '';
+    return '<option value="'+esc(did)+'">'+star+esc(did)+(it?' — '+esc(it.name):'')+(inFlight?' ✈ вже в повітрі':'')+'</option>';
   }).join('');
+  // Основний борт екіпажу підставляється сам — якщо він не в повітрі
+  if (c.mainDrone && dl.indexOf(c.mainDrone) !== -1 && !busy[c.mainDrone]) {
+    $('nfDrone').value = c.mainDrone;
+  }
   block.style.display = 'block';
 
   var crewTrks = (c.tracker||'').split('|').map(function(s){return s.trim();}).filter(Boolean);
@@ -5718,6 +5744,8 @@ function renderCrewForm() {
     '<div class="f"><label>Головний відповідальний</label><select id="cfMain">'+mainOpts+'</select></div>'+
     '<div class="f"><label>Наземна станція</label><select id="cfGnst">'+gnstOpts+'</select></div>'+
     '<div class="f"><label>Bind фраза</label><input type="text" id="cfBind" placeholder="спільна для всіх бортів…" value="'+esc(cr?cr.bind:'')+'"></div>'+
+    '<div class="f"><label>⭐ Основний борт</label><select id="cfMainDrone"></select>'+
+      '<div class="hint">Підставляється першим при створенні вильоту. Список — із пулу нижче.</div></div>'+
     '<div class="f"><label>Борти (пул)</label>'+
       '<div class="ac-wrap"><input type="text" id="cfDroneSearch" placeholder="Пошук борту…" oninput="cfFilterDrones()" autocomplete="off"><div class="ac-list" id="cfDroneDd"></div></div>'+
       '<div id="cfDroneList" style="margin-top:6px"></div></div>'+
@@ -5900,8 +5928,18 @@ function cfAddReserve() {
   sel.value=''; cfRenderChips();
 }
 function cfRenderChips() {
+  // Основний борт випав із пулу — скидаємо, щоб не зберегти неіснуючий
+  if (crewForm.mainDrone && crewForm.drones.indexOf(crewForm.mainDrone) === -1) crewForm.mainDrone = '';
+  if ($('cfMainDrone')) {
+    $('cfMainDrone').innerHTML = '<option value="">— не вказано —</option>' +
+      crewForm.drones.map(function(d){
+        var it = S.items.find(function(x){ return x.id === d; });
+        return '<option value="'+esc(d)+'"'+(crewForm.mainDrone===d?' selected':'')+'>'+esc(d)+(it?' — '+esc(it.name):'')+'</option>';
+      }).join('');
+    $('cfMainDrone').onchange = function(){ crewForm.mainDrone = this.value; cfRenderChips(); };
+  }
   if ($('cfDroneList')) $('cfDroneList').innerHTML = crewForm.drones.map(function(d){
-    return '<span class="chip click" onclick="cfRemoveDrone(\''+esc(d)+'\')">'+esc(d)+' ✕</span>';
+    return '<span class="chip click" onclick="cfRemoveDrone(\''+esc(d)+'\')">'+(crewForm.mainDrone===d?'⭐ ':'')+esc(d)+' ✕</span>';
   }).join('') || '<span class="hint">— порожньо —</span>';
   if ($('cfTrkList')) $('cfTrkList').innerHTML = crewForm.trackers.map(function(t){
     var tr = S.trackers.find(function(x){ return x.id===t; });
@@ -5920,10 +5958,11 @@ function openCrewForm(crewId) {
       editId: crewId,
       drones: cr.drones ? cr.drones.split('|').filter(Boolean) : [],
       trackers: cr.tracker ? cr.tracker.split('|').map(function(s){return s.trim();}).filter(Boolean) : [],
-      reserves: cr.reserves ? cr.reserves.split('|').filter(Boolean) : []
+      reserves: cr.reserves ? cr.reserves.split('|').filter(Boolean) : [],
+      mainDrone: cr.mainDrone || ''
     };
   } else {
-    crewForm = { drones: [], trackers: [], reserves: [], editId: null };
+    crewForm = { drones: [], trackers: [], reserves: [], editId: null, mainDrone: '' };
   }
   var cr2 = crewId ? crewById(crewId) : null;
   openModal(crewId ? '✏️ Екіпаж '+esc((cr2 && cr2.crewName) || crewId) : '➕ Новий екіпаж',
@@ -5945,6 +5984,7 @@ function doSaveCrew() {
     gnst: $('cfGnst').value, bind: $('cfBind').value.trim(),
     drones: crewForm.drones.join('|'), tracker: crewForm.trackers.join('|'),
     system: $('cfSystem').value, grid: ($('cfGrid') ? $('cfGrid').value : ''), freq: $('cfFreq').value, reserves: crewForm.reserves.join('|'),
+    mainDrone: crewForm.mainDrone || '',
     crewName: $('cfName') ? $('cfName').value.trim() : undefined,
     main: $('cfMain') ? $('cfMain').value : undefined
   };
@@ -5956,6 +5996,7 @@ function doSaveCrew() {
       var c = crewById(editId);
       if (c) { c.gnst=data.gnst; c.bind=data.bind; c.drones=data.drones; c.tracker=data.tracker;
                c.system=data.system; c.freq=data.freq; c.reserves=data.reserves;
+               c.grid=data.grid; c.mainDrone=data.mainDrone;
                if (data.crewName !== undefined) c.crewName = data.crewName;
                if (data.main !== undefined) c.main = data.main; }
       crewForm = {drones:[],trackers:[],reserves:[],editId:null};
