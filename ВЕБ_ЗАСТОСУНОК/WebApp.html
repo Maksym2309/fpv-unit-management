@@ -6053,13 +6053,34 @@ function doCrewBind(crewId) {
 }
 
 /* ═══════════ МОДАЛКИ ═══════════ */
+// Зупинити відео/аудіо всередині модалки. Обовʼязково перед закриттям і
+// перед заміною вмісту: closeModal лише ховає модалку (знімає клас), а
+// плеєр лишається в DOM і грає далі у фоні; заміна ж через innerHTML у
+// частини браузерів теж не глушить звук одразу. Зупиняємо явно:
+// пауза + зняття src + load(), щоб і потік з Worker перестав тягтися.
+function modalStopMedia() {
+  var box = $('modalBox');
+  if (!box) return;
+  var els = box.querySelectorAll('video,audio');
+  for (var i = 0; i < els.length; i++) {
+    try { els[i].pause(); els[i].removeAttribute('src'); els[i].load(); } catch(e) {}
+  }
+  // Blob тут НЕ відкликаємо: openModal викликається ПІСЛЯ того, як
+  // переглядач створив свій blob-URL, — відкликання вбило б його до показу
+}
+
 function openModal(title, bodyHtml, wide) {
+  modalStopMedia();
   $('modalBox').className = 'modal' + (wide ? ' wide' : '');
   $('modalBox').innerHTML = '<div class="modal-title"><span>'+title+'</span>'+
     '<button class="modal-close" onclick="closeModal()">✕</button></div>' + bodyHtml;
   $('modalBg').classList.add('open');
 }
-function closeModal() { $('modalBg').classList.remove('open'); }
+function closeModal() {
+  modalStopMedia();
+  infoRevokeBlob();   // переглядач закрито — його blob більше нікому не потрібен
+  $('modalBg').classList.remove('open');
+}
 document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeModal(); });
 
 /* ═══════════ СТАРТ ═══════════ */
