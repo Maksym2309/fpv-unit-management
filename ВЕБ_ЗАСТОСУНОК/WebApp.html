@@ -4459,6 +4459,20 @@ function invActionsHtml(it) {
   //   «Загальний»: додати в екіпаж + / прибрати з екіпажу ✕(черв.)
   // Списання (і будь-яке вибуття) — тільки через статус «Списаний»; видалення з обліку немає.
   var h = '<div class="inv-acts">';
+  // ⭐ основний борт — на вкладці екіпажу, для бортів (FPV/STNG/WING).
+  // Право те саме, що й на редагування екіпажу: бекенд усе одно відхилить
+  // чужого, тож чесніше не показувати кнопку тим, кому не можна.
+  if (invTab === 'crew' && invSlotOf(it) === 'drone' &&
+      (canEditCrews() || canManageCrew(invCrewSel))) {
+    var crMain = crewById(invCrewSel);
+    var isMain = !!(crMain && crMain.mainDrone === it.id);
+    h += '<button class="inv-act" style="'+(isMain
+        ? 'color:var(--accent);border-color:var(--accent)'
+        : 'color:var(--dim)')+'" title="'+(isMain
+        ? 'Основний борт екіпажу — натисни, щоб зняти'
+        : 'Зробити основним бортом екіпажу')+'" '+
+      'onclick="invSetMainDrone(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('star')+'</button>';
+  }
   // Прийняття обладнання — тільки у вкладці екіпажу (парафія головного)
   if (invTab === 'crew' && invCanAccept(it)) {
     h += '<button class="inv-act inv-act--ok" title="Прийняти обладнання" onclick="invAcceptEquip(this.dataset.id)" data-id="'+esc(it.id)+'">'+svgIcon('check')+'</button>';
@@ -4474,6 +4488,24 @@ function invActionsHtml(it) {
     }
   }
   return h + '</div>';
+}
+
+// Признач/зніми основний борт прямо з інвентарю екіпажу.
+// Повторний клік по зірці знімає позначку.
+function invSetMainDrone(id) {
+  var c = crewById(invCrewSel);
+  if (!c || invBusy[id]) return;
+  var val = (c.mainDrone === id) ? '' : id;
+  invBusy[id] = true; renderInvTable();
+  rpc('updateCrew', [c.id, { mainDrone: val }, crewToken() || undefined], function(){
+    invBusy[id] = false;
+    c.mainDrone = val;
+    toast(val ? '⭐ Основний борт: ' + val : '⭐ Позначку основного знято');
+    renderInvTable();
+  }, function(e){
+    invBusy[id] = false; renderInvTable();
+    toast('❌ ' + e.message, true);
+  });
 }
 
 // ── Прийняття обладнання ──
@@ -4667,7 +4699,12 @@ function renderInvTable() {
   var cols = invCompact ? 7 : 9;
 
   var rows = list.map(function(it){
-    return '<tr><td class="mono accent">'+esc(it.id)+(showActs ? invActionsHtml(it) : '')+'</td>'+
+    var mainMark = '';
+    if (invTab === 'crew') {
+      var crSel = crewById(invCrewSel);
+      if (crSel && crSel.mainDrone === it.id) mainMark = '⭐ ';   // видно й у перегляді
+    }
+    return '<tr><td class="mono accent">'+mainMark+esc(it.id)+(showActs ? invActionsHtml(it) : '')+'</td>'+
       '<td>'+esc(it.name)+'</td>'+
       (invCompact ? '' :
       '<td class="mono">'+esc(it.type)+'</td>'+
