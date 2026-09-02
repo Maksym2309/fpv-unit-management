@@ -1429,6 +1429,30 @@ function webSetItemAssignment(id, assignment) {
   return { id: id, assignment: assignment };
 }
 
+// Змінити назву предмета (адмін або право «Інвентар»), із записом у Журнал руху
+function webSetItemName(id, name) {
+  const email = apiUserEmail_() || '';
+  if (!isAdmin(email) && !apiRight_('inv')) throw new Error('Потрібне право «Інвентар» або права адміністратора');
+  name = String(name || '').trim();
+  if (!name) throw new Error('Назва не може бути порожньою');
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const inv = getSheet(ss, 'Інвентар');
+  if (!inv) throw new Error('Інвентар не знайдено');
+  const ids = inv.getRange(3, COLS.ID, inv.getLastRow() - 2, 1).getValues().flat().map(String);
+  const idx = ids.indexOf(String(id));
+  if (idx === -1) throw new Error('ID не знайдено: ' + id);
+  const row = idx + 3;
+  const old = String(inv.getRange(row, COLS.NAME).getValue());
+  if (old === name) return { id: id, name: name };
+  inv.getRange(row, COLS.NAME).setValue(name);
+  const log = getSheet(ss, 'Журнал руху');
+  if (log) {
+    const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    log.appendRow([today, id, name, 'Зміна назви', old || '—', name, email || '—', '', 'Веб-застосунок']);
+  }
+  return { id: id, name: name };
+}
+
 // ── Примітки з веб-застосунку (адмін, право «Інвентар» або головний екіпажу) ──
 function webNoteGuard_(token) {
   const email = apiUserEmail_() || '';

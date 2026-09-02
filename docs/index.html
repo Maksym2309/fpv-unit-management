@@ -1081,6 +1081,40 @@ function doSetNote(kind, id) {
     toast('❌ '+e.message, true);
   });
 }
+
+/* ── Редагування назви предмета (адмін або право «Інвентар») ── */
+function invNameCellHtml(it, edit) {
+  var txt = '<span>'+esc(it.name)+'</span>';
+  if (!edit || !canEditInv()) return txt;
+  return '<div style="display:flex;align-items:center;gap:6px;justify-content:space-between">'+txt+
+    '<button class="inv-act" title="Редагувати назву" data-id="'+esc(it.id)+'" '+
+    'onclick="invNameModal(this.dataset.id)">'+svgIcon('edit')+'</button></div>';
+}
+function invNameModal(id) {
+  var it = S.items.find(function(x){ return x.id === id; });
+  if (!it) return;
+  openModal('✏️ Назва: '+esc(id),
+    '<div class="f"><label>Назва предмета *</label><input type="text" id="inName" value="'+esc(it.name||'')+'"></div>'+
+    '<button class="btn btn-green" id="inBtn" data-id="'+esc(id)+'" onclick="doSetItemName(this.dataset.id)">💾 Зберегти</button>'
+  );
+  setTimeout(function(){ var i = $('inName'); if (i) { i.focus(); i.select(); } }, 60);
+}
+function doSetItemName(id) {
+  var v = $('inName').value.trim();
+  if (!v) { toast('⚠ Назва не може бути порожньою', true); return; }
+  var btn = $('inBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  rpc('webSetItemName', [id, v], function(){
+    var it = S.items.find(function(x){ return x.id === id; });
+    if (it) it.name = v;
+    toast('✏️ '+id+': назву збережено');
+    closeModal();
+    renderView();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
+    toast('❌ '+e.message, true);
+  });
+}
 function isMine(f) {
   if (!f.creatorEmail) return true;
   if (S.me && S.me === S.admin && S.admin !== 'YOUR_EMAIL@gmail.com') return true;
@@ -4715,7 +4749,7 @@ function renderInvTable() {
       if (crSel && crSel.mainDrone === it.id) mainMark = '⭐ ';   // видно й у перегляді
     }
     return '<tr><td class="mono accent">'+mainMark+esc(it.id)+(showActs ? invActionsHtml(it) : '')+'</td>'+
-      '<td>'+esc(it.name)+'</td>'+
+      '<td>'+invNameCellHtml(it, edit)+'</td>'+
       (invCompact ? '' :
       '<td class="mono">'+esc(it.type)+'</td>'+
       '<td>'+((edit && canEditInv()) ? invAsgSelectHtml(it) : esc(it.assignment))+'</td>')+

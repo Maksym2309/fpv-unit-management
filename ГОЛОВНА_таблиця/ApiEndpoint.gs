@@ -36,7 +36,7 @@ const API_FUNCTIONS = [
   'updateSinotrackStatus', 'updateSimStatus',
   // інвентар (видалення з обліку у PWA немає — тільки списання через статус)
   'acceptItem', 'updateItemStatusById',
-  'webAddInventoryItem', 'getFormData', 'getNextIdNum', 'webSetItemAssignment',
+  'webAddInventoryItem', 'getFormData', 'getNextIdNum', 'webSetItemAssignment', 'webSetItemName',
   'webSetItemNote', 'webSetTrackerNote', 'webLogStatusChange', 'getLostMapData',
   'webUpdateLossRecord',
   // комплекти (перевіряють право «Інвентар» усередині)
