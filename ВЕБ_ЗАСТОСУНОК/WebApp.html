@@ -3096,8 +3096,9 @@ function renderFreq(c) {
     var cc = cleanCode(a.freqCode) || freqToCodeLocal(a.freq);
     var info = crewInfoMap[a.crew];
     var own = isOwn(a);
+    // Зміна частоти — лише через розгорнуті резерви («⇄ основна»);
+    // окремий 🎚 зі своїм меню дублював цю ж дію
     var canSwitch = info && info.reserves && info.reserves.length && (info.author === S.me || S.me === d.adminEmail);
-    var swId = 'swc-' + String(a.crew).replace(/[^\w-]/g, '_');
     var rlist = resByCrew[a.crew] || [];
     resShown[a.crew] = true;
     var resOpen = !!freqResOpen[a.crew];
@@ -3109,15 +3110,7 @@ function renderFreq(c) {
     crewRows += '<tr><td><span class="crew-dot'+(own?' green':'')+'"></span>'+crewDisplayHtml(a.crew)+
       (own?' <span class="badge-main">мій</span>':'')+'</td>'+
       '<td><span class="crew-freq'+(own?'" style="color:#2ecc71':'')+'">'+esc(cc)+' ('+esc(a.freq)+')</span>'+resBtn+
-      (canSwitch?' <button class="vtx-btn" style="padding:1px 6px;margin-left:4px" onclick="document.getElementById(\''+swId+'\').classList.toggle(\'open\')">🎚</button>':'')+
       '</td><td>'+crewBindCell(a.crew)+'</td></tr>';
-    if (canSwitch) {
-      crewRows += '<tr><td colspan="3" style="padding:0 8px"><div class="swap-menu" id="'+swId+'" style="margin:0 0 6px">';
-      info.reserves.forEach(function(r){
-        crewRows += '<button class="vtx-btn" onclick="doSwapFreq(\''+esc(a.crew)+'\',\''+esc(r)+'\')">→ '+esc(cleanCode(r))+'</button>';
-      });
-      crewRows += '</div></td></tr>';
-    }
     if (resOpen) rlist.forEach(function(r){
       // ⇄ — резерв стає основною (те саме право, що й перемикач 🎚)
       crewRows += '<tr><td style="padding-left:26px;color:var(--dim)">↳ резерв</td>'+
