@@ -584,6 +584,7 @@ textarea { height: 54px; resize: vertical; }
         <button class="nav-item active" data-view="home" onclick="setView('home')"><span class="nav-icon">⌂</span>Головна</button>
         <button class="nav-item" data-view="flights" onclick="setView('flights')"><span class="nav-icon">✈️</span>Журнал польоту</button>
         <button class="nav-item" data-view="freq" onclick="setView('freq')"><span class="nav-icon">📻</span>Карта частот</button>
+        <button class="nav-item" data-view="sector" onclick="setView('sector')"><span class="nav-icon">⬡</span>Сектор</button>
         <button class="nav-item" data-view="trackers" onclick="setView('trackers')"><span class="nav-icon">📡</span>GPS трекери</button>
         <button class="nav-item" data-view="inventory" onclick="setView('inventory')"><span class="nav-icon">📦</span>Інвентар</button>
         <button class="nav-item" data-view="crews" onclick="setView('crews')"><span class="nav-icon">👥</span>Екіпаж</button>
@@ -1428,6 +1429,7 @@ function renderView() {
   if (S.view === 'home') renderHome(c);
   else if (S.view === 'flights') renderFlights(c);
   else if (S.view === 'freq') renderFreq(c);
+  else if (S.view === 'sector') renderSector(c);
   else if (S.view === 'trackers') renderTrackers(c);
   else if (S.view === 'inventory') renderInventory(c);
   else if (S.view === 'crews') renderCrews(c);
@@ -3362,6 +3364,190 @@ function doSwapFreq(crewId, code) {
 }
 function reloadFreq() {
   rpc('getFrequencyAnalysis', [], function(v){ S.freq = v; updateTopStats(); renderView(); });
+}
+
+/* ═══════════ ВИД: УПРАВЛІННЯ СЕКТОРОМ (концепт) ═══════════
+   Переробка концепту зі Stitch на компоненти застосунку: плитки
+   статистики — stat-tile, бічні панелі — side-panel, перемикач типу —
+   inv-mode, карта — Leaflet як у «Карті втрат». Статистика рахується
+   з реальних даних; сектор, межі й орієнтири — демо, поки немає
+   бекенду секторів. Відео орієнтирів — заглушка (реалізація згодом). */
+var sectorType = 'training';   // training | military (військовий заблоковано)
+var sectorSel = 'PLG-1';
+var sectorPanels = { crews: true, fl: true, ev: true };
+function sectorPanelToggle(k) { sectorPanels[k] = !sectorPanels[k]; renderView(); }
+var _sectorMapObj = null;
+
+// Демо-сектори. Коли зʼявиться бекенд — цей масив приїде з таблиці.
+var SECTORS = [{
+  id: 'PLG-1', name: 'ПОЛІГОН-1', status: 'Активний',
+  bounds: [[48.560,34.960],[48.565,35.060],[48.520,35.090],[48.495,35.040],[48.505,34.975]],
+  position: { name: 'Позиція', coords: [48.527, 35.005] },
+  landmarks: [
+    { name: 'Орієнтир-1 · Водонапірна вежа', coords: [48.545, 35.045], video: '' },
+    { name: 'Орієнтир-2 · Роздоріжжя',       coords: [48.512, 35.060], video: '' }
+  ]
+}];
+function sectorById(id) { return SECTORS.find(function(s){ return s.id === id; }) || SECTORS[0]; }
+
+// Середня тривалість завершених вильотів за часами "HH:MM" початку/кінця
+function sectorAvgFlight() {
+  var mins = [], toMin = function(t){
+    var m = String(t||'').match(/(\d{1,2}):(\d{2})/);
+    return m ? (+m[1])*60 + (+m[2]) : null;
+  };
+  S.flights.forEach(function(f){
+    if (f.id.indexOf('CRW-') === 0) return;
+    var a = toMin(f.start), b = toMin(f.end);
+    if (a === null || b === null) return;
+    var d = b - a; if (d < 0) d += 24*60;
+    if (d > 0 && d < 6*60) mins.push(d);
+  });
+  if (!mins.length) return '—';
+  var avg = Math.round(mins.reduce(function(s,x){ return s+x; }, 0) / mins.length);
+  return ('0'+Math.floor(avg/60)).slice(-2)+':'+('0'+avg%60).slice(-2);
+}
+
+function renderSector(c) {
+  var sec = sectorById(sectorSel);
+  var today = new Date().toISOString().slice(0,10);
+  var flts = S.flights.filter(function(f){ return f.id.indexOf('CRW-') !== 0; });
+  var fToday = flts.filter(function(f){ return String(f.date||'').slice(0,10) === today; }).length;
+  var lost = S.items.filter(function(it){ return String(it.status||'').trim() === 'Втрачений'; });
+  var confN = countConflicts();
+  var crews = activeCrews();
+
+  // Перемикач типу сектора: військовий поки заблоковано
+  var typeToggle = '<div class="inv-mode">'+
+    '<button class="inv-mode-btn'+(sectorType==='training'?' active':'')+'" onclick="sectorType=\'training\';renderView()">Навчальний</button>'+
+    '<button class="inv-mode-btn" disabled style="opacity:.45;cursor:not-allowed" title="У розробці — функціонал заблоковано">🔒 Військовий</button>'+
+  '</div>';
+  var secOpts = SECTORS.map(function(s){
+    return '<option value="'+esc(s.id)+'"'+(s.id===sectorSel?' selected':'')+'>'+esc(s.name)+'</option>';
+  }).join('');
+
+  // Бічні панелі
+  var myCrewId = (S.auth && S.auth.crewId) || '';
+  var crewRows = crews.map(function(cr){
+    var own = cr.id === myCrewId;
+    return '<tr><td><span class="crew-dot'+(own?' green':'')+'"></span>'+crewDisplayHtml(cr.id)+
+      (own?' <span class="badge-main">мій</span>':'')+'</td>'+
+      '<td><span class="crew-freq'+(own?'" style="color:#2ecc71':'')+'">'+esc(cleanCode(cr.freq)||'—')+'</span></td></tr>';
+  }).join('');
+
+  var lastFl = flts.slice(-5).reverse().map(function(f){
+    return '<tr><td class="mono">'+esc(f.date||'')+'<div class="hint">'+esc(f.start||'')+(f.end?' → '+esc(f.end):'')+'</div></td>'+
+      '<td>'+esc(crewNameOnly(f.crew||''))+'</td><td>'+statusChip(f.status)+'</td></tr>';
+  }).join('');
+
+  var events = '';
+  if (confN) events += '<div class="conflict-item" style="border-left-color:var(--yellow)">🟡 Конфлікти частот: '+confN+
+    '<div class="detail">Деталі — на вкладці «Карта частот»</div></div>';
+  lost.slice(-3).reverse().forEach(function(it){
+    events += '<div class="conflict-item">🔴 Втрата борта '+esc(it.id)+
+      '<div class="detail">'+esc(it.name||'')+(it.date?' · '+esc(it.date):'')+'</div></div>';
+  });
+  if (!events) events = '<div class="empty">✅ Подій немає</div>';
+
+  var side = '<div class="side-panel">'+
+    '<div class="side-head" onclick="sectorPanelToggle(\'crews\')"><span class="cap">👥 Екіпажі в секторі</span>'+
+    '<span><span class="count-pill">'+crews.length+'</span> <span class="arr">'+(sectorPanels.crews?'▲':'▼')+'</span></span></div>'+
+    '<div class="side-body'+(sectorPanels.crews?'':' hid')+'" style="padding:0">'+
+    (crewRows ? '<table class="crew-table"><tr><th>Позивний</th><th>Частота</th></tr>'+crewRows+'</table>' : '<div class="empty">Екіпажів немає</div>')+
+    '</div></div>'+
+    '<div class="side-panel">'+
+    '<div class="side-head" onclick="sectorPanelToggle(\'fl\')"><span class="cap">✈ Останні вильоти</span><span class="arr">'+(sectorPanels.fl?'▲':'▼')+'</span></div>'+
+    '<div class="side-body'+(sectorPanels.fl?'':' hid')+'" style="padding:0">'+
+    (lastFl ? '<table class="crew-table"><tr><th>Час</th><th>Екіпаж</th><th>Статус</th></tr>'+lastFl+'</table>' : '<div class="empty">Вильотів ще немає</div>')+
+    '</div></div>'+
+    '<div class="side-panel">'+
+    '<div class="side-head" onclick="sectorPanelToggle(\'ev\')"><span class="cap">⚠ Події</span><span class="arr">'+(sectorPanels.ev?'▲':'▼')+'</span></div>'+
+    '<div class="side-body'+(sectorPanels.ev?'':' hid')+'">'+events+'</div></div>';
+
+  c.innerHTML = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
+    '<div><div class="view-title">Управління <span class="accent">сектором</span></div>'+
+    '<div class="view-sub">Концепт · межі й орієнтири — демо, статистика — з даних підрозділу</div></div>'+
+    '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">'+typeToggle+
+      '<label class="hint">Сектор:</label><select onchange="sectorSel=this.value;renderView()">'+secOpts+'</select>'+
+      statusChip(sec.status)+'</div>'+
+  '</div>'+
+    '<div class="stat-row">'+
+      '<div class="stat-tile blue"><div class="stat-num">'+fToday+'</div><div class="stat-lbl">Вильоти сьогодні</div></div>'+
+      '<div class="stat-tile"><div class="stat-num">'+flts.length+'</div><div class="stat-lbl">Всього вильотів</div></div>'+
+      '<div class="stat-tile green"><div class="stat-num">'+activeFlights().length+'</div><div class="stat-lbl">Зараз в ефірі</div></div>'+
+      '<div class="stat-tile red"><div class="stat-num">'+lost.length+'</div><div class="stat-lbl">Втрати бортів</div></div>'+
+      '<div class="stat-tile"><div class="stat-num">'+crews.length+'</div><div class="stat-lbl">Задок. екіпажі</div></div>'+
+      '<div class="stat-tile"><div class="stat-num">'+sectorAvgFlight()+'</div><div class="stat-lbl">Сер. тривалість</div></div>'+
+      '<div class="stat-tile'+(confN?' click active':'')+'" '+(confN?'onclick="setView(\'freq\')" title="Перейти до карти частот" style="border-left-color:var(--yellow)"':'')+'>'+
+        '<div class="stat-num">'+confN+'</div><div class="stat-lbl">Конфлікти частот</div></div>'+
+    '</div>'+
+    '<div class="freq-layout">'+
+      '<div class="matrix-panel">'+
+        '<div class="matrix-panel-head"><span class="cap">Карта сектору · '+esc(sec.name)+'</span>'+
+        '<div style="display:flex;gap:6px">'+
+          '<button class="btn" style="padding:4px 10px;font-size:11px" disabled title="У розробці">⬇ Звіт (PDF)</button>'+
+          '<button class="btn" style="padding:4px 10px;font-size:11px;background:var(--accent);color:var(--on-accent)" onclick="toast(\'🚧 Додавання орієнтирів — у розробці\')">＋ Орієнтир</button>'+
+        '</div></div>'+
+        '<div id="sectorMap" style="height:56vh;background:var(--panel-2)"></div>'+
+      '</div>'+
+      '<div>'+side+'</div>'+
+    '</div>';
+  renderSectorMap(sec);
+}
+
+function renderSectorMap(sec) {
+  ensureLeaflet(function(){
+    if (_sectorMapObj) { try { _sectorMapObj.remove(); } catch(e) {} _sectorMapObj = null; }
+    var el = $('sectorMap');
+    if (!el) return;
+    el.innerHTML = '';
+    var map = L.map(el, { zoomControl: true });
+    _sectorMapObj = map;
+    var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
+    var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri' });
+    (mapLayer === 'sat' ? sat : osm).addTo(map);
+    var ctl = L.control({ position: 'topright' });
+    ctl.onAdd = function(){
+      var d = L.DomUtil.create('div', 'map-layer-btn');
+      d.style.position = 'static';
+      d.innerHTML = '<button class="'+(mapLayer==='osm'?'active':'')+'" data-l="osm">Карта</button>'+
+        '<button class="'+(mapLayer==='sat'?'active':'')+'" data-l="sat">Супутник</button>';
+      L.DomEvent.disableClickPropagation(d);
+      d.querySelectorAll('button').forEach(function(b){
+        b.onclick = function(){
+          mapLayer = b.dataset.l;
+          if (mapLayer === 'sat') { map.removeLayer(osm); sat.addTo(map); } else { map.removeLayer(sat); osm.addTo(map); }
+          d.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x.dataset.l === mapLayer); });
+        };
+      });
+      return d;
+    };
+    ctl.addTo(map);
+
+    // Межі області роботи — пунктирний янтарний полігон
+    L.polygon(sec.bounds, { color: '#ffb800', weight: 2, dashArray: '6 4', fillColor: '#ffb800', fillOpacity: .06 })
+      .addTo(map).bindTooltip('Межі роботи · '+sec.name, { sticky: true });
+    // Позиція — зелена
+    L.circleMarker(sec.position.coords, { radius: 9, color: '#2ecc71', fillColor: '#2ecc71', fillOpacity: .8, weight: 2 })
+      .addTo(map).bindTooltip('🟢 '+sec.position.name, { direction: 'top', offset: [0, -8] });
+    // Орієнтири — янтарні, клік = картка (відео — заглушка до реалізації)
+    sec.landmarks.forEach(function(lm){
+      L.circleMarker(lm.coords, { radius: 8, color: '#ffb800', fillColor: '#ffb800', fillOpacity: .75, weight: 2 })
+        .addTo(map)
+        .bindTooltip('🔶 '+lm.name, { direction: 'top', offset: [0, -8] })
+        .bindPopup('<div style="font-family:monospace;font-size:12px;min-width:200px"><b>🔶 '+esc(lm.name)+'</b>'+
+          '<br><span style="color:#888">'+lm.coords[0].toFixed(5)+', '+lm.coords[1].toFixed(5)+'</span>'+
+          (lm.video ? '<br><a href="'+esc(lm.video)+'" target="_blank">▶ відео орієнтира</a>'
+                    : '<br><span style="color:#888">▶ Відео орієнтира — буде додано</span>')+'</div>');
+    });
+    // Втрати з реальної карти втрат — якщо вже завантажені
+    (S.lostMap || []).filter(function(x){ return x.lat && x.lng; }).forEach(function(x){
+      L.circleMarker([x.lat, x.lng], { radius: 6, color: '#e74c3c', fillColor: '#e74c3c', fillOpacity: .7, weight: 1 })
+        .addTo(map).bindTooltip('❌ '+(x.imei||x.id)+(x.date?' · '+x.date:''), { direction: 'top', offset: [0, -8] });
+    });
+    map.fitBounds(sec.bounds, { padding: [30, 30] });
+    setTimeout(function(){ map.invalidateSize(); }, 150);
+  });
 }
 
 /* ═══════════ ВИД: GPS ТРЕКЕРИ ═══════════ */
