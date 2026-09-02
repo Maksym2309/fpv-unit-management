@@ -2835,8 +2835,12 @@ function doStartFlight() {
 /* ═══════════ ВИД: КАРТА ЧАСТОТ ═══════════ */
 var bandGroup = 'all';
 function bandOf(band) {
-  var f = BANDS[band][0];
-  if (f >= 5600) return '5.8';
+  // Перший НЕпорожній канал: у «B Sting» єдина частота стоїть п'ятою,
+  // і [0] = null відправляв бенд у групу 3.3
+  var f = (BANDS[band] || []).find(function(x){ return x; }) || 0;
+  // Нижні бенди (HV-L, L, L Foxeer, U, O) — це канали 5.8-відеосистем,
+  // тож живуть у групі 5.8. У «5.0» лишається тільки X (4990–5200)
+  if (f >= 5240) return '5.8';
   if (f >= 4900) return '5.0';
   return '3.3';
 }
@@ -3184,8 +3188,8 @@ function renderFreq(c) {
 
   // ── Спектр-аналізатор ──
   var range;
-  if (bandGroup === '5.8') range = [5600, 6200];
-  else if (bandGroup === '5.0') range = [4900, 5700];
+  if (bandGroup === '5.8') range = [5200, 6200];
+  else if (bandGroup === '5.0') range = [4900, 5250];
   else if (bandGroup === '3.3') range = [3000, 3600];
   else {
     var fs = occupied.map(function(o){ return o.freq; }).concat(reserves.map(function(r){ return r.freq; }));
