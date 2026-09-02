@@ -3064,7 +3064,9 @@ function renderFreq(c) {
       '</div>'+
       ((a.pilot||a.system)?'<div class="af-meta">'+(a.pilot?'👤 '+esc(a.pilot):'')+(a.pilot&&a.system?' · ':'')+(a.system&&a.system!=='Зовнішній'?esc(a.system):'')+'</div>':'');
     if (conf) h += '<div class="af-note">&gt; Δ'+conf.gap+' МГц з '+esc(conf.with.crew)+'</div>';
-    if (canSwitch) {
+    if (freqSwapBusy[a.crew]) {
+      h += '<div class="af-meta">⏳ Зміна частоти…</div>';
+    } else if (canSwitch) {
       h += '<button class="af-btn" onclick="document.getElementById(\''+swId+'\').classList.toggle(\'open\')">Змінити частоту</button>'+
         '<div class="swap-menu" id="'+swId+'">';
       info.reserves.forEach(function(r){
@@ -3102,6 +3104,7 @@ function renderFreq(c) {
     var rlist = resByCrew[a.crew] || [];
     resShown[a.crew] = true;
     var resOpen = !!freqResOpen[a.crew];
+    var busyC = !!freqSwapBusy[a.crew];
     var resBtn = rlist.length
       ? ' <button class="vtx-btn" style="padding:1px 6px;margin-left:4px;border-color:var(--purple);color:var(--purple)" '+
         'title="'+(resOpen?'Сховати':'Показати')+' резервні частоти" data-id="'+esc(a.crew)+'" '+
@@ -3109,17 +3112,23 @@ function renderFreq(c) {
       : '';
     crewRows += '<tr><td><span class="crew-dot'+(own?' green':'')+'"></span>'+crewDisplayHtml(a.crew)+
       (own?' <span class="badge-main">мій</span>':'')+'</td>'+
-      '<td><span class="crew-freq'+(own?'" style="color:#2ecc71':'')+'">'+esc(cc)+' ('+esc(a.freq)+')</span>'+resBtn+
+      '<td><span class="crew-freq'+(own?'" style="color:#2ecc71':'')+'">'+esc(cc)+' ('+esc(a.freq)+')</span>'+
+      (busyC?' <span title="Зміна частоти…">⏳</span>':'')+resBtn+
       '</td><td>'+crewBindCell(a.crew)+'</td></tr>';
     if (resOpen) rlist.forEach(function(r){
-      // ⇄ — резерв стає основною (те саме право, що й перемикач 🎚)
+      // ⇄ — резерв стає основною (те саме право, що й був перемикач 🎚).
+      // Під час зміни — ⏳ і все заблоковано: обірвати чи клікнути вдруге не можна
+      var swapBtn = '';
+      if (busyC) {
+        swapBtn = ' <button class="vtx-btn" disabled style="padding:1px 6px;margin-left:4px;opacity:.6">⏳</button>';
+      } else if (canSwitch) {
+        swapBtn = ' <button class="vtx-btn" '+(freqSwapAny()?'disabled ':'')+
+          'style="padding:1px 6px;margin-left:4px'+(freqSwapAny()?';opacity:.5':'')+'" title="Зробити основною частотою" '+
+          'data-crew="'+esc(a.crew)+'" data-code="'+esc(r.freqCode)+'" '+
+          'onclick="doSwapFreq(this.dataset.crew, this.dataset.code)">⇄ основна</button>';
+      }
       crewRows += '<tr><td style="padding-left:26px;color:var(--dim)">↳ резерв</td>'+
-        '<td><span class="crew-freq purple">'+esc(cleanCode(r.freqCode))+(r.freq?' ('+esc(r.freq)+')':'')+'</span>'+
-        (canSwitch
-          ? ' <button class="vtx-btn" style="padding:1px 6px;margin-left:4px" title="Зробити основною частотою" '+
-            'data-crew="'+esc(a.crew)+'" data-code="'+esc(r.freqCode)+'" '+
-            'onclick="doSwapFreq(this.dataset.crew, this.dataset.code)">⇄ основна</button>'
-          : '')+
+        '<td><span class="crew-freq purple">'+esc(cleanCode(r.freqCode))+(r.freq?' ('+esc(r.freq)+')':'')+'</span>'+swapBtn+
         '</td><td></td></tr>';
     });
   });
@@ -3278,8 +3287,64 @@ function confirmExt(freq) {
 function delExt(freq) {
   rpc('removeExternalFreq', [freq], function(){ toast('✅ '+freq+' МГц звільнено'); reloadFreq(); });
 }
+/* Зміна основної частоти екіпажу. Раніше після відповіді сервера йшов
+   повний loadAll — секунди очікування, і матриця встигала оновитись
+   раніше за таблицю екіпажів. Тепер: на час запиту ⏳ і блокування
+   повторних кліків, після успіху — той самий своп локально в S.freq
+   і S.flights (дзеркало логіки swapCrewFrequency), один рендер. */
+var freqSwapBusy = {};
+function freqSwapAny() { for (var k in freqSwapBusy) if (freqSwapBusy[k]) return true; return false; }
+function codeFreqLocal(code) {
+  var m = String(code||'').match(/\((\d{4})\)/);
+  if (m) return Number(m[1]);
+  var cc = cleanCode(code);
+  for (var b in BANDS) for (var i = 0; i < BANDS[b].length; i++)
+    if (BANDS[b][i] && b + (i+1) === cc) return BANDS[b][i];
+  return 0;
+}
 function doSwapFreq(crewId, code) {
-  rpc('swapCrewFrequency', [crewId, code], function(){ toast('🎚 '+crewId+' → '+code); loadAll(); });
+  if (freqSwapAny()) return;  // одна зміна за раз — без обривів і подвійних кліків
+  freqSwapBusy[crewId] = true;
+  renderView();
+  rpc('swapCrewFrequency', [crewId, code], function(){
+    var d = S.freq, oldMain = '';
+    if (d) {
+      var mainA = (d.active||[]).find(function(a){ return a.crew === crewId && (a.isCrewMain || a.source === 'crew'); });
+      if (mainA) {
+        oldMain = mainA.freqCode;
+        mainA.freqCode = code;
+        mainA.freq = codeFreqLocal(code);
+      }
+      if (oldMain) {
+        var res = (d.reserves||[]).find(function(x){ return x.crew === crewId && x.freqCode === code; });
+        if (res) { res.freqCode = oldMain; res.freq = codeFreqLocal(oldMain); }
+        var ci = (d.crewFreqInfo||[]).find(function(x){ return x.crew === crewId; });
+        if (ci) {
+          var ri = ci.reserves.indexOf(code);
+          if (ri !== -1) ci.reserves[ri] = oldMain;
+          ci.main = code;
+        }
+      }
+    }
+    // Рядок екіпажу в S.flights (сторінка екіпажів читає freq/reserves звідти)
+    var cr = crewById(crewId);
+    if (cr) {
+      if (oldMain && cr.reserves) {
+        cr.reserves = String(cr.reserves).split('|').map(function(s){
+          return s.trim() === code ? oldMain : s;
+        }).join('|');
+      }
+      cr.freq = code;
+    }
+    delete freqSwapBusy[crewId];
+    toast('🎚 '+crewNameOnly(crewId)+' → '+cleanCode(code));
+    updateTopStats();
+    renderView();
+  }, function(e){
+    delete freqSwapBusy[crewId];
+    renderView();
+    toast('❌ '+e.message, true);
+  });
 }
 function reloadFreq() {
   rpc('getFrequencyAnalysis', [], function(v){ S.freq = v; updateTopStats(); renderView(); });
