@@ -3129,8 +3129,15 @@ function renderFreq(c) {
       crewRows += '</div></td></tr>';
     }
     if (resOpen) rlist.forEach(function(r){
+      // ⇄ — резерв стає основною (те саме право, що й перемикач 🎚)
       crewRows += '<tr><td style="padding-left:26px;color:var(--dim)">↳ резерв</td>'+
-        '<td><span class="crew-freq purple">'+esc(cleanCode(r.freqCode))+(r.freq?' ('+esc(r.freq)+')':'')+'</span></td><td></td></tr>';
+        '<td><span class="crew-freq purple">'+esc(cleanCode(r.freqCode))+(r.freq?' ('+esc(r.freq)+')':'')+'</span>'+
+        (canSwitch
+          ? ' <button class="vtx-btn" style="padding:1px 6px;margin-left:4px" title="Зробити основною частотою" '+
+            'data-crew="'+esc(a.crew)+'" data-code="'+esc(r.freqCode)+'" '+
+            'onclick="doSwapFreq(this.dataset.crew, this.dataset.code)">⇄ основна</button>'
+          : '')+
+        '</td><td></td></tr>';
     });
   });
   // Резерви екіпажів без рядка в таблиці (виліт «поглинув» основну) — як раніше
