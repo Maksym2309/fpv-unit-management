@@ -338,6 +338,7 @@ textarea { height: 54px; resize: vertical; }
 .crew-table tr:hover td { background: var(--panel-3); }
 .crew-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--blue); background: rgba(52,152,219,.25); margin-right: 7px; vertical-align: middle; }
 .crew-dot.purple { border-color: var(--purple); background: transparent; }
+.crew-dot.green { border-color: #2ecc71; background: rgba(46,204,113,.35); }
 .crew-freq { color: var(--blue); } .crew-freq.purple { color: var(--purple); opacity: .75; }
 /* Склад комплекту. Системна підказка (title) тут не годиться: один рядок,
    бліда, зі затримкою, а на телефоні наведення немає взагалі. Тому власна
@@ -378,7 +379,7 @@ textarea { height: 54px; resize: vertical; }
 .spec-mark { position: absolute; top: 14px; bottom: 0; border-left: 1px solid; }
 .spec-mark.dash { border-left-style: dashed; }
 .spec-mark:hover { z-index: 50 !important; }
-.spec-lbl { position: absolute; top: -13px; transform: translateX(-50%); font-family: var(--font-data); font-size: 8px; font-weight: 700; padding: 1px 4px; color: #0d0d0d; white-space: nowrap; cursor: default; }
+.spec-lbl { position: absolute; top: -13px; transform: translateX(-50%); font-family: var(--font-data); font-size: 8px; font-weight: 700; padding: 1px 4px; color: #0d0d0d; white-space: nowrap; cursor: pointer; }
 .spec-mark:hover .spec-lbl { z-index: 3; outline: 1px solid #fff; }
 
 /* ── Модалки ── */
@@ -2903,6 +2904,9 @@ function layoutSpecLabels() {
 window.addEventListener('resize', function(){ if (S.view === 'freq') layoutSpecLabels(); });
 function togglePanel(key) { sidePanels[key] = !sidePanels[key]; renderView(); }
 function toggleSpec() { specOpen = !specOpen; renderView(); }
+// Розкриті резервні частоти в таблиці «Наші екіпажі» (без обмеження кількості)
+var freqResOpen = {};
+function toggleCrewRes(id) { freqResOpen[id] = !freqResOpen[id]; renderView(); }
 
 function renderFreq(c) {
   var d = S.freq;
@@ -2924,6 +2928,14 @@ function renderFreq(c) {
   reserves.forEach(function(r){ var code = cleanCode(r.freqCode); if (code) reserveMap[code] = r; });
   var crewInfoMap = {};
   (d.crewFreqInfo||[]).forEach(function(ci){ crewInfoMap[ci.crew] = ci; });
+
+  // «Своє» — не лише власний виліт (creatorEmail), а й частоти свого екіпажу:
+  // адмін теж буває в екіпажі, і його екіпаж має світитися зеленим
+  var myCrewId = (S.auth && S.auth.crewId) || '';
+  function isOwn(a) {
+    if (a.source === 'external') return false;
+    return a.source === 'mine' || (!!myCrewId && a.crew === myCrewId);
+  }
 
   function freqLevel(f, code) {
     var level = 'free';
@@ -3004,7 +3016,7 @@ function renderFreq(c) {
         // Зайнята клітинка: конфлікт перекриває колір власника
         if (lvl === 'critical') cls = 'cell-critical';
         else if (lvl === 'serious') cls = 'cell-serious';
-        else if (src.source === 'mine') cls = 'cell-mine';
+        else if (isOwn(src)) cls = 'cell-mine';
         else if (src.source === 'external') cls = 'cell-ext';
         else cls = 'cell-unit';
         tag = '<span class="ctag">('+esc(src.source==='mine' ? 'ВИ' : (src.crew||'чужий'))+')</span>';
@@ -3036,13 +3048,14 @@ function renderFreq(c) {
     var conf = conflictOf(a);
     var isExt = a.source === 'external';
     var isMineA = a.source === 'mine';
+    var own = isOwn(a);
     var info = crewInfoMap[a.crew];
     var canSwitch = !isExt && info && info.reserves && info.reserves.length &&
       (info.author === S.me || S.me === d.adminEmail);
     var swId = 'sw-' + String(a.crew).replace(/[^\w-]/g, '_');
-    var freqCls = conf && conf.level==='critical' ? 'red' : (isMineA ? '' : (isExt ? 'grey' : 'blue'));
+    var freqCls = conf && conf.level==='critical' ? 'red' : (own ? '' : (isExt ? 'grey' : 'blue'));
 
-    var h = '<div class="af-card'+(isMineA?' mine':'')+(isExt?' ext':'')+(conf&&conf.level==='critical'?' conflict':'')+'">'+
+    var h = '<div class="af-card'+(own?' mine':'')+(isExt?' ext':'')+(conf&&conf.level==='critical'?' conflict':'')+'">'+
       '<div class="af-bar"></div>'+
       (conf&&conf.level==='critical'?'<div class="af-badge">КОНФЛІКТ!</div>':'')+
       '<div class="af-head">'+
@@ -3071,15 +3084,31 @@ function renderFreq(c) {
     (afList.length ? afList.map(afCard).join('') : '<div class="empty">Немає активних вильотів</div>')+
     '</div></div>';
 
-  // Наші екіпажі — таблиця як у макеті
+  // Наші екіпажі — таблиця як у макеті.
+  // Резервні частоти згорнуті під основною свого екіпажу (▸ N) — рівний
+  // список основних і резервів упереміш був неінтуїтивний. Розкривати
+  // можна хоч усі екіпажі одразу, стан живе у freqResOpen між рендерами.
+  var resByCrew = {};
+  reserves.forEach(function(r){ (resByCrew[r.crew] = resByCrew[r.crew] || []).push(r); });
+  var resShown = {};
   var crewRows = '';
   crewsList.forEach(function(a){
     var cc = cleanCode(a.freqCode) || freqToCodeLocal(a.freq);
     var info = crewInfoMap[a.crew];
+    var own = isOwn(a);
     var canSwitch = info && info.reserves && info.reserves.length && (info.author === S.me || S.me === d.adminEmail);
     var swId = 'swc-' + String(a.crew).replace(/[^\w-]/g, '_');
-    crewRows += '<tr><td><span class="crew-dot"></span>'+crewDisplayHtml(a.crew)+'</td>'+
-      '<td><span class="crew-freq">'+esc(cc)+' ('+esc(a.freq)+')</span>'+
+    var rlist = resByCrew[a.crew] || [];
+    resShown[a.crew] = true;
+    var resOpen = !!freqResOpen[a.crew];
+    var resBtn = rlist.length
+      ? ' <button class="vtx-btn" style="padding:1px 6px;margin-left:4px;border-color:var(--purple);color:var(--purple)" '+
+        'title="'+(resOpen?'Сховати':'Показати')+' резервні частоти" data-id="'+esc(a.crew)+'" '+
+        'onclick="toggleCrewRes(this.dataset.id)">'+(resOpen?'▾':'▸')+' '+rlist.length+'</button>'
+      : '';
+    crewRows += '<tr><td><span class="crew-dot'+(own?' green':'')+'"></span>'+crewDisplayHtml(a.crew)+
+      (own?' <span class="badge-main">мій</span>':'')+'</td>'+
+      '<td><span class="crew-freq'+(own?'" style="color:#2ecc71':'')+'">'+esc(cc)+' ('+esc(a.freq)+')</span>'+resBtn+
       (canSwitch?' <button class="vtx-btn" style="padding:1px 6px;margin-left:4px" onclick="document.getElementById(\''+swId+'\').classList.toggle(\'open\')">🎚</button>':'')+
       '</td><td>'+crewBindCell(a.crew)+'</td></tr>';
     if (canSwitch) {
@@ -3089,8 +3118,14 @@ function renderFreq(c) {
       });
       crewRows += '</div></td></tr>';
     }
+    if (resOpen) rlist.forEach(function(r){
+      crewRows += '<tr><td style="padding-left:26px;color:var(--dim)">↳ резерв</td>'+
+        '<td><span class="crew-freq purple">'+esc(cleanCode(r.freqCode))+(r.freq?' ('+esc(r.freq)+')':'')+'</span></td><td></td></tr>';
+    });
   });
+  // Резерви екіпажів без рядка в таблиці (виліт «поглинув» основну) — як раніше
   reserves.forEach(function(r){
+    if (resShown[r.crew]) return;
     crewRows += '<tr><td><span class="crew-dot purple"></span>'+crewDisplayHtml(r.crew)+'</td>'+
       '<td><span class="crew-freq purple">РЕЗЕРВ '+esc(cleanCode(r.freqCode))+'</span></td>'+
       '<td>'+crewBindCell(r.crew)+'</td></tr>';
@@ -3142,24 +3177,36 @@ function renderFreq(c) {
   // Збираємо всі мітки, сортуємо по частоті й розкладаємо по «поверхах»:
   // якщо мітка ближче за MIN_GAP% до попередньої на тому ж поверсі — піднімаємо
   // на поверх вище. Так підписи не перекриваються. Лише назва; деталі — tooltip.
+  // Деталі мітки — не системний title (блідий, без дотику на телефоні),
+  // а власна плашка по кліку в стилі складу комплектів (kit-pop)
   var items = [];
   occupied.forEach(function(o){
     if (o.freq < range[0] || o.freq > range[1]) return;
     var conf = conflictOf(o);
-    var col = conf && conf.level==='critical' ? '#e74c3c' : (o.source==='mine' ? '#2ecc71' : (o.source==='external' ? '#7f8c8d' : '#3498db'));
+    var own = isOwn(o);
+    var col = conf && conf.level==='critical' ? '#e74c3c' : (own ? '#2ecc71' : (o.source==='external' ? '#7f8c8d' : '#3498db'));
+    var code = cleanCode(o.freqCode) || freqToCodeLocal(o.freq);
     items.push({ f: o.freq, x: pos(o.freq), col: col, dash: !!(conf&&conf.level==='critical'),
       name: o.source==='mine' ? 'ВИ' : crewNameOnly(o.crew),
-      tip: (o.source==='mine' ? 'ВИ' : crewNameOnly(o.crew)) + ' · ' + (o.crew && crewById(o.crew) ? o.crew + ' · ' : '') + o.freq + ' МГц' + (o.system ? ' · ' + o.system : '') + (conf ? ' · ⚠ конфлікт з ' + crewNameOnly(conf.with.crew) + ' (Δ' + conf.gap + ')' : '') });
+      pop: '<div class="kp-head">📶 '+esc(crewNameOnly(o.crew))+(own?' (ВИ)':'')+
+          (o.crew && crewById(o.crew) ? ' <span class="crew-id">'+esc(o.crew)+'</span>' : '')+'</div>'+
+        '<div class="kp-row"><span class="kp-id">'+esc(code && code!=='?' ? code : '—')+'</span> · <b>'+esc(o.freq)+' МГц</b>'+
+          (o.system ? ' · <span class="kp-name">'+esc(o.system)+'</span>' : '')+'</div>'+
+        (o.pilot ? '<div class="kp-row kp-name">👤 '+esc(o.pilot)+'</div>' : '')+
+        (conf ? '<div class="kp-row" style="color:var(--red-soft)">⚠ Конфлікт з '+esc(crewNameOnly(conf.with.crew))+' (Δ'+conf.gap+' МГц)</div>' : '') });
   });
   reserves.forEach(function(r){
     if (r.freq < range[0] || r.freq > range[1]) return;
+    var codeR = cleanCode(r.freqCode) || freqToCodeLocal(r.freq);
     items.push({ f: r.freq, x: pos(r.freq), col: '#9b59b6', dash: true,
       name: '🔄 ' + crewNameOnly(r.crew),
-      tip: 'Резерв · ' + crewNameOnly(r.crew) + ' · ' + r.freq + ' МГц' });
+      pop: '<div class="kp-head" style="color:var(--purple)">🔄 Резерв · '+esc(crewNameOnly(r.crew))+'</div>'+
+        '<div class="kp-row"><span class="kp-id">'+esc(codeR && codeR!=='?' ? codeR : '—')+'</span> · <b>'+esc(r.freq)+' МГц</b></div>' });
   });
   items.sort(function(a, b){ return a.x - b.x; });
-  var marks = items.map(function(it){
-    return '<div class="spec-mark'+(it.dash?' dash':'')+'" style="left:'+it.x+'%;border-color:'+it.col+'" title="'+esc(it.tip)+'">'+
+  window._specItems = items;
+  var marks = items.map(function(it, i){
+    return '<div class="spec-mark'+(it.dash?' dash':'')+'" style="left:'+it.x+'%;border-color:'+it.col+'" data-i="'+i+'" onclick="specPop(event,this)">'+
       '<div class="spec-lbl" style="background:'+it.col+'">'+esc(it.name)+'</div></div>';
   }).join('');
   var spectrum = '<div class="spectrum">'+
@@ -3175,6 +3222,46 @@ function renderFreq(c) {
     '<div class="freq-layout">'+ m +'<div>'+ side +'</div></div>'+
     spectrum;
 }
+/* Плашка деталей мітки спектра — той самий патерн, що invKitPop:
+   працює і по кліку, і на дотик; повторний клік по тій самій мітці закриває */
+function specPopClose() {
+  var p = $('specPopEl');
+  if (p) p.parentNode.removeChild(p);
+  document.removeEventListener('click', specPopOutside, true);
+}
+function specPopOutside(e) {
+  var p = $('specPopEl');
+  if (p && !p.contains(e.target)) specPopClose();
+}
+function specPop(ev, el) {
+  ev.stopPropagation();
+  var i = el.dataset.i;
+  var it = (window._specItems || [])[i];
+  if (!it) return;
+  var wasOpen = $('specPopEl') && $('specPopEl').dataset.i === i;
+  specPopClose();
+  if (wasOpen) return;
+  var p = document.createElement('div');
+  p.className = 'kit-pop';
+  p.id = 'specPopEl';
+  p.dataset.i = i;
+  p.innerHTML = it.pop;
+  document.body.appendChild(p);
+  // Позиція: під підписом мітки, з притисканням до країв екрана (як kit-pop)
+  var lbl = el.querySelector('.spec-lbl') || el;
+  var r = lbl.getBoundingClientRect();
+  var left = r.left, w = p.offsetWidth;
+  if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
+  if (left < 8) left = 8;
+  p.style.left = left + 'px';
+  var h = p.offsetHeight;
+  var top = r.bottom + 6;
+  if (top + h > window.innerHeight - 8) top = r.top - h - 6;
+  if (top < 8) top = 8;
+  p.style.top = top + 'px';
+  setTimeout(function(){ document.addEventListener('click', specPopOutside, true); }, 0);
+}
+
 function cellClick(freq) {
   var ext = (S.freq && S.freq.active || []).filter(function(a){ return a.source==='external' && a.freq===freq; });
   if (ext.length) { delExt(freq); return; }
@@ -5055,9 +5142,11 @@ function sideCrewClickable(id) {
   return true;
 }
 function sideCrewBadge(id) {
-  if (S.auth && !canEditCrews() && S.auth.crewId === id) return '<span class="badge-main">мій</span>';
-  if (canEditCrews() && crewPageTab === 'links' && crewPageSel === id) return '<span class="badge-main">вибраний</span>';
-  return '';
+  // «мій» — і для адміна теж: адмін може бути членом екіпажу
+  var b = '';
+  if (S.auth && S.auth.crewId === id) b = '<span class="badge-main">мій</span>';
+  if (canEditCrews() && crewPageTab === 'links' && crewPageSel === id) b += (b?' ':'')+'<span class="badge-main">вибраний</span>';
+  return b;
 }
 function sideCrewPick(id) {
   if (!sideCrewClickable(id)) return;
