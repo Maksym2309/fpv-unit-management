@@ -480,6 +480,9 @@ textarea { height: 54px; resize: vertical; }
 .hud-mark .hm-shape { position: absolute; left: -7px; top: -7px; width: 12px; height: 12px; transform: rotate(45deg); border: 2px solid rgba(13,13,13,.85); box-shadow: 0 0 8px rgba(0,0,0,.7); }
 .hud-mark .hm-x { position: absolute; left: 0; top: 0; transform: translate(-50%,-50%); font: 900 16px/1 var(--font-data); text-shadow: 0 1px 3px #000; }
 .hud-mark .hm-lbl { position: absolute; top: 9px; left: 0; transform: translateX(-50%); font: 700 8px var(--font-data); letter-spacing: .5px; text-transform: uppercase; color: #e5e2e1; background: rgba(13,13,13,.78); border: 1px solid #2a2a2a; padding: 1px 4px; white-space: nowrap; }
+/* Ручка вершини меж сектора: янтарний квадрат, тягнеться */
+.hud-vertex { width: 12px; height: 12px; background: #ffb800; border: 2px solid #0d0d0d; box-shadow: 0 0 8px rgba(0,0,0,.8); cursor: move; }
+.hud-vertex:hover { background: #fff; }
 /* Підказка режиму малювання поверх карти сектора */
 .map-hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 800; background: rgba(13,13,13,.85); border: 1px solid var(--accent); color: var(--accent); font: 700 10px var(--font-data); text-transform: uppercase; letter-spacing: .5px; padding: 5px 10px; pointer-events: none; }
 .leaflet-popup-content-wrapper { background: #1a1a1a; color: var(--text); border: 1px solid var(--blue); border-radius: 0; }
@@ -3611,21 +3614,86 @@ function sectorArm(mode) {
   if (!sectorCanEdit()) { toast('⚠ Потрібне право «Екіпажі» або адмін', true); return; }
   sectorEdit = true;
   sectorDraw = mode;
-  sectorDrawPts = [];
+  // Межі редагуються «як є»: стартуємо з наявних вершин, а не з чистого листа
+  sectorDrawPts = mode === 'bounds'
+    ? (sectorById(sectorSel).bounds || []).map(function(p){ return p.slice(); })
+    : [];
   renderView();
-  toast(mode === 'bounds' ? '✎ Клікай по карті — вершини меж, потім «✓ Готово»'
+  toast(mode === 'bounds' ? '✎ Тягни вершини · клік по вершині — видалити · клік по карті — нова'
     : mode === 'position' ? '📍 Клікни нову позицію на карті'
     : '🔶 Клікни точку орієнтира на карті');
 }
 function sectorAddLandmark() { sectorArm('landmark'); }
 function sectorBoundsDone() {
-  if (sectorDrawPts.length < 3) { toast('⚠ Потрібно мінімум 3 точки', true); return; }
-  sectorById(sectorSel).bounds = sectorDrawPts.slice();
+  if (sectorDrawPts.length < 3) { toast('⚠ Потрібно мінімум 3 вершини — площа не існує', true); return; }
+  sectorById(sectorSel).bounds = sectorDrawPts.map(function(p){ return p.slice(); });
   sectorDraw = null; sectorDrawPts = [];
   saveSectors(); renderView();
   toast('💾 Межі сектору оновлено');
 }
 function sectorDrawCancel() { sectorDraw = null; sectorDrawPts = []; renderView(); }
+
+/* ── Редагування меж «по-живому»: полігон + вершини-ручки ── */
+var _secHandles = [];
+// Перемалювати робочий полігон (ручки не чіпаємо — важливо під час перетягування)
+function sectorBoundsRefresh(map) {
+  if (_sectorDrawLayer) { try { map.removeLayer(_sectorDrawLayer); } catch(e) {} _sectorDrawLayer = null; }
+  if (sectorDrawPts.length >= 3) {
+    _sectorDrawLayer = L.polygon(sectorDrawPts, { color: '#ffb800', weight: 2, dashArray: '4 3', fillOpacity: .08, interactive: false }).addTo(map);
+  } else if (sectorDrawPts.length === 2) {
+    _sectorDrawLayer = L.polyline(sectorDrawPts, { color: '#ffb800', weight: 2, dashArray: '4 3', interactive: false }).addTo(map);
+  }
+  var btn = $('secDoneBtn');
+  if (btn) btn.textContent = '✓ Готово ('+sectorDrawPts.length+')';
+}
+// Перебудувати ручки вершин (тягнеться — вершина їде, клік — видалення)
+function sectorBoundsHandles(map) {
+  _secHandles.forEach(function(h){ try { map.removeLayer(h); } catch(e) {} });
+  _secHandles = [];
+  sectorDrawPts.forEach(function(p, i){
+    var mk = L.marker(p, { draggable: true, icon: L.divIcon({
+      className: '', iconSize: [14, 14], iconAnchor: [7, 7],
+      html: '<div class="hud-vertex"></div>'
+    }) }).addTo(map);
+    mk._dragged = false;
+    mk.on('dragstart', function(){ mk._dragged = true; });
+    mk.on('drag', function(ev){
+      sectorDrawPts[i] = [ +ev.latlng.lat.toFixed(6), +ev.latlng.lng.toFixed(6) ];
+      sectorBoundsRefresh(map);
+    });
+    mk.on('click', function(){
+      // Клік одразу після перетягування — не видалення
+      if (mk._dragged) { mk._dragged = false; return; }
+      sectorVtxDelete(i);
+    });
+    mk.bindTooltip('Тягни — перемістити · клік — видалити', { direction: 'top', offset: [0, -10] });
+    _secHandles.push(mk);
+  });
+}
+function sectorVtxDelete(i) {
+  if (sectorDrawPts.length <= 3) { toast('⚠ Мінімум 3 вершини — спочатку додай нову', true); return; }
+  sectorDrawPts.splice(i, 1);
+  if (_sectorMapObj) { sectorBoundsRefresh(_sectorMapObj); sectorBoundsHandles(_sectorMapObj); }
+}
+// Нова вершина: до 3-х — просто додається, далі — вставляється в найближчу грань
+function sectorInsertVertex(ll, map) {
+  if (sectorDrawPts.length < 3) {
+    sectorDrawPts.push(ll);
+  } else {
+    var P = map.latLngToLayerPoint(L.latLng(ll[0], ll[1]));
+    var best = 0, bestD = Infinity;
+    for (var i = 0; i < sectorDrawPts.length; i++) {
+      var j = (i + 1) % sectorDrawPts.length;
+      var a = map.latLngToLayerPoint(L.latLng(sectorDrawPts[i][0], sectorDrawPts[i][1]));
+      var b = map.latLngToLayerPoint(L.latLng(sectorDrawPts[j][0], sectorDrawPts[j][1]));
+      var d = L.LineUtil.pointToSegmentDistance(P, a, b);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    sectorDrawPts.splice(best + 1, 0, ll);
+  }
+  sectorBoundsRefresh(map);
+  sectorBoundsHandles(map);
+}
 function sectorLmRename(i) {
   var sec = sectorById(sectorSel);
   var lm = sec.landmarks[i];
@@ -3683,7 +3751,7 @@ function renderSectorMap(sec) {
     if (sectorDraw) {
       var hint = document.createElement('div');
       hint.className = 'map-hint';
-      hint.textContent = sectorDraw === 'bounds' ? '✎ Клікай вершини меж · потім «✓ Готово»'
+      hint.textContent = sectorDraw === 'bounds' ? '✎ Тягни вершини · клік по вершині — видалити · клік по карті — нова'
         : sectorDraw === 'position' ? '📍 Клікни нову позицію'
         : '🔶 Клікни точку орієнтира';
       el.parentElement.appendChild(hint);
@@ -3692,8 +3760,13 @@ function renderSectorMap(sec) {
     var map = hudMap(el);
     _sectorMapObj = map;
 
-    // Межі області роботи — пунктирний янтарний полігон
-    if (sec.bounds && sec.bounds.length >= 3) {
+    // Межі області роботи — пунктирний янтарний полігон.
+    // У режимі «Межі» замість нього — редагована копія з ручками-вершинами.
+    if (sectorDraw === 'bounds') {
+      _secHandles = [];
+      sectorBoundsRefresh(map);
+      sectorBoundsHandles(map);
+    } else if (sec.bounds && sec.bounds.length >= 3) {
       L.polygon(sec.bounds, { color: '#ffb800', weight: 2, dashArray: '6 4', fillColor: '#ffb800', fillOpacity: .06 })
         .addTo(map).bindTooltip('Межі роботи · '+sec.name, { sticky: true });
     }
@@ -3741,13 +3814,7 @@ function renderSectorMap(sec) {
         saveSectors(); renderView();
         toast('📍 Позицію оновлено');
       } else if (sectorDraw === 'bounds') {
-        sectorDrawPts.push(ll);
-        if (_sectorDrawLayer) { try { map.removeLayer(_sectorDrawLayer); } catch(e) {} }
-        _sectorDrawLayer = (sectorDrawPts.length >= 3
-          ? L.polygon(sectorDrawPts, { color: '#ffb800', weight: 2, dashArray: '4 3', fillOpacity: .08 })
-          : L.polyline(sectorDrawPts, { color: '#ffb800', weight: 2, dashArray: '4 3' })).addTo(map);
-        var btn = $('secDoneBtn');
-        if (btn) btn.textContent = '✓ Готово ('+sectorDrawPts.length+')';
+        sectorInsertVertex(ll, map);
       }
     });
 
