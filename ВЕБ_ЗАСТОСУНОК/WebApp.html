@@ -469,9 +469,19 @@ textarea { height: 54px; resize: vertical; }
    лишаються як є, але назовні вся карта = z-index 0 → сайдбар (60) і
    шапка (40) завжди зверху, а спливашки всередині карти не ховаються ── */
 #lostMap { position: relative; z-index: 0; isolation: isolate; }
-.map-layer-btn { display: flex; }
-.map-layer-btn button { padding: 4px 8px; font-family: var(--font-data); font-size: 10px; font-weight: 700; text-transform: uppercase; background: var(--panel); border: 1px solid var(--line-2); color: var(--muted); cursor: pointer; }
-.map-layer-btn button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+/* Контролі карт (зум + перемикач топооснови) — темні квадрати як у макеті сектора */
+.leaflet-bar { border-radius: 0 !important; border: 1px solid var(--line-2) !important; box-shadow: 0 2px 10px rgba(0,0,0,.55) !important; }
+.leaflet-bar a { width: 30px !important; height: 30px !important; line-height: 28px !important; background: var(--panel) !important; color: var(--muted) !important; border-bottom: 1px solid var(--line-2) !important; border-radius: 0 !important; font: 700 16px/28px var(--font-data) !important; }
+.leaflet-bar a:hover { background: var(--panel-2) !important; color: var(--accent) !important; }
+.leaflet-bar a.map-sq-active { background: var(--accent) !important; color: var(--on-accent) !important; }
+.leaflet-bar a svg { vertical-align: middle; }
+/* Маркери карт у стилі HUD: ромб / ✕ з моно-підписом під точкою */
+.hud-mark { position: relative; }
+.hud-mark .hm-shape { position: absolute; left: -7px; top: -7px; width: 12px; height: 12px; transform: rotate(45deg); border: 2px solid rgba(13,13,13,.85); box-shadow: 0 0 8px rgba(0,0,0,.7); }
+.hud-mark .hm-x { position: absolute; left: 0; top: 0; transform: translate(-50%,-50%); font: 900 16px/1 var(--font-data); text-shadow: 0 1px 3px #000; }
+.hud-mark .hm-lbl { position: absolute; top: 9px; left: 0; transform: translateX(-50%); font: 700 8px var(--font-data); letter-spacing: .5px; text-transform: uppercase; color: #e5e2e1; background: rgba(13,13,13,.78); border: 1px solid #2a2a2a; padding: 1px 4px; white-space: nowrap; }
+/* Підказка режиму малювання поверх карти сектора */
+.map-hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 800; background: rgba(13,13,13,.85); border: 1px solid var(--accent); color: var(--accent); font: 700 10px var(--font-data); text-transform: uppercase; letter-spacing: .5px; padding: 5px 10px; pointer-events: none; }
 .leaflet-popup-content-wrapper { background: #1a1a1a; color: var(--text); border: 1px solid var(--blue); border-radius: 0; }
 .leaflet-popup-tip { background: #1a1a1a; }
 .leaflet-popup-content a { color: var(--accent); }
@@ -574,8 +584,8 @@ textarea { height: 54px; resize: vertical; }
         <button class="nav-item active" data-view="home" onclick="setView('home')"><span class="nav-icon">⌂</span>Головна</button>
         <button class="nav-item" data-view="flights" onclick="setView('flights')"><span class="nav-icon">✈️</span>Журнал польоту</button>
         <button class="nav-item" data-view="freq" onclick="setView('freq')"><span class="nav-icon">📻</span>Карта частот</button>
-        <button class="nav-item" data-view="sector" onclick="setView('sector')"><span class="nav-icon">⬡</span>Сектор</button>
         <button class="nav-item" data-view="trackers" onclick="setView('trackers')"><span class="nav-icon">📡</span>GPS трекери</button>
+        <button class="nav-item" data-view="sector" onclick="setView('sector')"><span class="nav-icon">⬡</span>Сектор</button>
         <button class="nav-item" data-view="inventory" onclick="setView('inventory')"><span class="nav-icon">📦</span>Інвентар</button>
         <button class="nav-item" data-view="crews" onclick="setView('crews')"><span class="nav-icon">👥</span>Екіпаж</button>
         <button class="nav-item" data-view="info" onclick="setView('info')"><span class="nav-icon icon-accent"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><circle cx="12" cy="4.2" r="2.7"/><path d="M8.5 9.3h6.2v9.8h2v3.1H7.3v-3.1h2v-6.7h-1.8z"/></svg></span>Інформація</button>
@@ -1521,7 +1531,7 @@ function renderHome(c) {
     { icon:'📡', name:'GPS трекери', sub:S.trackers.length+' трекерів · '+S.sims.length+' SIM', view:'trackers' },
     { icon:'📦', name:'Інвентар', sub:S.items.length+' одиниць', view:'inventory' },
     { icon:'👥', name:'Управління екіпажем', sub:(isAdminUser()||S.auth ? activeCrews().length+' активних' : 'потрібен вхід'), view:'crews' },
-    { icon:'🗺️', name:'Управління сектором', sub:'скоро', stub:true },
+    { icon:'⬡', name:'Управління сектором', sub:SECTORS.length+' сект. · '+activeFlights().length+' в ефірі', view:'sector' },
     { icon:svgIcon('info'), name:'Інформація', sub:'документи підрозділу', view:'info', iconAccent:true }
   ];
   c.innerHTML = '<div class="view-title">Wild Hornets <span class="accent">Tactical OS</span></div>'+
@@ -3364,21 +3374,74 @@ function reloadFreq() {
    бекенду секторів. Відео орієнтирів — заглушка (реалізація згодом). */
 var sectorType = 'training';   // training | military (військовий заблоковано)
 var sectorSel = 'PLG-1';
+var sectorTab = 'map';         // map | stats
+var sectorEdit = false;        // Перегляд / Редагування (межі, позиція, орієнтири)
+var sectorDraw = null;         // режим малювання: 'landmark' | 'position' | 'bounds'
+var sectorDrawPts = [];        // накопичені вершини нових меж
 var sectorPanels = { crews: true, fl: true, ev: true };
 function sectorPanelToggle(k) { sectorPanels[k] = !sectorPanels[k]; renderView(); }
 var _sectorMapObj = null;
+var _sectorDrawLayer = null;
 
-// Демо-сектори. Коли зʼявиться бекенд — цей масив приїде з таблиці.
-var SECTORS = [{
-  id: 'PLG-1', name: 'ПОЛІГОН-1', status: 'Активний',
-  bounds: [[48.560,34.960],[48.565,35.060],[48.520,35.090],[48.495,35.040],[48.505,34.975]],
-  position: { name: 'Позиція', coords: [48.527, 35.005] },
-  landmarks: [
-    { name: 'Орієнтир-1 · Водонапірна вежа', coords: [48.545, 35.045], video: '' },
-    { name: 'Орієнтир-2 · Роздоріжжя',       coords: [48.512, 35.060], video: '' }
-  ]
-}];
+// Сектори: демо-заготовка + локальне збереження правок (localStorage) до
+// появи бекенду секторів у таблиці. Координати демо — вигадані.
+var SECTORS = (function(){
+  try {
+    var s = JSON.parse(localStorage.getItem('wh_sectors') || 'null');
+    if (Array.isArray(s) && s.length) return s;
+  } catch(e) {}
+  return [{
+    id: 'PLG-1', name: 'ПОЛІГОН-1', status: 'Активний',
+    bounds: [[48.560,34.960],[48.565,35.060],[48.520,35.090],[48.495,35.040],[48.505,34.975]],
+    position: { name: 'Позиція', coords: [48.527, 35.005] },
+    landmarks: [
+      { name: 'Орієнтир-1 · Водонапірна вежа', coords: [48.545, 35.045], video: '' },
+      { name: 'Орієнтир-2 · Роздоріжжя',       coords: [48.512, 35.060], video: '' }
+    ]
+  }];
+})();
 function sectorById(id) { return SECTORS.find(function(s){ return s.id === id; }) || SECTORS[0]; }
+function saveSectors() { try { localStorage.setItem('wh_sectors', JSON.stringify(SECTORS)); } catch(e) {} }
+// Редагування секторів — адмін або право «Екіпажі»
+function sectorCanEdit() { return canEditCrews(); }
+
+/* ── Спільні будівельні блоки карт (сектор + карта втрат) ── */
+// Темна карта з квадратними контролями праворуч: зум і перемикач топооснови ⧉
+function hudMap(el) {
+  var map = L.map(el, { zoomControl: false });
+  L.control.zoom({ position: 'topright' }).addTo(map);
+  var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
+  var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri' });
+  (mapLayer === 'sat' ? sat : osm).addTo(map);
+  var ctl = L.control({ position: 'topright' });
+  ctl.onAdd = function(){
+    var d = L.DomUtil.create('div', 'leaflet-bar');
+    var a = L.DomUtil.create('a', mapLayer === 'sat' ? 'map-sq-active' : '', d);
+    a.href = '#';
+    a.title = 'Топооснова: Карта / Супутник';
+    a.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 3l9 5-9 5-9-5 9-5zm-6.5 8.6L12 15l6.5-3.4L21 13l-9 5-9-5 2.5-1.4zm0 4L12 19l6.5-3.4L21 17l-9 5-9-5 2.5-1.4z"/></svg>';
+    L.DomEvent.disableClickPropagation(d);
+    a.onclick = function(ev){
+      ev.preventDefault();
+      mapLayer = mapLayer === 'sat' ? 'osm' : 'sat';
+      if (mapLayer === 'sat') { map.removeLayer(osm); sat.addTo(map); } else { map.removeLayer(sat); osm.addTo(map); }
+      a.classList.toggle('map-sq-active', mapLayer === 'sat');
+    };
+    return d;
+  };
+  ctl.addTo(map);
+  return map;
+}
+// Маркер HUD: kind 'diamond' (ромб) або 'x' (✕), із моно-підписом під точкою
+function hudMarker(latlng, kind, color, label) {
+  var inner = kind === 'x'
+    ? '<div class="hm-x" style="color:'+color+'">✕</div>'
+    : '<div class="hm-shape" style="background:'+color+'"></div>';
+  return L.marker(latlng, { icon: L.divIcon({
+    className: '', iconSize: [0, 0], iconAnchor: [0, 0],
+    html: '<div class="hud-mark">'+inner+(label ? '<div class="hm-lbl">'+esc(label)+'</div>' : '')+'</div>'
+  }) });
+}
 
 // Середня тривалість завершених вильотів за часами "HH:MM" початку/кінця
 function sectorAvgFlight() {
@@ -3403,6 +3466,13 @@ function renderSector(c) {
   var today = new Date().toISOString().slice(0,10);
   var flts = S.flights.filter(function(f){ return f.id.indexOf('CRW-') !== 0; });
   var fToday = flts.filter(function(f){ return String(f.date||'').slice(0,10) === today; }).length;
+  var fMonth = flts.filter(function(f){
+    var d = new Date(String(f.date||'').slice(0,10));
+    return !isNaN(d) && (Date.now() - d.getTime()) < 30*864e5;
+  }).length;
+  var doneN = flts.filter(function(f){ return f.status === 'Завершений'; }).length;
+  var lostFl = flts.filter(function(f){ return f.status === 'Втрачений'; }).length;
+  var succPct = (doneN + lostFl) ? Math.round(doneN / (doneN + lostFl) * 100) + '%' : '—';
   var lost = S.items.filter(function(it){ return String(it.status||'').trim() === 'Втрачений'; });
   var confN = countConflicts();
   var crews = activeCrews();
@@ -3415,6 +3485,10 @@ function renderSector(c) {
   var secOpts = SECTORS.map(function(s){
     return '<option value="'+esc(s.id)+'"'+(s.id===sectorSel?' selected':'')+'>'+esc(s.name)+'</option>';
   }).join('');
+  // Жовтий «+» — додати сектор (замість статусної плашки)
+  var addSecBtn = sectorCanEdit()
+    ? '<button class="icon-btn" title="Додати сектор" style="background:var(--accent);color:var(--on-accent)" onclick="sectorAddModal()">'+svgIcon('plus')+'</button>'
+    : '';
 
   // Бічні панелі
   var myCrewId = (S.auth && S.auth.crewId) || '';
@@ -3454,90 +3528,369 @@ function renderSector(c) {
     '<div class="side-head" onclick="sectorPanelToggle(\'ev\')"><span class="cap">⚠ Події</span><span class="arr">'+(sectorPanels.ev?'▲':'▼')+'</span></div>'+
     '<div class="side-body'+(sectorPanels.ev?'':' hid')+'">'+events+'</div></div>';
 
-  c.innerHTML = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
+  // Вкладки як в інвентарі: Карта | Статистика
+  var tabs = '<div class="inv-tabs">'+
+    '<button class="inv-tab'+(sectorTab==='map'?' active':'')+'" onclick="sectorTab=\'map\';renderView()">Карта сектору</button>'+
+    '<button class="inv-tab'+(sectorTab==='stats'?' active':'')+'" onclick="sectorTab=\'stats\';renderView()">Статистика</button>'+
+  '</div>';
+
+  var head = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
     '<div><div class="view-title">Управління <span class="accent">сектором</span></div>'+
-    '<div class="view-sub">Концепт · межі й орієнтири — демо, статистика — з даних підрозділу</div></div>'+
+    '<div class="view-sub">Концепт · межі й орієнтири зберігаються локально до появи бекенду</div></div>'+
     '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">'+typeToggle+
-      '<label class="hint">Сектор:</label><select onchange="sectorSel=this.value;renderView()">'+secOpts+'</select>'+
-      statusChip(sec.status)+'</div>'+
+      '<label class="hint">Сектор:</label><select onchange="sectorSel=this.value;sectorDraw=null;renderView()">'+secOpts+'</select>'+
+      addSecBtn+'</div>'+
   '</div>'+
     '<div class="stat-row">'+
-      '<div class="stat-tile blue"><div class="stat-num">'+fToday+'</div><div class="stat-lbl">Вильоти сьогодні</div></div>'+
-      '<div class="stat-tile"><div class="stat-num">'+flts.length+'</div><div class="stat-lbl">Всього вильотів</div></div>'+
+      '<div class="stat-tile blue"><div class="stat-num">'+fToday+'</div><div class="stat-lbl">Вильоти сьогодні · '+fMonth+' за 30 дн.</div></div>'+
+      '<div class="stat-tile green"><div class="stat-num">'+succPct+'</div><div class="stat-lbl">Успішні вильоти</div></div>'+
       '<div class="stat-tile green"><div class="stat-num">'+activeFlights().length+'</div><div class="stat-lbl">Зараз в ефірі</div></div>'+
       '<div class="stat-tile red"><div class="stat-num">'+lost.length+'</div><div class="stat-lbl">Втрати бортів</div></div>'+
       '<div class="stat-tile"><div class="stat-num">'+crews.length+'</div><div class="stat-lbl">Задок. екіпажі</div></div>'+
       '<div class="stat-tile"><div class="stat-num">'+sectorAvgFlight()+'</div><div class="stat-lbl">Сер. тривалість</div></div>'+
       '<div class="stat-tile'+(confN?' click active':'')+'" '+(confN?'onclick="setView(\'freq\')" title="Перейти до карти частот" style="border-left-color:var(--yellow)"':'')+'>'+
         '<div class="stat-num">'+confN+'</div><div class="stat-lbl">Конфлікти частот</div></div>'+
+    '</div>'+tabs;
+
+  if (sectorTab === 'stats') {
+    c.innerHTML = head + renderSectorStats(flts);
+    return;
+  }
+
+  // ── Вкладка «Карта»: тулбар редагування + карта + бічні панелі + нижня смуга ──
+  var canEd = sectorCanEdit();
+  var editBtns = '';
+  if (sectorEdit && canEd) {
+    if (sectorDraw === 'bounds') {
+      editBtns = '<button class="btn btn-mini btn-green" id="secDoneBtn" onclick="sectorBoundsDone()">✓ Готово ('+sectorDrawPts.length+')</button>'+
+        '<button class="btn btn-mini btn-sec" onclick="sectorDrawCancel()">✕ Скасувати</button>';
+    } else {
+      editBtns = '<button class="btn btn-mini btn-sec'+(sectorDraw==='bounds'?' active':'')+'" title="Перемалювати межі кліками по карті" onclick="sectorArm(\'bounds\')">✎ Межі</button>'+
+        '<button class="btn btn-mini btn-sec" title="Клік по карті — нова позиція" onclick="sectorArm(\'position\')">📍 Позиція</button>'+
+        (SECTORS.length > 1 ? '<button class="btn btn-mini btn-red" title="Видалити сектор" onclick="sectorDeleteCur()">🗑</button>' : '');
+    }
+  }
+  var modeToggle = canEd
+    ? '<div class="inv-mode">'+
+        '<button class="inv-mode-btn'+(!sectorEdit?' active':'')+'" onclick="sectorEdit=false;sectorDraw=null;renderView()">Перегляд</button>'+
+        '<button class="inv-mode-btn'+(sectorEdit?' active':'')+'" onclick="sectorEdit=true;renderView()">Редагування</button>'+
+      '</div>'
+    : '';
+
+  c.innerHTML = head +
+    '<div class="filter-row" style="margin-top:12px">'+
+      '<div class="hint" style="align-self:center">'+
+        (sectorEdit ? 'Редагування: клік по маркеру — картка з ✎/🗑, кнопки праворуч — межі та позиція' : esc(sec.name)+' · '+esc(sec.status||''))+'</div>'+
+      '<div class="staff-actions">'+editBtns+modeToggle+'</div>'+
     '</div>'+
     '<div class="freq-layout">'+
       '<div class="matrix-panel">'+
-        '<div class="matrix-panel-head"><span class="cap">Карта сектору · '+esc(sec.name)+'</span>'+
-        '<div style="display:flex;gap:6px">'+
-          '<button class="btn" style="padding:4px 10px;font-size:11px" disabled title="У розробці">⬇ Звіт (PDF)</button>'+
-          '<button class="btn" style="padding:4px 10px;font-size:11px;background:var(--accent);color:var(--on-accent)" onclick="toast(\'🚧 Додавання орієнтирів — у розробці\')">＋ Орієнтир</button>'+
-        '</div></div>'+
-        '<div id="sectorMap" style="height:56vh;background:var(--panel-2)"></div>'+
+        '<div class="matrix-panel-head"><span class="cap">Карта сектору · '+esc(sec.name)+'</span></div>'+
+        '<div id="sectorMap" style="height:56vh;background:var(--panel-2);position:relative"></div>'+
       '</div>'+
       '<div>'+side+'</div>'+
+    '</div>'+
+    // Нижня смуга як у макеті: погода зліва, дії справа
+    '<div class="filter-row" style="margin-top:10px;justify-content:space-between">'+
+      '<div class="type-chips" style="gap:6px">'+
+        '<span class="filter-chip" id="wxWind" style="cursor:default">≋ Вітер: …</span>'+
+        '<span class="filter-chip" id="wxTemp" style="cursor:default">🌡 …</span>'+
+        '<span class="filter-chip" id="wxKp" style="cursor:default" title="Геомагнітний індекс (GPS/звʼязок)">KP: …</span>'+
+      '</div>'+
+      '<div class="staff-actions">'+
+        '<button class="btn" disabled title="У розробці" style="opacity:.5">⬇ Звіт по сектору (PDF)</button>'+
+        '<button class="btn" style="background:var(--accent);color:var(--on-accent)" onclick="sectorAddLandmark()">＋ Додати орієнтир</button>'+
+      '</div>'+
     '</div>';
   renderSectorMap(sec);
+  loadSectorWeather(sec);
+}
+
+/* ── Дії редагування сектора ── */
+function sectorArm(mode) {
+  if (!sectorCanEdit()) { toast('⚠ Потрібне право «Екіпажі» або адмін', true); return; }
+  sectorEdit = true;
+  sectorDraw = mode;
+  sectorDrawPts = [];
+  renderView();
+  toast(mode === 'bounds' ? '✎ Клікай по карті — вершини меж, потім «✓ Готово»'
+    : mode === 'position' ? '📍 Клікни нову позицію на карті'
+    : '🔶 Клікни точку орієнтира на карті');
+}
+function sectorAddLandmark() { sectorArm('landmark'); }
+function sectorBoundsDone() {
+  if (sectorDrawPts.length < 3) { toast('⚠ Потрібно мінімум 3 точки', true); return; }
+  sectorById(sectorSel).bounds = sectorDrawPts.slice();
+  sectorDraw = null; sectorDrawPts = [];
+  saveSectors(); renderView();
+  toast('💾 Межі сектору оновлено');
+}
+function sectorDrawCancel() { sectorDraw = null; sectorDrawPts = []; renderView(); }
+function sectorLmRename(i) {
+  var sec = sectorById(sectorSel);
+  var lm = sec.landmarks[i];
+  if (!lm) return;
+  var name = prompt('Назва орієнтира:', lm.name);
+  if (name === null || !name.trim()) return;
+  lm.name = name.trim();
+  saveSectors(); renderView();
+}
+function sectorLmDelete(i) {
+  var sec = sectorById(sectorSel);
+  var lm = sec.landmarks[i];
+  if (!lm || !confirm('🗑 Видалити орієнтир «'+lm.name+'»?')) return;
+  sec.landmarks.splice(i, 1);
+  saveSectors(); renderView();
+}
+function sectorDeleteCur() {
+  var sec = sectorById(sectorSel);
+  if (SECTORS.length <= 1) { toast('⚠ Останній сектор видалити не можна', true); return; }
+  if (!confirm('🗑 Видалити сектор «'+sec.name+'» з усіма орієнтирами?')) return;
+  SECTORS = SECTORS.filter(function(s){ return s.id !== sec.id; });
+  sectorSel = SECTORS[0].id;
+  sectorDraw = null;
+  saveSectors(); renderView();
+  toast('🗑 Сектор «'+sec.name+'» видалено');
+}
+function sectorAddModal() {
+  openModal('➕ Новий сектор',
+    '<div class="f"><label>Назва сектору *</label><input type="text" id="nsName" placeholder="напр. ПОЛІГОН-2"></div>'+
+    '<div class="hint" style="margin-bottom:8px">Після створення застосунок увімкне режим редагування — намалюй межі кліками по карті й постав позицію.</div>'+
+    '<button class="btn btn-green" onclick="sectorAddDo()">➕ Створити</button>'
+  );
+}
+function sectorAddDo() {
+  var name = $('nsName').value.trim();
+  if (!name) { toast('⚠ Вкажи назву', true); return; }
+  var maxN = 0;
+  SECTORS.forEach(function(s){ var m = String(s.id).match(/-(\d+)$/); if (m) maxN = Math.max(maxN, +m[1]); });
+  var id = 'SEC-' + (maxN + 1);
+  SECTORS.push({ id: id, name: name, status: 'Активний', bounds: [], position: null, landmarks: [] });
+  sectorSel = id;
+  saveSectors();
+  closeModal();
+  sectorArm('bounds');
 }
 
 function renderSectorMap(sec) {
   ensureLeaflet(function(){
     if (_sectorMapObj) { try { _sectorMapObj.remove(); } catch(e) {} _sectorMapObj = null; }
+    _sectorDrawLayer = null;
     var el = $('sectorMap');
     if (!el) return;
     el.innerHTML = '';
-    var map = L.map(el, { zoomControl: true });
+    // Підказка режиму малювання поверх карти
+    if (sectorDraw) {
+      var hint = document.createElement('div');
+      hint.className = 'map-hint';
+      hint.textContent = sectorDraw === 'bounds' ? '✎ Клікай вершини меж · потім «✓ Готово»'
+        : sectorDraw === 'position' ? '📍 Клікни нову позицію'
+        : '🔶 Клікни точку орієнтира';
+      el.parentElement.appendChild(hint);
+      el._hint = hint;
+    }
+    var map = hudMap(el);
     _sectorMapObj = map;
-    var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
-    var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri' });
-    (mapLayer === 'sat' ? sat : osm).addTo(map);
-    var ctl = L.control({ position: 'topright' });
-    ctl.onAdd = function(){
-      var d = L.DomUtil.create('div', 'map-layer-btn');
-      d.style.position = 'static';
-      d.innerHTML = '<button class="'+(mapLayer==='osm'?'active':'')+'" data-l="osm">Карта</button>'+
-        '<button class="'+(mapLayer==='sat'?'active':'')+'" data-l="sat">Супутник</button>';
-      L.DomEvent.disableClickPropagation(d);
-      d.querySelectorAll('button').forEach(function(b){
-        b.onclick = function(){
-          mapLayer = b.dataset.l;
-          if (mapLayer === 'sat') { map.removeLayer(osm); sat.addTo(map); } else { map.removeLayer(sat); osm.addTo(map); }
-          d.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x.dataset.l === mapLayer); });
-        };
-      });
-      return d;
-    };
-    ctl.addTo(map);
 
     // Межі області роботи — пунктирний янтарний полігон
-    L.polygon(sec.bounds, { color: '#ffb800', weight: 2, dashArray: '6 4', fillColor: '#ffb800', fillOpacity: .06 })
-      .addTo(map).bindTooltip('Межі роботи · '+sec.name, { sticky: true });
-    // Позиція — зелена
-    L.circleMarker(sec.position.coords, { radius: 9, color: '#2ecc71', fillColor: '#2ecc71', fillOpacity: .8, weight: 2 })
-      .addTo(map).bindTooltip('🟢 '+sec.position.name, { direction: 'top', offset: [0, -8] });
-    // Орієнтири — янтарні, клік = картка (відео — заглушка до реалізації)
-    sec.landmarks.forEach(function(lm){
-      L.circleMarker(lm.coords, { radius: 8, color: '#ffb800', fillColor: '#ffb800', fillOpacity: .75, weight: 2 })
+    if (sec.bounds && sec.bounds.length >= 3) {
+      L.polygon(sec.bounds, { color: '#ffb800', weight: 2, dashArray: '6 4', fillColor: '#ffb800', fillOpacity: .06 })
+        .addTo(map).bindTooltip('Межі роботи · '+sec.name, { sticky: true });
+    }
+    // Позиція — зелений ромб з підписом (як у макеті)
+    if (sec.position && sec.position.coords) {
+      var posMk = hudMarker(sec.position.coords, 'diamond', '#2ecc71', sec.position.name || 'Позиція')
+        .addTo(map).bindTooltip('🟢 '+(sec.position.name||'Позиція'), { direction: 'top', offset: [0, -10] });
+      if (sectorEdit) posMk.bindPopup('<div style="font-family:monospace;font-size:12px"><b>🟢 '+esc(sec.position.name||'Позиція')+'</b>'+
+        '<br><a href="#" onclick="sectorArm(\'position\');return false">📍 перемістити</a></div>');
+    }
+    // Орієнтири — янтарні ромби; картка з відео-заглушкою, в редагуванні ✎/🗑
+    sec.landmarks.forEach(function(lm, i){
+      var short = String(lm.name).split('·')[0].trim();
+      hudMarker(lm.coords, 'diamond', '#ffb800', short)
         .addTo(map)
-        .bindTooltip('🔶 '+lm.name, { direction: 'top', offset: [0, -8] })
+        .bindTooltip('🔶 '+lm.name, { direction: 'top', offset: [0, -10] })
         .bindPopup('<div style="font-family:monospace;font-size:12px;min-width:200px"><b>🔶 '+esc(lm.name)+'</b>'+
           '<br><span style="color:#888">'+lm.coords[0].toFixed(5)+', '+lm.coords[1].toFixed(5)+'</span>'+
           (lm.video ? '<br><a href="'+esc(lm.video)+'" target="_blank">▶ відео орієнтира</a>'
-                    : '<br><span style="color:#888">▶ Відео орієнтира — буде додано</span>')+'</div>');
+                    : '<br><span style="color:#888">▶ Відео орієнтира — буде додано</span>')+
+          (sectorEdit ? '<br><a href="#" onclick="sectorLmRename('+i+');return false">✎ перейменувати</a> · '+
+            '<a href="#" style="color:#e74c3c" onclick="sectorLmDelete('+i+');return false">🗑 видалити</a>' : '')+
+        '</div>');
     });
-    // Втрати з реальної карти втрат — якщо вже завантажені
+    // Втрати з реальної карти втрат — червоні ✕, якщо дані вже завантажені
     (S.lostMap || []).filter(function(x){ return x.lat && x.lng; }).forEach(function(x){
-      L.circleMarker([x.lat, x.lng], { radius: 6, color: '#e74c3c', fillColor: '#e74c3c', fillOpacity: .7, weight: 1 })
-        .addTo(map).bindTooltip('❌ '+(x.imei||x.id)+(x.date?' · '+x.date:''), { direction: 'top', offset: [0, -8] });
+      hudMarker([x.lat, x.lng], 'x', '#e74c3c', x.id || '')
+        .addTo(map).bindTooltip('❌ '+(x.imei||x.id)+(x.date?' · '+x.date:''), { direction: 'top', offset: [0, -10] });
     });
-    map.fitBounds(sec.bounds, { padding: [30, 30] });
+
+    // Кліки малювання (орієнтир / позиція / межі)
+    map.on('click', function(ev){
+      if (!sectorEdit || !sectorDraw) return;
+      var ll = [ +ev.latlng.lat.toFixed(6), +ev.latlng.lng.toFixed(6) ];
+      if (sectorDraw === 'landmark') {
+        var name = prompt('Назва орієнтира:', 'Орієнтир-'+(sec.landmarks.length+1));
+        if (name === null || !name.trim()) return;
+        sec.landmarks.push({ name: name.trim(), coords: ll, video: '' });
+        sectorDraw = null;
+        saveSectors(); renderView();
+        toast('🔶 Орієнтир «'+name.trim()+'» додано');
+      } else if (sectorDraw === 'position') {
+        sec.position = { name: 'Позиція', coords: ll };
+        sectorDraw = null;
+        saveSectors(); renderView();
+        toast('📍 Позицію оновлено');
+      } else if (sectorDraw === 'bounds') {
+        sectorDrawPts.push(ll);
+        if (_sectorDrawLayer) { try { map.removeLayer(_sectorDrawLayer); } catch(e) {} }
+        _sectorDrawLayer = (sectorDrawPts.length >= 3
+          ? L.polygon(sectorDrawPts, { color: '#ffb800', weight: 2, dashArray: '4 3', fillOpacity: .08 })
+          : L.polyline(sectorDrawPts, { color: '#ffb800', weight: 2, dashArray: '4 3' })).addTo(map);
+        var btn = $('secDoneBtn');
+        if (btn) btn.textContent = '✓ Готово ('+sectorDrawPts.length+')';
+      }
+    });
+
+    if (sec.bounds && sec.bounds.length >= 3) map.fitBounds(sec.bounds, { padding: [30, 30] });
+    else if (sec.position && sec.position.coords) map.setView(sec.position.coords, 13);
+    else map.setView([48.5, 35.0], 6);
     setTimeout(function(){ map.invalidateSize(); }, 150);
   });
+}
+
+/* ── Погода для FPV: open-meteo (координати огрублені до ~1 км) + KP-індекс ── */
+var _wx = { ts: 0, data: null, kp: null };
+function loadSectorWeather(sec) {
+  function paint() {
+    var w = _wx.data;
+    var el;
+    if ((el = $('wxWind'))) {
+      if (w) {
+        var dirs = ['Пн','ПнСх','Сх','ПдСх','Пд','ПдЗх','Зх','ПнЗх'];
+        var d = dirs[Math.round((w.dir||0) / 45) % 8];
+        el.textContent = '≋ Вітер: '+Math.round(w.wind)+' м/с ('+d+') · пориви '+Math.round(w.gust);
+        el.style.color = w.gust >= 12 ? 'var(--red)' : (w.gust >= 8 ? 'var(--yellow)' : '');
+        el.title = w.gust >= 8 ? 'Сильний вітер — обережно з легкими бортами' : '';
+      } else el.textContent = '≋ Вітер: —';
+    }
+    if ((el = $('wxTemp'))) el.textContent = w ? '🌡 '+(w.temp > 0 ? '+' : '')+Math.round(w.temp)+'°C' : '🌡 —';
+    if ((el = $('wxKp'))) {
+      el.textContent = 'KP: '+(_wx.kp === null ? '—' : _wx.kp);
+      el.style.color = _wx.kp >= 7 ? 'var(--red)' : (_wx.kp >= 5 ? 'var(--yellow)' : '');
+    }
+  }
+  var c = (sec && sec.position && sec.position.coords) ||
+          (sec && sec.bounds && sec.bounds.length ? sec.bounds[0] : null);
+  if (!c || typeof fetch === 'undefined') { paint(); return; }
+  if (_wx.data && Date.now() - _wx.ts < 10*60*1000) { paint(); return; }
+  paint(); // «…» → показати одразу, оновиться після відповіді
+  var lat = c[0].toFixed(2), lng = c[1].toFixed(2); // огрублення координат
+  fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lng+
+    '&current=temperature_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m&wind_speed_unit=ms')
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      var cu = j && j.current;
+      if (!cu) return;
+      _wx.data = { temp: cu.temperature_2m, wind: cu.wind_speed_10m, gust: cu.wind_gusts_10m, dir: cu.wind_direction_10m };
+      _wx.ts = Date.now();
+      paint();
+    }).catch(function(){});
+  fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json')
+    .then(function(r){ return r.json(); })
+    .then(function(rows){
+      if (!Array.isArray(rows) || !rows.length) return;
+      // Формат буває масивом обʼєктів {Kp: 2.33} або масивом рядків [time, Kp, …]
+      var last = rows[rows.length - 1];
+      var kp = parseFloat(last && last.Kp !== undefined ? last.Kp : (last && last[1]));
+      if (!isNaN(kp)) { _wx.kp = Math.round(kp); paint(); }
+    }).catch(function(){});
+}
+
+/* ── Вкладка «Статистика»: графіки з даних журналу польоту ── */
+function renderSectorStats(flts) {
+  // 1) Вильоти за останні 14 днів — стовпчики (сьогодні — акцент)
+  var byDay = {}, days = [];
+  flts.forEach(function(f){ var d = String(f.date||'').slice(0,10); if (d) byDay[d] = (byDay[d]||0)+1; });
+  for (var i = 13; i >= 0; i--) {
+    var dt = new Date(Date.now() - i*864e5).toISOString().slice(0,10);
+    days.push({ d: dt, n: byDay[dt] || 0 });
+  }
+  var maxN = Math.max(1, Math.max.apply(null, days.map(function(x){ return x.n; })));
+  var W = 560, H = 150, padL = 26, padB = 22, plotW = W - padL - 6, plotH = H - padB - 12;
+  var bw = plotW / 14;
+  var bars = days.map(function(x, i){
+    var h = Math.round(x.n / maxN * plotH);
+    var bx = padL + i*bw + 3, by = 12 + plotH - h;
+    var isToday = i === 13;
+    var lbl = (isToday || x.n === maxN) && x.n
+      ? '<text x="'+(bx + (bw-6)/2)+'" y="'+(by - 3)+'" text-anchor="middle" font-size="9" font-family="monospace" fill="#a8a5a2">'+x.n+'</text>' : '';
+    var xLbl = (i % 2 === 1)
+      ? '<text x="'+(bx + (bw-6)/2)+'" y="'+(H - 8)+'" text-anchor="middle" font-size="7.5" font-family="monospace" fill="#7f7c78">'+x.d.slice(8,10)+'.'+x.d.slice(5,7)+'</text>' : '';
+    return '<rect x="'+bx+'" y="'+by+'" width="'+(bw-6)+'" height="'+Math.max(h, x.n?2:0)+'" rx="2" fill="'+(isToday ? '#ffb800' : '#3498db')+'">'+
+      '<title>'+x.d+' · вильотів: '+x.n+'</title></rect>'+lbl+xLbl;
+  }).join('');
+  var grid = [0, .5, 1].map(function(t){
+    var y = 12 + plotH - t*plotH;
+    return '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-6)+'" y2="'+y+'" stroke="#2a2a2a" stroke-width="1"/>'+
+      '<text x="'+(padL-4)+'" y="'+(y+3)+'" text-anchor="end" font-size="8" font-family="monospace" fill="#7f7c78">'+Math.round(t*maxN)+'</text>';
+  }).join('');
+  var chartDays = '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto">'+grid+bars+'</svg>';
+
+  // 2) Результат вильотів — сегментна смуга зі статусними кольорами + підписами
+  var doneN = 0, lostN = 0, actN = 0, othN = 0;
+  flts.forEach(function(f){
+    if (f.status === 'Завершений') doneN++;
+    else if (f.status === 'Втрачений') lostN++;
+    else if (f.status === 'Активний') actN++;
+    else othN++;
+  });
+  var total = doneN + lostN + actN + othN;
+  var segs = [
+    ['Завершений', doneN, '#2ecc71'], ['Активний', actN, '#3498db'],
+    ['Втрачений', lostN, '#e74c3c'], ['Інше', othN, '#7f8c8d']
+  ].filter(function(s){ return s[1] > 0; });
+  var sx = 0, segBar = segs.map(function(s){
+    var w = total ? (s[1] / total * 100) : 0;
+    var h = '<div title="'+s[0]+': '+s[1]+'" style="width:calc('+w+'% - 2px);margin-right:2px;background:'+s[2]+';height:18px"></div>';
+    sx += w; return h;
+  }).join('');
+  var legend = segs.map(function(s){
+    return '<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-family:var(--font-data);font-size:10px;color:var(--muted)">'+
+      '<span style="width:8px;height:8px;background:'+s[2]+';display:inline-block"></span>'+s[0]+' · <b style="color:#e5e2e1">'+s[1]+'</b></span>';
+  }).join('');
+  var succPct = (doneN + lostN) ? Math.round(doneN / (doneN + lostN) * 100) : null;
+  var chartOutcome = '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'+
+    '<div style="font:700 34px var(--font-data);color:'+(succPct===null?'var(--muted)':(succPct>=80?'#2ecc71':(succPct>=50?'#f1c40f':'#e74c3c')))+'">'+(succPct===null?'—':succPct+'%')+
+      '<div style="font:700 9px var(--font-data);color:var(--muted);text-transform:uppercase;letter-spacing:.5px">успішність</div></div>'+
+    '<div style="flex:1;min-width:200px">'+
+      (total ? '<div style="display:flex">'+segBar+'</div>' : '<div class="empty">Вильотів ще немає</div>')+
+      '<div style="margin-top:8px">'+legend+'</div>'+
+    '</div></div>';
+
+  // 3) Вильоти по екіпажах — горизонтальні смуги (топ-6)
+  var byCrew = {};
+  flts.forEach(function(f){ var k = String(f.crew||'').trim() || '—'; byCrew[k] = (byCrew[k]||0)+1; });
+  var crewsTop = Object.keys(byCrew).map(function(k){ return [k, byCrew[k]]; })
+    .sort(function(a,b){ return b[1]-a[1]; }).slice(0, 6);
+  var maxC = Math.max(1, crewsTop.length ? crewsTop[0][1] : 1);
+  var chartCrews = crewsTop.length ? crewsTop.map(function(r){
+    var own = S.auth && S.auth.crewId === r[0];
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px" title="'+esc(crewNameOnly(r[0]))+': '+r[1]+'">'+
+      '<span style="width:120px;flex-shrink:0;font:700 10px var(--font-data);color:var(--muted);text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(crewNameOnly(r[0]))+(own?' ·мій':'')+'</span>'+
+      '<div style="flex:1;background:var(--panel-2)"><div style="width:'+Math.round(r[1]/maxC*100)+'%;height:12px;background:'+(own?'#ffb800':'#3498db')+'"></div></div>'+
+      '<span style="width:26px;font:700 11px var(--font-data);color:#e5e2e1;text-align:right">'+r[1]+'</span>'+
+    '</div>';
+  }).join('') : '<div class="empty">Вильотів ще немає</div>';
+
+  function panel(title, body) {
+    return '<div class="matrix-panel"><div class="matrix-panel-head"><span class="cap">'+title+'</span></div>'+
+      '<div style="padding:12px">'+body+'</div></div>';
+  }
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:12px">'+
+    panel('Вильоти · останні 14 днів', chartDays)+
+    panel('Результат вильотів', chartOutcome)+
+    panel('Вильоти по екіпажах', chartCrews)+
+  '</div>';
 }
 
 /* ═══════════ ВИД: GPS ТРЕКЕРИ ═══════════ */
@@ -3760,29 +4113,10 @@ function renderTrkMap() {
       var el = $('lostMap');
       if (!el) return;
       el.innerHTML = '';
-      var map = L.map(el, { zoomControl: true });
+      // Спільна ініціалізація з картою сектора: темні квадратні контролі
+      // (зум + перемикач топооснови ⧉) праворуч
+      var map = hudMap(el);
       _lostMapObj = map;
-      var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
-      var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri' });
-      (mapLayer === 'sat' ? sat : osm).addTo(map);
-      // Перемикач шару — свій, у стилі застосунку
-      var ctl = L.control({ position: 'topright' });
-      ctl.onAdd = function(){
-        var d = L.DomUtil.create('div', 'map-layer-btn');
-        d.style.position = 'static';
-        d.innerHTML = '<button class="'+(mapLayer==='osm'?'active':'')+'" data-l="osm">Карта</button>'+
-          '<button class="'+(mapLayer==='sat'?'active':'')+'" data-l="sat">Супутник</button>';
-        L.DomEvent.disableClickPropagation(d);
-        d.querySelectorAll('button').forEach(function(b){
-          b.onclick = function(){
-            mapLayer = b.dataset.l;
-            if (mapLayer === 'sat') { map.removeLayer(osm); sat.addTo(map); } else { map.removeLayer(sat); osm.addTo(map); }
-            d.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x.dataset.l === mapLayer); });
-          };
-        });
-        return d;
-      };
-      ctl.addTo(map);
 
       var pts = [];
       data.filter(function(x){ return x.lat && x.lng; }).forEach(function(x){
@@ -3801,9 +4135,10 @@ function renderTrkMap() {
           '</div>';
         };
         var tip = (x.kind === 'drone' ? '🛸 ' : '📡 ') + (x.imei || x.id) + (x.name ? ' — ' + x.name : '') + (x.date ? ' · ' + x.date : '');
-        var mk = L.circleMarker([x.lat, x.lng], { radius: 9, color: col, fillColor: col, fillOpacity: .75, weight: 2 })
+        // ✕ у кольорі категорії з підписом-ID — той самий стиль, що на карті сектора
+        var mk = hudMarker([x.lat, x.lng], 'x', col, x.id || '')
           .addTo(map)
-          .bindTooltip(tip, { direction: 'top', offset: [0, -8] })   // при наведенні
+          .bindTooltip(tip, { direction: 'top', offset: [0, -10] })  // при наведенні
           .bindPopup(popupFor(lossEdit));                              // повна картка при кліку
         mk._lossPopupFor = popupFor;
         pts.push([x.lat, x.lng]);
