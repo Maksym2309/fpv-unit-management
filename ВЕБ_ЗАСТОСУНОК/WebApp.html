@@ -3551,7 +3551,7 @@ function renderSector(c) {
 
   var head = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
     '<div><div class="view-title">Управління <span class="accent">сектором</span></div>'+
-    '<div class="view-sub">'+esc(sec.name)+' · '+(sectorTab==='stats' ? 'Статистика' : 'Карта сектору')+' · '+(sectorEdit && sectorTab!=='stats' ? 'Редагування' : 'Перегляд')+'</div></div>'+
+    '<div class="view-sub">Сектор · '+(sectorTab==='stats' ? 'Статистика' : 'Карта сектору')+' · '+(sectorEdit && sectorTab!=='stats' ? 'Редагування' : 'Перегляд')+'</div></div>'+
     '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">'+typeToggle+
       '<label class="hint">Сектор:</label><select onchange="sectorSel=this.value;sectorDraw=null;sectorMoveTarget=null;renderView()">'+secOpts+'</select>'+
       addSecBtn+'</div>'+
@@ -3595,14 +3595,13 @@ function renderSector(c) {
       '</div>'
     : '';
 
+  // Кнопки редагування й перемикач режиму — у шапці панелі карти, щоб
+  // карта стояла одразу під вкладками без зайвого рядка
   c.innerHTML = head +
-    '<div class="filter-row" style="margin-top:12px">'+
-      '<div style="align-self:center">'+statusChip(sec.status)+'</div>'+
-      '<div class="staff-actions">'+editBtns+modeToggle+'</div>'+
-    '</div>'+
-    '<div class="freq-layout">'+
+    '<div class="freq-layout" style="margin-top:12px">'+
       '<div class="matrix-panel">'+
-        '<div class="matrix-panel-head"><span class="cap">'+esc(sec.name)+'</span></div>'+
+        '<div class="matrix-panel-head"><span class="cap">Карта сектору · '+esc(sec.name)+'</span>'+
+          '<div class="staff-actions" style="display:flex;gap:6px;align-items:center">'+editBtns+modeToggle+'</div></div>'+
         '<div id="sectorMap" style="height:56vh;background:var(--panel-2);position:relative"></div>'+
       '</div>'+
       '<div>'+side+'</div>'+
