@@ -4074,90 +4074,248 @@ function loadSectorWeather(sec) {
     }).catch(function(){});
 }
 
-/* ── Вкладка «Статистика»: графіки з даних журналу польоту ── */
-function renderSectorStats(flts) {
-  // 1) Вильоти за останні 14 днів — стовпчики (сьогодні — акцент)
-  var byDay = {}, days = [];
-  flts.forEach(function(f){ var d = sectorYmd(f.date); if (d) byDay[d] = (byDay[d]||0)+1; });
-  for (var i = 13; i >= 0; i--) {
+/* ── Вкладка «Статистика»: конструктор графіків ──
+   Кожна картка — вибір даних + вигляду + періоду; «+» додає картку, 🗑 прибирає.
+   Набір карток зберігається локально (wh_sector_charts) — у кожного свій. */
+
+// Доступні дані. kind: series (по днях) | cat (по екіпажах) | parts (частки).
+// Період застосовний до всього, що рахується з вильотів; noDays — зрізу немає.
+var SC_METRICS = {
+  flights:    { name: 'Вильоти',                 kind: 'series', unit: 'вильотів', color: '#3498db' },
+  losses:     { name: 'Втрати бортів',           kind: 'series', unit: 'втрат',    color: '#e74c3c' },
+  avgdur:     { name: 'Сер. тривалість (хв)',    kind: 'series', unit: 'хв',       color: '#3498db' },
+  flByCrew:   { name: 'Вильоти по екіпажах',     kind: 'cat',    color: '#3498db' },
+  lossByCrew: { name: 'Втрати по екіпажах',      kind: 'cat',    color: '#e74c3c' },
+  outcome:    { name: 'Результат вильотів',      kind: 'parts' },
+  invStatus:  { name: 'Інвентар за статусами',   kind: 'parts', noDays: true },
+  trkStatus:  { name: 'Трекери за статусами',    kind: 'parts', noDays: true }
+};
+var SC_TYPES = { series: [['bar','Стовпчики'],['line','Лінія']], cat: [['hbar','Смуги']], parts: [['share','Частки']] };
+
+var SC_CHARTS = (function(){
+  try {
+    var s = JSON.parse(localStorage.getItem('wh_sector_charts') || 'null');
+    if (Array.isArray(s) && s.length) return s.filter(function(x){ return SC_METRICS[x.m]; });
+  } catch(e) {}
+  return [ { m:'flights', t:'bar', days:14 }, { m:'outcome', t:'share', days:0 }, { m:'flByCrew', t:'hbar', days:30 } ];
+})();
+function scSave() { try { localStorage.setItem('wh_sector_charts', JSON.stringify(SC_CHARTS)); } catch(e) {} }
+function scAdd() { SC_CHARTS.push({ m:'flights', t:'bar', days:14 }); scSave(); renderView(); }
+function scDel(i) { SC_CHARTS.splice(+i, 1); scSave(); renderView(); }
+function scSet(i, key, val) {
+  var c = SC_CHARTS[+i];
+  if (!c) return;
+  if (key === 'days') c.days = +val;
+  else c[key] = val;
+  // Дані іншого роду — вигляд скидається на перший сумісний
+  if (key === 'm') c.t = SC_TYPES[SC_METRICS[c.m].kind][0][0];
+  scSave(); renderView();
+}
+
+// Зріз вильотів за період (0 = увесь час)
+function scFilterDays(flts, days) {
+  if (!days) return flts;
+  var from = Date.now() - days * 864e5;
+  return flts.filter(function(f){
+    var d = new Date(sectorYmd(f.date));
+    return !isNaN(d) && d.getTime() >= from;
+  });
+}
+
+// Ряд по днях для метрики
+function scSeries(m, flts, days) {
+  var D = days || 14, byDay = {}, durByDay = {};
+  flts.forEach(function(f){
+    var d = sectorYmd(f.date);
+    if (!d) return;
+    if (m === 'flights') byDay[d] = (byDay[d]||0)+1;
+    else if (m === 'losses') { if (f.status === 'Втрачений') byDay[d] = (byDay[d]||0)+1; }
+    else if (m === 'avgdur') {
+      var toMin = function(t){ var x = String(t||'').match(/(\d{1,2}):(\d{2})/); return x ? (+x[1])*60 + (+x[2]) : null; };
+      var a = toMin(f.start), b = toMin(f.end);
+      if (a === null || b === null) return;
+      var dur = b - a; if (dur < 0) dur += 24*60;
+      if (dur > 0 && dur < 6*60) (durByDay[d] = durByDay[d] || []).push(dur);
+    }
+  });
+  if (m === 'avgdur') Object.keys(durByDay).forEach(function(d){
+    byDay[d] = Math.round(durByDay[d].reduce(function(s,x){ return s+x; }, 0) / durByDay[d].length);
+  });
+  var out = [];
+  for (var i = D - 1; i >= 0; i--) {
     var dt = new Date(Date.now() - i*864e5).toISOString().slice(0,10);
-    days.push({ d: dt, n: byDay[dt] || 0 });
+    out.push({ d: dt, n: byDay[dt] || 0 });
   }
-  var maxN = Math.max(1, Math.max.apply(null, days.map(function(x){ return x.n; })));
-  var W = 560, H = 150, padL = 26, padB = 22, plotW = W - padL - 6, plotH = H - padB - 12;
-  var bw = plotW / 14;
-  var bars = days.map(function(x, i){
+  return out;
+}
+
+// Стовпчики по днях (адаптивно до довжини періоду; сьогодні — акцент)
+function scChartBar(series, unit, color) {
+  var D = series.length;
+  var maxN = Math.max(1, Math.max.apply(null, series.map(function(x){ return x.n; })));
+  var W = 560, H = 150, padL = 26, plotW = W - padL - 6, plotH = H - 22 - 12;
+  var bw = plotW / D, gap = Math.min(6, Math.max(1, Math.round(bw/3)));
+  var step = Math.max(1, Math.ceil(D / 7));   // ~7 підписів дат
+  var bars = series.map(function(x, i){
     var h = Math.round(x.n / maxN * plotH);
-    var bx = padL + i*bw + 3, by = 12 + plotH - h;
-    var isToday = i === 13;
-    var lbl = (isToday || x.n === maxN) && x.n
-      ? '<text x="'+(bx + (bw-6)/2)+'" y="'+(by - 3)+'" text-anchor="middle" font-size="9" font-family="monospace" fill="#a8a5a2">'+x.n+'</text>' : '';
-    var xLbl = (i % 2 === 1)
-      ? '<text x="'+(bx + (bw-6)/2)+'" y="'+(H - 8)+'" text-anchor="middle" font-size="7.5" font-family="monospace" fill="#7f7c78">'+x.d.slice(8,10)+'.'+x.d.slice(5,7)+'</text>' : '';
-    return '<rect x="'+bx+'" y="'+by+'" width="'+(bw-6)+'" height="'+Math.max(h, x.n?2:0)+'" rx="2" fill="'+(isToday ? '#ffb800' : '#3498db')+'">'+
-      '<title>'+x.d+' · вильотів: '+x.n+'</title></rect>'+lbl+xLbl;
+    var bx = padL + i*bw + gap/2, by = 12 + plotH - h;
+    var isToday = i === D - 1;
+    var lbl = (isToday || x.n === maxN) && x.n && bw >= 10
+      ? '<text x="'+(bx + (bw-gap)/2)+'" y="'+(by - 3)+'" text-anchor="middle" font-size="9" font-family="monospace" fill="#a8a5a2">'+x.n+'</text>' : '';
+    var xLbl = ((D - 1 - i) % step === 0)
+      ? '<text x="'+(bx + (bw-gap)/2)+'" y="'+(H - 8)+'" text-anchor="middle" font-size="7.5" font-family="monospace" fill="#7f7c78">'+x.d.slice(8,10)+'.'+x.d.slice(5,7)+'</text>' : '';
+    return '<rect x="'+bx+'" y="'+by+'" width="'+Math.max(bw-gap, 1)+'" height="'+Math.max(h, x.n?2:0)+'" rx="'+(bw>=8?2:0)+'" fill="'+(isToday ? '#ffb800' : color)+'">'+
+      '<title>'+x.d+' · '+x.n+' '+unit+'</title></rect>'+lbl+xLbl;
   }).join('');
   var grid = [0, .5, 1].map(function(t){
     var y = 12 + plotH - t*plotH;
     return '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-6)+'" y2="'+y+'" stroke="#2a2a2a" stroke-width="1"/>'+
       '<text x="'+(padL-4)+'" y="'+(y+3)+'" text-anchor="end" font-size="8" font-family="monospace" fill="#7f7c78">'+Math.round(t*maxN)+'</text>';
   }).join('');
-  var chartDays = '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto">'+grid+bars+'</svg>';
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto">'+grid+bars+'</svg>';
+}
 
-  // 2) Результат вильотів — сегментна смуга зі статусними кольорами + підписами
-  var doneN = 0, lostN = 0, actN = 0, othN = 0;
-  flts.forEach(function(f){
-    if (f.status === 'Завершений') doneN++;
-    else if (f.status === 'Втрачений') lostN++;
-    else if (f.status === 'Активний') actN++;
-    else othN++;
-  });
-  var total = doneN + lostN + actN + othN;
-  var segs = [
-    ['Завершений', doneN, '#2ecc71'], ['Активний', actN, '#3498db'],
-    ['Втрачений', lostN, '#e74c3c'], ['Інше', othN, '#7f8c8d']
-  ].filter(function(s){ return s[1] > 0; });
-  var sx = 0, segBar = segs.map(function(s){
-    var w = total ? (s[1] / total * 100) : 0;
-    var h = '<div title="'+s[0]+': '+s[1]+'" style="width:calc('+w+'% - 2px);margin-right:2px;background:'+s[2]+';height:18px"></div>';
-    sx += w; return h;
+// Лінія по днях (точки з підказками; остання — акцент)
+function scChartLine(series, unit, color) {
+  var D = series.length;
+  var maxN = Math.max(1, Math.max.apply(null, series.map(function(x){ return x.n; })));
+  var W = 560, H = 150, padL = 26, plotW = W - padL - 12, plotH = H - 22 - 12;
+  var step = Math.max(1, Math.ceil(D / 7));
+  function px(i) { return padL + (D === 1 ? plotW/2 : i * plotW / (D - 1)); }
+  function py(n) { return 12 + plotH - n / maxN * plotH; }
+  var pts = series.map(function(x, i){ return px(i).toFixed(1)+','+py(x.n).toFixed(1); }).join(' ');
+  var area = padL+','+(12+plotH)+' '+pts+' '+px(D-1).toFixed(1)+','+(12+plotH);
+  var dots = series.map(function(x, i){
+    var last = i === D - 1;
+    var xLbl = ((D - 1 - i) % step === 0)
+      ? '<text x="'+px(i)+'" y="'+(H - 8)+'" text-anchor="middle" font-size="7.5" font-family="monospace" fill="#7f7c78">'+x.d.slice(8,10)+'.'+x.d.slice(5,7)+'</text>' : '';
+    var vLbl = (last || x.n === maxN) && x.n
+      ? '<text x="'+px(i)+'" y="'+(py(x.n) - 6)+'" text-anchor="middle" font-size="9" font-family="monospace" fill="#a8a5a2">'+x.n+'</text>' : '';
+    return '<circle cx="'+px(i)+'" cy="'+py(x.n)+'" r="8" fill="transparent"><title>'+x.d+' · '+x.n+' '+unit+'</title></circle>'+
+      '<circle cx="'+px(i)+'" cy="'+py(x.n)+'" r="'+(last?3.5:2.5)+'" fill="'+(last?'#ffb800':color)+'" pointer-events="none"/>'+vLbl+xLbl;
   }).join('');
-  var legend = segs.map(function(s){
-    return '<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-family:var(--font-data);font-size:10px;color:var(--muted)">'+
-      '<span style="width:8px;height:8px;background:'+s[2]+';display:inline-block"></span>'+s[0]+' · <b style="color:#e5e2e1">'+s[1]+'</b></span>';
+  var grid = [0, .5, 1].map(function(t){
+    var y = 12 + plotH - t*plotH;
+    return '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-6)+'" y2="'+y+'" stroke="#2a2a2a" stroke-width="1"/>'+
+      '<text x="'+(padL-4)+'" y="'+(y+3)+'" text-anchor="end" font-size="8" font-family="monospace" fill="#7f7c78">'+Math.round(t*maxN)+'</text>';
   }).join('');
-  var succPct = (doneN + lostN) ? Math.round(doneN / (doneN + lostN) * 100) : null;
-  var chartOutcome = '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'+
-    '<div style="font:700 34px var(--font-data);color:'+(succPct===null?'var(--muted)':(succPct>=80?'#2ecc71':(succPct>=50?'#f1c40f':'#e74c3c')))+'">'+(succPct===null?'—':succPct+'%')+
-      '<div style="font:700 9px var(--font-data);color:var(--muted);text-transform:uppercase;letter-spacing:.5px">успішність</div></div>'+
-    '<div style="flex:1;min-width:200px">'+
-      (total ? '<div style="display:flex">'+segBar+'</div>' : '<div class="empty">Вильотів ще немає</div>')+
-      '<div style="margin-top:8px">'+legend+'</div>'+
-    '</div></div>';
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto">'+grid+
+    '<polygon points="'+area+'" fill="'+color+'" opacity=".08"/>'+
+    '<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2"/>'+dots+'</svg>';
+}
 
-  // 3) Вильоти по екіпажах — горизонтальні смуги (топ-6)
-  var byCrew = {};
-  flts.forEach(function(f){ var k = String(f.crew||'').trim() || '—'; byCrew[k] = (byCrew[k]||0)+1; });
-  var crewsTop = Object.keys(byCrew).map(function(k){ return [k, byCrew[k]]; })
-    .sort(function(a,b){ return b[1]-a[1]; }).slice(0, 6);
-  var maxC = Math.max(1, crewsTop.length ? crewsTop[0][1] : 1);
-  var chartCrews = crewsTop.length ? crewsTop.map(function(r){
+// Горизонтальні смуги по екіпажах (свій — акцент)
+function scChartHBar(rows, color) {
+  if (!rows.length) return '<div class="empty">Даних немає</div>';
+  var maxC = Math.max(1, rows[0][1]);
+  return rows.map(function(r){
     var own = S.auth && S.auth.crewId === r[0];
     return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px" title="'+esc(crewNameOnly(r[0]))+': '+r[1]+'">'+
       '<span style="width:120px;flex-shrink:0;font:700 10px var(--font-data);color:var(--muted);text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(crewNameOnly(r[0]))+(own?' ·мій':'')+'</span>'+
-      '<div style="flex:1;background:var(--panel-2)"><div style="width:'+Math.round(r[1]/maxC*100)+'%;height:12px;background:'+(own?'#ffb800':'#3498db')+'"></div></div>'+
+      '<div style="flex:1;background:var(--panel-2)"><div style="width:'+Math.round(r[1]/maxC*100)+'%;height:12px;background:'+(own?'#ffb800':color)+'"></div></div>'+
       '<span style="width:26px;font:700 11px var(--font-data);color:#e5e2e1;text-align:right">'+r[1]+'</span>'+
     '</div>';
-  }).join('') : '<div class="empty">Вильотів ще немає</div>';
+  }).join('');
+}
 
-  function panel(title, body) {
-    return '<div class="matrix-panel"><div class="matrix-panel-head"><span class="cap">'+title+'</span></div>'+
-      '<div style="padding:12px">'+body+'</div></div>';
+// Сегментна смуга часток + легенда (+ опційне велике число зліва)
+function scChartShare(segs, hero) {
+  segs = segs.filter(function(s){ return s[1] > 0; });
+  var total = segs.reduce(function(s, x){ return s + x[1]; }, 0);
+  if (!total) return '<div class="empty">Даних немає</div>';
+  var bar = segs.map(function(s){
+    return '<div title="'+esc(s[0])+': '+s[1]+'" style="width:calc('+(s[1]/total*100)+'% - 2px);margin-right:2px;background:'+s[2]+';height:18px"></div>';
+  }).join('');
+  var legend = segs.map(function(s){
+    return '<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-family:var(--font-data);font-size:10px;color:var(--muted)">'+
+      '<span style="width:8px;height:8px;background:'+s[2]+';display:inline-block"></span>'+esc(s[0])+' · <b style="color:#e5e2e1">'+s[1]+'</b></span>';
+  }).join('');
+  return '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'+
+    (hero ? '<div style="font:700 34px var(--font-data);color:'+hero.color+'">'+hero.value+
+      '<div style="font:700 9px var(--font-data);color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'+hero.label+'</div></div>' : '')+
+    '<div style="flex:1;min-width:200px"><div style="display:flex">'+bar+'</div>'+
+    '<div style="margin-top:8px">'+legend+'</div></div></div>';
+}
+
+// Кольори статусів для часток
+function scStatusColor(st) {
+  return { 'Робочий':'#2ecc71','Активний':'#3498db','Завершений':'#2ecc71','Ремонт':'#f1c40f',
+    'На перевірці':'#9b59b6','Несправний':'#e67e22','Зламаний':'#e67e22','Втрачений':'#e74c3c',
+    'Списаний':'#7f8c8d','Резерв':'#3498db' }[st] || '#7f8c8d';
+}
+
+// Тіло однієї картки за конфігом {m, t, days}
+function scChartBody(cfg, allFlts) {
+  var M = SC_METRICS[cfg.m];
+  var flts = M.noDays ? allFlts : scFilterDays(allFlts, cfg.days);
+  if (M.kind === 'series') {
+    var series = scSeries(cfg.m, allFlts, cfg.days || 14);
+    return cfg.t === 'line' ? scChartLine(series, M.unit, M.color) : scChartBar(series, M.unit, M.color);
   }
-  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:12px">'+
-    panel('Вильоти · останні 14 днів', chartDays)+
-    panel('Результат вильотів', chartOutcome)+
-    panel('Вильоти по екіпажах', chartCrews)+
+  if (M.kind === 'cat') {
+    var byCrew = {};
+    flts.forEach(function(f){
+      if (cfg.m === 'lossByCrew' && f.status !== 'Втрачений') return;
+      var k = String(f.crew||'').trim() || '—';
+      byCrew[k] = (byCrew[k]||0)+1;
+    });
+    var rows = Object.keys(byCrew).map(function(k){ return [k, byCrew[k]]; })
+      .sort(function(a,b){ return b[1]-a[1]; }).slice(0, 8);
+    return scChartHBar(rows, M.color);
+  }
+  // parts
+  if (cfg.m === 'outcome') {
+    var cnt = {};
+    flts.forEach(function(f){ var s = f.status || 'Інше'; cnt[s] = (cnt[s]||0)+1; });
+    var segs = ['Завершений','Активний','Втрачений'].map(function(s){ return [s, cnt[s]||0, scStatusColor(s)]; });
+    var oth = Object.keys(cnt).filter(function(s){ return ['Завершений','Активний','Втрачений'].indexOf(s) === -1; })
+      .reduce(function(a, s){ return a + cnt[s]; }, 0);
+    if (oth) segs.push(['Інше', oth, '#7f8c8d']);
+    var done = cnt['Завершений']||0, lostN = cnt['Втрачений']||0;
+    var pct = (done + lostN) ? Math.round(done / (done + lostN) * 100) : null;
+    return scChartShare(segs, pct === null ? null : { value: pct+'%', label: 'успішність',
+      color: pct>=80 ? '#2ecc71' : (pct>=50 ? '#f1c40f' : '#e74c3c') });
+  }
+  var src = cfg.m === 'invStatus' ? S.items : S.trackers;
+  var cnt2 = {};
+  (src||[]).forEach(function(x){ var s = String(x.status||'').trim() || '—'; cnt2[s] = (cnt2[s]||0)+1; });
+  return scChartShare(Object.keys(cnt2).sort(function(a,b){ return cnt2[b]-cnt2[a]; })
+    .map(function(s){ return [s, cnt2[s], scStatusColor(s)]; }), null);
+}
+
+function renderSectorStats(flts) {
+  var selStyle = 'style="font:700 10px var(--font-data);padding:3px 6px;min-width:0;width:auto"';
+  var cards = SC_CHARTS.map(function(cfg, i){
+    var M = SC_METRICS[cfg.m];
+    var mOpts = Object.keys(SC_METRICS).map(function(k){
+      return '<option value="'+k+'"'+(k===cfg.m?' selected':'')+'>'+SC_METRICS[k].name+'</option>';
+    }).join('');
+    var tList = SC_TYPES[M.kind];
+    var tSel = tList.length > 1
+      ? '<select '+selStyle+' data-i="'+i+'" onchange="scSet(this.dataset.i,\'t\',this.value)">'+
+          tList.map(function(t){ return '<option value="'+t[0]+'"'+(t[0]===cfg.t?' selected':'')+'>'+t[1]+'</option>'; }).join('')+'</select>'
+      : '';
+    var dSel = M.noDays ? '' :
+      '<select '+selStyle+' data-i="'+i+'" onchange="scSet(this.dataset.i,\'days\',this.value)">'+
+        [[7,'7 дн.'],[14,'14 дн.'],[30,'30 дн.'],[90,'90 дн.'],[0,'Увесь час']].map(function(d){
+          if (M.kind === 'series' && !d[0]) return ''; // ряд по днях без межі не має сенсу
+          return '<option value="'+d[0]+'"'+(d[0]===(cfg.days||0)?' selected':'')+'>'+d[1]+'</option>';
+        }).join('')+'</select>';
+    return '<div class="matrix-panel">'+
+      '<div class="matrix-panel-head" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+        '<select '+selStyle+' data-i="'+i+'" onchange="scSet(this.dataset.i,\'m\',this.value)">'+mOpts+'</select>'+
+        tSel + dSel +
+        '<button class="inv-act inv-act--del" title="Прибрати графік" style="margin-left:auto" data-i="'+i+'" onclick="scDel(this.dataset.i)">'+svgIcon('x')+'</button>'+
+      '</div>'+
+      '<div style="padding:12px">'+scChartBody(cfg, flts)+'</div>'+
+    '</div>';
+  }).join('');
+  return '<div class="filter-row" style="margin-top:12px;justify-content:space-between">'+
+      '<div class="hint" style="align-self:center">Конструктор: обери дані, вигляд і період · набір зберігається на цьому пристрої</div>'+
+      '<button class="icon-btn" title="Додати графік" style="background:var(--accent);color:var(--on-accent)" onclick="scAdd()">'+svgIcon('plus')+'</button>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:12px">'+
+    (cards || '<div class="empty">Графіків немає — додай перший кнопкою «+»</div>')+
   '</div>';
 }
 
