@@ -3752,14 +3752,15 @@ function renderSector(c) {
   var head = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
     '<div><div class="view-title">Управління <span class="accent">сектором</span></div>'+
     '<div class="view-sub">Сектор · '+(sectorTab==='stats' ? 'Статистика' : sectorTab==='dist' ? 'Розподіл особового складу' : 'Карта сектору')+' · '+(sectorEdit && sectorTab==='map' ? 'Редагування' : 'Перегляд')+'</div></div>'+
-    // flex-wrap: коли місця бракує (мобільний) — вибір сектора й кнопки
-    // переносяться на наступний рядок, а не обрізаються
-    '<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">'+typeToggle+
+    // flex-wrap: коли місця бракує (мобільний) — переноситься другим рядком.
+    // Вибір сектора стоїть ПЕРШИМ (над перемикачем типу), а flex-end
+    // вирівнює обидва рядки по правому краю — перенос виглядає навмисним
+    '<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px">'+
       '<span style="display:flex;align-items:center;gap:8px"><label class="hint">Сектор:</label>'+
       (SECTORS.length
         ? '<select style="min-width:140px" onchange="sectorSel=this.value;sectorDraw=null;sectorMoveTarget=null;renderView()">'+secOpts+'</select>'
         : '<span class="hint">немає</span>')+
-      addSecBtn+'</span></div>'+
+      addSecBtn+'</span>'+typeToggle+'</div>'+
   '</div>'+
     '<div class="stat-row compact">'+
       '<div class="stat-tile blue"><div class="stat-num">'+fToday+'</div><div class="stat-lbl">Вильоти сьогодні · '+fMonth+' за 30 дн.</div></div>'+
@@ -3820,7 +3821,9 @@ function renderSector(c) {
   c.innerHTML = head +
     '<div class="freq-layout" id="sectorLayout" style="margin-top:12px">'+
       '<div class="matrix-panel">'+
-        '<div class="matrix-panel-head"><span class="cap">Карта сектору · '+esc(sec.name)+'</span>'+
+        // Без назви сектора в шапці: вона й так у виборі вище, а на телефоні
+        // цей текст спихав кнопки редагування на другий рядок
+        '<div class="matrix-panel-head"><span class="cap">Карта сектору</span>'+
           '<div style="display:flex;gap:6px;align-items:center;margin-left:auto">'+editBtns+modeToggle+'</div></div>'+
         '<div id="sectorMap" style="flex:1;min-height:0;background:var(--panel-2);position:relative"></div>'+
       '</div>'+
