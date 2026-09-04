@@ -822,11 +822,46 @@ var DEMO_DATA = {
   ],
   getCompatOptions: ['FPV', 'STNG', 'WING', 'RMT', 'TX', 'GNST', 'TRK', 'ANT', 'VRX', 'GGL', 'PC', 'Універсальне'],
   // Пакетний старт — збирається з тих самих демо-полів
+  // Сектори в демо: живуть у wh_sectors (localStorage); коли там порожньо —
+  // демо-заготовка ПОЛІГОН-1, щоб сторінка сектора не стартувала пусткою
+  getSectors: function(){
+    try { var s = JSON.parse(localStorage.getItem('wh_sectors') || 'null'); if (Array.isArray(s)) return s; } catch(e) {}
+    return [{
+      id: 'PLG-1', name: 'ПОЛІГОН-1', status: 'Активний',
+      bounds: [[48.560,34.960],[48.565,35.060],[48.520,35.090],[48.495,35.040],[48.505,34.975]],
+      positions: [{ name: 'Позиція', coords: [48.527, 35.005] }],
+      landmarks: [
+        { name: 'Орієнтир-1 · Водонапірна вежа', coords: [48.545, 35.045], video: '' },
+        { name: 'Орієнтир-2 · Роздоріжжя',       coords: [48.512, 35.060], video: '' }
+      ]
+    }];
+  },
+  saveSector: function(sec){
+    var list = DEMO_DATA.getSectors();
+    var i = -1;
+    list.forEach(function(s, k){ if (s.id === sec.id) i = k; });
+    if (!sec.id) { sec.id = 'SEC-' + (list.length + 1); }
+    if (i === -1) list.push(sec); else list[i] = sec;
+    try { localStorage.setItem('wh_sectors', JSON.stringify(list)); } catch(e) {}
+    return { id: sec.id };
+  },
+  deleteSector: function(id){
+    var list = DEMO_DATA.getSectors().filter(function(s){ return s.id !== id; });
+    try { localStorage.setItem('wh_sectors', JSON.stringify(list)); } catch(e) {}
+    DEMO_DATA.getPersonnelList.forEach(function(p){ if (p.sector === id) p.sector = ''; });
+    return { id: id };
+  },
+  setPersonSector: function(opId, secId){
+    var p = DEMO_DATA.getPersonnelList.find(function(x){ return x.id === opId; });
+    if (!p) throw new Error('Особу не знайдено: ' + opId);
+    p.sector = secId || '';
+    return { id: opId, sector: p.sector };
+  },
   getAllData: function(needCaps){
     var D = DEMO_DATA;
     var out = { me:D.getCurrentUserEmail, admin:D.getAdminEmail, items:D.getInventoryList,
       trackers:D.getSinotrackList, flights:D.getFlightList, sims:D.getSimList,
-      freq:D.getFrequencyAnalysis, personnel:D.getPersonnelList };
+      freq:D.getFrequencyAnalysis, personnel:D.getPersonnelList, sectors:D.getSectors() };
     if (needCaps) out.caps = D.getInventoryCaps;
     return JSON.parse(JSON.stringify(out));
   },
@@ -1332,6 +1367,9 @@ function loadAll(showToast, silent) {
     S.freq = d.freq || null;
     S.personnel = Array.isArray(d.personnel) ? d.personnel : [];
     if (needCaps) S.invCaps = (d.caps && d.caps.mode) ? d.caps : null;
+    // Адопт секторів — ПІСЛЯ invCaps: разова міграція локальних секторів у
+    // таблицю дивиться на права (canEditCrews), а вони їдуть у тій самій відповіді
+    if (Array.isArray(d.sectors)) sectorsAdopt(d.sectors);
     _loading = 0;
     _loadFinish(showToast, silent);
   }, function(){
@@ -1369,6 +1407,7 @@ function saveSnapshot() {
       ts: Date.now(), me: S.me, admin: S.admin, items: S.items,
       trackers: S.trackers, sims: S.sims, flights: S.flights,
       freq: S.freq, personnel: S.personnel, invCaps: S.invCaps,
+      sectors: SECTORS,
     }));
   } catch(e) {}   // квота/приватний режим — просто без снапшота
 }
@@ -1384,6 +1423,7 @@ function loadSnapshot() {
     S.sims = d.sims || []; S.flights = d.flights || [];
     S.freq = d.freq || null;
     S.personnel = Array.isArray(d.personnel) ? d.personnel : [];
+    if (Array.isArray(d.sectors) && d.sectors.length) { SECTORS = d.sectors; sectorSelFix(); }
     S.invCaps = d.invCaps;
     S.loadedAt = new Date(d.ts);
     $('userEmail').textContent = S.me;
@@ -2947,6 +2987,8 @@ function toggleSpec() { specOpen = !specOpen; renderView(); }
 var freqResOpen = {};
 function toggleCrewRes(id) { freqResOpen[id] = !freqResOpen[id]; renderView(); }
 
+// Зріз карти частот за сектором ('all' — увесь ефір)
+var freqSectorSel = 'all';
 function renderFreq(c) {
   var d = S.freq;
   if (!d) { c.innerHTML = '<div class="empty">Дані частот недоступні</div>'; return; }
@@ -2955,6 +2997,19 @@ function renderFreq(c) {
   var bandOrder = allBandOrder(d).filter(function(b){ return bands[b]; });
   var warningFreqs = d.warningFreqs || {};
   var reserves = d.reserves || [];
+
+  // «Різна таблиця частот» для секторів: фільтр за сектором екіпажу.
+  // Зовнішні джерела й екіпажі без сектора видно в будь-якому зрізі —
+  // ефір спільний, а старі екіпажі ще не розподілені.
+  if (freqSectorSel !== 'all' && SECTORS.length > 1) {
+    var inSec = function(a){
+      if (!a.crew) return true;
+      var cr = crewById(a.crew);
+      return !cr || !cr.sector || cr.sector === freqSectorSel;
+    };
+    active = active.filter(inSec);
+    reserves = reserves.filter(inSec);
+  }
 
   var codeSource = {};
   active.forEach(function(a){
@@ -3033,9 +3088,16 @@ function renderFreq(c) {
     var lbl = g==='all' ? 'ВСІ' : g + ' GHz';
     return '<button class="filter-chip'+(bandGroup===g?' active':'')+'" onclick="bandGroup=\''+g+'\';renderView()">'+lbl+'</button>';
   }).join('');
+  // Зріз за сектором — з'являється, коли секторів більше одного
+  var secFilters = SECTORS.length > 1
+    ? '<button class="filter-chip'+(freqSectorSel==='all'?' active':'')+'" onclick="freqSectorSel=\'all\';renderView()">⬡ ВСІ</button>'+
+      SECTORS.map(function(s){
+        return '<button class="filter-chip'+(freqSectorSel===s.id?' active':'')+'" onclick="freqSectorSel=\''+esc(s.id)+'\';renderView()">'+esc(s.name)+'</button>';
+      }).join('')
+    : '';
 
   var m = '<div class="matrix-panel">'+
-    '<div class="matrix-panel-head"><span class="cap">Сітка каналів · '+groupLbl+'</span><div style="display:flex;gap:6px">'+filters+'</div></div>'+
+    '<div class="matrix-panel-head" style="flex-wrap:wrap;gap:6px"><span class="cap">Сітка каналів · '+groupLbl+'</span><div style="display:flex;gap:6px;flex-wrap:wrap">'+secFilters+filters+'</div></div>'+
     '<div class="matrix-wrap"><table class="matrix"><tr><th class="band-col">Band / CH</th>';
   for (var ch = 1; ch <= maxCh; ch++) m += '<th>'+ch+'</th>';
   m += '</tr>';
@@ -3507,7 +3569,46 @@ function sectorDiamondPlus(color) {
     '<path d="M12 2.6 21.4 12 12 21.4 2.6 12z" fill="none" stroke="'+color+'" stroke-width="2"/>'+
     '<path d="M12 8.2v7.6M8.2 12h7.6" stroke="'+color+'" stroke-width="2"/></svg>';
 }
-function saveSectors() { try { localStorage.setItem('wh_sectors', JSON.stringify(SECTORS)); } catch(e) {} }
+function saveSectorsLocal() { try { localStorage.setItem('wh_sectors', JSON.stringify(SECTORS)); } catch(e) {} }
+// Збереження правок сектора: локальний кеш + пуш ПОТОЧНОГО сектора в таблицю
+// (усі редактори — межі, позиції, орієнтири, медіа — працюють із поточним).
+// Помилка пуша не блокує роботу: локально все збережено, скажемо тостом.
+function saveSectors() {
+  saveSectorsLocal();
+  var sec = SECTORS.find(function(s){ return s.id === sectorSel; });
+  if (sec) rpc('saveSector', [sec], function(){}, function(e){
+    toast('⚠ Не збережено в таблицю: ' + ((e && e.message) || e), true);
+  });
+}
+// Список секторів прийшов із бекенду. Разова міграція: якщо в таблиці ще
+// порожньо, а локально сектори намальовані — заливаємо локальні в таблицю
+// (право «Екіпажі» там перевіряється); до наступного loadAll показуємо локальні.
+var _sectorsPushed = false;
+function sectorsAdopt(list) {
+  if (!list.length && SECTORS.length && canEditCrews() && !_sectorsPushed) {
+    _sectorsPushed = true;
+    SECTORS.forEach(function(s){ rpc('saveSector', [s], function(){}, function(){}); });
+    return;
+  }
+  SECTORS = list;
+  saveSectorsLocal();
+  sectorSelFix();
+}
+function sectorSelFix() {
+  if (SECTORS.length && !SECTORS.some(function(s){ return s.id === sectorSel; })) sectorSel = SECTORS[0].id;
+}
+function sectorName(id) {
+  var s = SECTORS.find(function(x){ return x.id === id; });
+  return s ? s.name : (id || '');
+}
+// Чи «видно» екіпаж у секторі: без сектора — видно скрізь (міграція старих)
+function crewInSector(cr, secId) {
+  return !cr.sector || !secId || cr.sector === secId;
+}
+// Чи доступна людина для сектора: без розподілу — доступна скрізь
+function personInSector(p, secId) {
+  return !p.sector || !secId || p.sector === secId;
+}
 // Редагування секторів — адмін або право «Екіпажі»
 function sectorCanEdit() { return canEditCrews(); }
 
@@ -3570,7 +3671,16 @@ function sectorAvgFlight() {
 function renderSector(c) {
   var sec = sectorById(sectorSel);
   var today = new Date().toISOString().slice(0,10);
-  var flts = S.flights.filter(function(f){ return f.id.indexOf('CRW-') !== 0; });
+  // Все на сторінці — у розрізі ПОТОЧНОГО сектора: екіпажі з іншим сектором
+  // не показуються, вильоти фільтруються за сектором свого екіпажу.
+  // Екіпаж/людина без сектора (старі дані, нерозподілені) — видно скрізь.
+  var crewSectorById = {};
+  S.flights.forEach(function(f){ if (f.id.indexOf('CRW-') === 0) crewSectorById[f.id] = f.sector || ''; });
+  var flts = S.flights.filter(function(f){
+    if (f.id.indexOf('CRW-') === 0) return false;
+    var cs = crewSectorById[f.crew];
+    return !cs || !sectorSel || cs === sectorSel;
+  });
   var fToday = flts.filter(function(f){ return sectorYmd(f.date) === today; }).length;
   var fMonth = flts.filter(function(f){
     var d = new Date(sectorYmd(f.date));
@@ -3581,8 +3691,11 @@ function renderSector(c) {
   var succPct = (doneN + lostFl) ? Math.round(doneN / (doneN + lostFl) * 100) + '%' : '—';
   var lost = S.items.filter(function(it){ return String(it.status||'').trim() === 'Втрачений'; });
   var confN = countConflicts();
-  var crews = activeCrews();
-  var staffInCrews = S.personnel.filter(function(p){ return p.crewId; }).length;
+  var crews = activeCrews().filter(function(cr){ return crewInSector(cr, sectorSel); });
+  var staff = S.personnel.filter(function(p){ return personInSector(p, sectorSel); });
+  var staffInCrews = staff.filter(function(p){
+    return p.crewId && crews.some(function(c){ return c.id === p.crewId; });
+  }).length;
 
   // Перемикач типу сектора: військовий поки заблоковано
   var typeToggle = '<div class="inv-mode">'+
@@ -3639,15 +3752,16 @@ function renderSector(c) {
     '<div class="side-head" onclick="sectorPanelToggle(\'ev\')"><span class="cap">⚠ Події</span><span class="arr">'+(sectorPanels.ev?'▲':'▼')+'</span></div>'+
     '<div class="side-body'+(sectorPanels.ev?'':' hid')+'">'+events+'</div></div>';
 
-  // Вкладки як в інвентарі: Карта | Статистика
+  // Вкладки як в інвентарі: Карта | Статистика | Розподіл
   var tabs = '<div class="inv-tabs">'+
     '<button class="inv-tab'+(sectorTab==='map'?' active':'')+'" onclick="sectorTab=\'map\';renderView()">Карта сектору</button>'+
     '<button class="inv-tab'+(sectorTab==='stats'?' active':'')+'" onclick="sectorTab=\'stats\';renderView()">Статистика</button>'+
+    '<button class="inv-tab'+(sectorTab==='dist'?' active':'')+'" onclick="sectorTab=\'dist\';renderView()">Розподіл</button>'+
   '</div>';
 
   var head = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
     '<div><div class="view-title">Управління <span class="accent">сектором</span></div>'+
-    '<div class="view-sub">Сектор · '+(sectorTab==='stats' ? 'Статистика' : 'Карта сектору')+' · '+(sectorEdit && sectorTab!=='stats' ? 'Редагування' : 'Перегляд')+'</div></div>'+
+    '<div class="view-sub">Сектор · '+(sectorTab==='stats' ? 'Статистика' : sectorTab==='dist' ? 'Розподіл особового складу' : 'Карта сектору')+' · '+(sectorEdit && sectorTab==='map' ? 'Редагування' : 'Перегляд')+'</div></div>'+
     // flex-wrap: коли місця бракує (мобільний) — вибір сектора й кнопки
     // переносяться на наступний рядок, а не обрізаються
     '<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">'+typeToggle+
@@ -3663,7 +3777,7 @@ function renderSector(c) {
       '<div class="stat-tile green"><div class="stat-num">'+activeFlights().length+'</div><div class="stat-lbl">Зараз в ефірі</div></div>'+
       '<div class="stat-tile red"><div class="stat-num">'+lost.length+'</div><div class="stat-lbl">Втрати бортів</div></div>'+
       '<div class="stat-tile"><div class="stat-num">'+crews.length+'</div><div class="stat-lbl">Активні екіпажі</div></div>'+
-      '<div class="stat-tile blue"><div class="stat-num">'+S.personnel.length+'</div><div class="stat-lbl">Особовий склад'+
+      '<div class="stat-tile blue"><div class="stat-num">'+staff.length+'</div><div class="stat-lbl">Особовий склад'+
         (staffInCrews ? '<br>'+staffInCrews+' в екіпажах' : '')+'</div></div>'+
       '<div class="stat-tile"><div class="stat-num">'+sectorAvgFlight()+'</div><div class="stat-lbl">Сер. тривалість</div></div>'+
       '<div class="stat-tile'+(confN?' click active':'')+'" '+(confN?'onclick="setView(\'freq\')" title="Перейти до карти частот" style="border-left-color:var(--yellow)"':'')+'>'+
@@ -3672,6 +3786,10 @@ function renderSector(c) {
 
   if (sectorTab === 'stats') {
     c.innerHTML = head + renderSectorStats(flts);
+    return;
+  }
+  if (sectorTab === 'dist') {
+    c.innerHTML = head + renderSectorDist();
     return;
   }
   // Секторів немає (усі видалено) — порожній стан із запрошенням створити
@@ -3927,11 +4045,15 @@ function sectorMediaSave(kind, i) {
 function sectorDeleteCur() {
   var sec = sectorById(sectorSel);
   if (!sec) return;
-  if (!confirm('🗑 Видалити сектор «'+sec.name+'» з усіма позиціями й орієнтирами?')) return;
+  if (!confirm('🗑 Видалити сектор «'+sec.name+'» з усіма позиціями й орієнтирами?\nРозподіл людей у цей сектор буде знято.')) return;
   SECTORS = SECTORS.filter(function(s){ return s.id !== sec.id; });
   sectorSel = SECTORS.length ? SECTORS[0].id : '';
   sectorDraw = null; sectorMoveTarget = null;
-  saveSectors(); renderView();
+  saveSectorsLocal(); renderView();
+  // Бекенд сам чистить посилання на сектор у Персоналі та екіпажах
+  rpc('deleteSector', [sec.id], function(){ loadAll(); }, function(e){
+    toast('⚠ Не видалено з таблиці: ' + ((e && e.message) || e), true);
+  });
   toast('🗑 Сектор «'+sec.name+'» видалено');
 }
 function sectorAddModal() {
@@ -4370,6 +4492,62 @@ function renderSectorStats(flts) {
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:12px">'+
     (cards || '<div class="empty">Графіків немає — додай перший кнопкою «+»</div>')+
   '</div>';
+}
+
+/* ── Вкладка «Розподіл»: особовий склад по секторах ──────────────
+   Переміщає ТІЛЬКИ адмін (бекенд перевіряє теж). Людина, розподілена в
+   сектор, у «чужих» секторах — «Відряджена»: не може бути в їхніх екіпажах
+   і злітати. Без сектора — доступна скрізь (старі дані нічого не ламають). */
+function renderSectorDist() {
+  var isAdm = isAdminUser();
+  var groups = SECTORS.map(function(s){ return { id: s.id, name: s.name }; });
+  groups.push({ id: '', name: 'Не розподілені' });
+  var secOpts = function(cur){
+    return '<option value="">— без сектора —</option>' + SECTORS.map(function(s){
+      return '<option value="'+esc(s.id)+'"'+(s.id===cur?' selected':'')+'>'+esc(s.name)+'</option>';
+    }).join('');
+  };
+  var html = groups.map(function(g){
+    var people = S.personnel.filter(function(p){ return (p.sector || '') === g.id; });
+    var rows = people.map(function(p){
+      var crewCell = p.crewId ? esc(p.crewName || p.crewId) : '<span class="hint">—</span>';
+      var secCell = isAdm
+        ? '<select style="width:auto;min-width:130px" data-op="'+esc(p.id)+'" onchange="sectorAssign(this.dataset.op, this.value)">'+secOpts(g.id)+'</select>'
+        : (g.id ? esc(g.name) : '<span class="hint">—</span>');
+      return '<tr><td>'+esc(p.callsign)+(p.name?' <span class="hint">('+esc(p.name)+')</span>':'')+'</td>'+
+        '<td>'+esc(p.role || '—')+'</td><td>'+crewCell+'</td><td>'+secCell+'</td></tr>';
+    }).join('');
+    return '<div class="matrix-panel" style="margin-top:12px">'+
+      '<div class="matrix-panel-head"><span class="cap">'+(g.id?'⬡ ':'')+esc(g.name)+'</span>'+
+        '<span class="count-pill">'+people.length+'</span></div>'+
+      (rows
+        ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th>Позивний</th><th>Роль</th><th>Екіпаж</th><th>Сектор</th></tr>'+rows+'</table></div>'
+        : '<div class="empty">Нікого немає</div>')+
+    '</div>';
+  }).join('');
+  return '<div class="hint" style="margin-top:12px">'+
+    (isAdm
+      ? 'Розподіл змінює тільки адміністратор. Людина, розподілена в сектор, у решті секторів — «Відряджена»: не може входити в їхні екіпажі та злітати. Без сектора — доступна скрізь.'
+      : 'Розподіл особового складу по секторах змінює адміністратор.')+
+    '</div>' + html;
+}
+function sectorAssign(opId, secId) {
+  var p = personById(opId);
+  if (!p) return;
+  // Людина в екіпажі іншого сектора — спершу прибрати з екіпажу, інакше
+  // з'явиться екіпаж із «відрядженим» членом, якого бекенд далі не пропустить
+  if (secId && p.crewId) {
+    var cr = crewById(p.crewId);
+    if (cr && cr.sector && cr.sector !== secId) {
+      toast('⚠ '+p.callsign+' в екіпажі '+(cr.crewName || cr.id)+' сектору «'+sectorName(cr.sector)+'» — спершу прибери з екіпажу', true);
+      renderView(); return;
+    }
+  }
+  rpc('setPersonSector', [opId, secId], function(){
+    p.sector = secId;
+    toast('✓ '+p.callsign+' → '+(secId ? sectorName(secId) : 'без сектора'));
+    renderView();
+  }, function(e){ toast('❌ '+((e && e.message) || e), true); renderView(); });
 }
 
 /* ═══════════ ВИД: GPS ТРЕКЕРИ ═══════════ */
@@ -6876,12 +7054,16 @@ function crewAddMemberModal() {
   if (!list.length) { toast('⚠ Немає вільних осіб — додай персонал у налаштуваннях', true); return; }
   var opts = list.map(function(p){
     var locked = p.crewId && p.crewId !== cr.id;
-    return '<option value="'+esc(p.id)+'"'+((locked && !canEditCrews())?' disabled':'')+'>'+
-      esc(p.callsign)+(p.name?' ('+esc(p.name)+')':'')+(locked?' 🔒 '+esc(p.crewName||p.crewId):'')+'</option>';
+    // Людина з іншого сектора — «відряджена», в цей екіпаж не можна взагалі
+    var away = !!(cr.sector && p.sector && p.sector !== cr.sector);
+    return '<option value="'+esc(p.id)+'"'+((away || (locked && !canEditCrews()))?' disabled':'')+'>'+
+      esc(p.callsign)+(p.name?' ('+esc(p.name)+')':'')+(locked?' 🔒 '+esc(p.crewName||p.crewId):'')+
+      (away?' ⛔ Відряджений · '+esc(sectorName(p.sector)):'')+'</option>';
   }).join('');
   openModal('➕ Член екіпажу → '+esc(cr.crewName || cr.id),
     '<div class="f"><label>Особа</label><select id="cmSel">'+opts+'</select>'+
-    '<div class="hint">🔒 — особа в іншому екіпажі'+(canEditCrews()?' (можна перевести)':' (переводить адмін)')+'</div></div>'+
+    '<div class="hint">🔒 — особа в іншому екіпажі'+(canEditCrews()?' (можна перевести)':' (переводить адмін)')+
+    (cr.sector ? ' · ⛔ — розподілена в інший сектор (переміщення — вкладка «Розподіл» у Секторі, адмін)' : '')+'</div></div>'+
     '<button class="btn btn-green" id="cmBtn" onclick="crewPickMember()">➕ Додати</button>'
   );
 }
@@ -6893,6 +7075,12 @@ function crewPickMember() {
   if (!cr || !p) return;
   var btn = $('cmBtn');
   if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳…'; }
+  // Захист від обходу disabled-опції: інший сектор — зась (бекенд перевірить теж)
+  if (cr.sector && p.sector && p.sector !== cr.sector) {
+    toast('⛔ '+p.callsign+' розподілений у «'+sectorName(p.sector)+'» — переміщення через вкладку «Розподіл» (адмін)', true);
+    if (btn) { btn.disabled = false; btn.textContent = '➕ Додати'; }
+    return;
+  }
   function addHere() {
     var patch = cr.main ? { members: crewMembersArr(cr).concat([opId]).join('|') } : { main: opId };
     crewSaveMembers(cr, patch, '✅ '+p.callsign+' додано до '+(cr.crewName || cr.id));
@@ -6959,17 +7147,26 @@ function renderCrewForm() {
     return '<option value="'+s+'"'+(cr && cr.system===s?' selected':'')+'>'+s+'</option>';
   }).join('');
 
-  // Головний відповідальний: вільні особи + поточний головний
+  // Головний відповідальний: вільні особи + поточний головний.
+  // Людина з іншого сектора — «відряджена», головним тут бути не може
   var mainOpts = '<option value="">— без головного —</option>' + S.personnel
     .filter(function(p){ return !p.crewId || (cr && p.crewId === cr.id); })
     .map(function(p){
       var sel = cr && cr.main === p.id ? ' selected' : '';
-      return '<option value="'+esc(p.id)+'"'+sel+'>'+esc(p.callsign)+(p.name?' ('+esc(p.name)+')':'')+'</option>';
+      var away = !!(cr && cr.sector && p.sector && p.sector !== cr.sector);
+      return '<option value="'+esc(p.id)+'"'+sel+(away?' disabled':'')+'>'+esc(p.callsign)+(p.name?' ('+esc(p.name)+')':'')+
+        (away?' ⛔ Відряджений · '+esc(sectorName(p.sector)):'')+'</option>';
     }).join('');
 
   panel.innerHTML =
     (editing?'<div class="chip chip-main" style="margin-bottom:10px">РЕДАГУВАННЯ '+esc(crewForm.editId)+'</div>':'')+
     '<div class="f"><label>Назва екіпажу</label><input type="text" id="cfName" placeholder="напр. АЛЬФА" value="'+esc(cr?(cr.crewName||''):'')+'"></div>'+
+    '<div class="f"><label>⬡ Сектор</label><select id="cfSector">'+
+      '<option value="">— без сектора (видно всюди) —</option>'+
+      SECTORS.map(function(s){
+        return '<option value="'+esc(s.id)+'"'+(cr && cr.sector===s.id?' selected':'')+'>'+esc(s.name)+'</option>';
+      }).join('')+'</select>'+
+      '<div class="hint">Екіпаж належить сектору: показується на його карті, а люди з інших секторів не можуть у нього входити.</div></div>'+
     '<div class="f"><label>Головний відповідальний</label><select id="cfMain">'+mainOpts+'</select></div>'+
     '<div class="f"><label>Наземна станція</label><select id="cfGnst">'+gnstOpts+'</select></div>'+
     '<div class="f"><label>Bind фраза</label><input type="text" id="cfBind" placeholder="спільна для всіх бортів…" value="'+esc(cr?cr.bind:'')+'"></div>'+
@@ -7214,6 +7411,7 @@ function doSaveCrew() {
     drones: crewForm.drones.join('|'), tracker: crewForm.trackers.join('|'),
     system: $('cfSystem').value, grid: ($('cfGrid') ? $('cfGrid').value : ''), freq: $('cfFreq').value, reserves: crewForm.reserves.join('|'),
     mainDrone: crewForm.mainDrone || '',
+    sector: $('cfSector') ? $('cfSector').value : '',
     crewName: $('cfName') ? $('cfName').value.trim() : undefined,
     main: $('cfMain') ? $('cfMain').value : undefined
   };
@@ -7225,7 +7423,7 @@ function doSaveCrew() {
       var c = crewById(editId);
       if (c) { c.gnst=data.gnst; c.bind=data.bind; c.drones=data.drones; c.tracker=data.tracker;
                c.system=data.system; c.freq=data.freq; c.reserves=data.reserves;
-               c.grid=data.grid; c.mainDrone=data.mainDrone;
+               c.grid=data.grid; c.mainDrone=data.mainDrone; c.sector=data.sector;
                if (data.crewName !== undefined) c.crewName = data.crewName;
                if (data.main !== undefined) c.main = data.main; }
       crewForm = {drones:[],trackers:[],reserves:[],editId:null};
@@ -7243,7 +7441,7 @@ function doSaveCrew() {
           gnst:data.gnst, drones:data.drones, bind:data.bind, pilot:'', tracker:data.tracker,
           trackerOk:'', start:'', end:'', status:'Активний', note:'', creatorEmail:S.me,
           system:data.system, freq:data.freq, reserves:data.reserves, equip:'',
-          main:data.main || '', members:'', crewName:data.crewName || '' });
+          main:data.main || '', members:'', crewName:data.crewName || '', sector:data.sector || '' });
         refreshPersonnelCrewLinks();
       } else {
         toast('👥 Екіпаж створено');

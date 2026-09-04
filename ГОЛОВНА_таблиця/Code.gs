@@ -3691,7 +3691,7 @@ function getFlightList() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) return [];
-  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 25).getValues()
+  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 26).getValues()
     .filter(row => String(row[0]).trim() !== '')
     .map(row => ({
       id:           String(row[0]),
@@ -3717,6 +3717,7 @@ function getFlightList() {
       crewName:     String(row[21] || ''), // col V — Назва екіпажу
       grid:         String(row[23] || ''), // col X — Сітка каналів VTX
       mainDrone:    String(row[24] || ''), // col Y — Основний борт екіпажу
+      sector:       String(row[25] || ''), // col Z — Сектор екіпажу (порожньо = всюди)
     }));
 }
 
@@ -3814,6 +3815,8 @@ function getCrewList() {
 
 // Створити екіпаж (зберігається як рядок з порожнім start/end)
 function createCrew(data) {
+  // Люди з інших секторів не можуть входити в цей екіпаж
+  assertCrewSector_(data.sector, data.main, data.members);
   return withScriptLock(function() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
@@ -3847,10 +3850,10 @@ function createCrew(data) {
   ]);
   const newRow = sheet.getLastRow();
   if (data.note) touchFlightNote(sheet, newRow);
-  // S:Спорядження, T:Головний, U:Члени, V:Назва, W:_TS_CREW, X:Сітка, Y:Основний борт
-  sheet.getRange(newRow, 19, 1, 7).setValues([[
+  // S:Спорядження, T:Головний, U:Члени, V:Назва, W:_TS_CREW, X:Сітка, Y:Основний борт, Z:Сектор
+  sheet.getRange(newRow, 19, 1, 8).setValues([[
     data.equip || '', data.main || '', data.members || '', data.crewName || '', nowTS(),
-    data.grid || '', data.mainDrone || ''
+    data.grid || '', data.mainDrone || '', data.sector || ''
   ]]);
   return crewId;
   });
@@ -3875,6 +3878,13 @@ function updateCrew(crewId, data, token) {
   const idx = ids.indexOf(crewId);
   if (idx === -1) throw new Error('Екіпаж не знайдено: ' + crewId);
   const row = idx + 3;
+  // Перевірка сектора: беремо фактичні значення (нові, а як не передані — з рядка)
+  const effSector  = data.sector  !== undefined ? data.sector  : String(sheet.getRange(row, 26).getValue() || '');
+  if (data.sector !== undefined || data.main !== undefined || data.members !== undefined) {
+    const effMain    = data.main    !== undefined ? data.main    : String(sheet.getRange(row, 20).getValue() || '');
+    const effMembers = data.members !== undefined ? data.members : String(sheet.getRange(row, 21).getValue() || '');
+    assertCrewSector_(effSector, effMain, effMembers);
+  }
   if (data.gnst    !== undefined) sheet.getRange(row, 4).setValue(data.gnst);
   if (data.drones  !== undefined) sheet.getRange(row, 5).setValue(data.drones);
   if (data.bind    !== undefined) sheet.getRange(row, 6).setValue(data.bind);
@@ -3889,6 +3899,7 @@ function updateCrew(crewId, data, token) {
   if (data.crewName!== undefined) sheet.getRange(row, 22).setValue(data.crewName);// col V — Назва
   if (data.grid    !== undefined) sheet.getRange(row, 24).setValue(data.grid);   // col X — Сітка каналів VTX
   if (data.mainDrone !== undefined) sheet.getRange(row, 25).setValue(data.mainDrone); // col Y — Основний борт
+  if (data.sector  !== undefined) sheet.getRange(row, 26).setValue(data.sector); // col Z — Сектор
   sheet.getRange(row, 23).setValue(nowTS()); // col W — _TS_CREW: визначення екіпажу оновлено
   return { id: crewId };
 }
@@ -4190,13 +4201,15 @@ function protectSinotrackSheets() {
 // ============================================================
 // ПЕРСОНАЛ ТА АВТОРИЗАЦІЯ (відповідальні особи)
 // ============================================================
-// Аркуш «Персонал»: ID | Позивний | Ім'я | Роль | Статус | Пароль (сіль$хеш) | _TS | Адмін | Інвентар | Екіпажі | Інформація
+// Аркуш «Персонал»: ID | Позивний | Ім'я | Роль | Статус | Пароль (сіль$хеш) | _TS | Адмін | Інвентар | Екіпажі | Інформація | Сектор
 // Ролі — декоративні мітки; права визначає членство в екіпажі (головний/додатковий).
 // «Адмін» (чекбокс) — права адміністратора у PWA; ставиться адміном у застосунку або в аркуші.
 // «Інвентар» / «Екіпажі» (чекбокси) — гранульовані права: редагування інвентарю
 // (статуси, додавання, закріплення, примітки, витратники) та редагування екіпажів
 // (склад, створення, особовий склад). Роздає тільки адмін; адмін має всі права.
-const PERSONNEL_COLS = 11;
+// «Сектор» — ID сектора, до якого людина розподілена (аркуш «Сектори»).
+// Порожньо = не розподілена, може бути в екіпажах будь-якого сектора.
+const PERSONNEL_COLS = 12;
 const PERSON_ROLES = ['Пілот','Штурман','Технік','Сапер','Оператор','Командир'];
 
 function ensurePersonnelSheet(ss) {
@@ -4209,10 +4222,10 @@ function ensurePersonnelSheet(ss) {
       .setHorizontalAlignment('center').setVerticalAlignment('middle');
     sheet.setRowHeight(1, 38);
     sheet.getRange(2, 1, 1, PERSONNEL_COLS)
-      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін','Інвентар','Екіпажі','Інформація']])
+      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін','Інвентар','Екіпажі','Інформація','Сектор']])
       .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
     sheet.setFrozenRows(2);
-    [90, 140, 180, 110, 110, 10, 10, 70, 90, 90, 100].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+    [90, 140, 180, 110, 110, 10, 10, 70, 90, 90, 100, 110].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
     try { sheet.hideColumns(6, 2); } catch(e) {} // пароль і _TS приховані
   }
   // Міграція: чекбокс-колонки для аркушів, створених раніше
@@ -4226,6 +4239,12 @@ function ensurePersonnelSheet(ss) {
         SpreadsheetApp.newDataValidation().requireCheckbox().build());
     } catch(e) {}
   });
+  // Міграція: текстова колонка «Сектор» (без чекбокса — там ID сектора)
+  if (String(sheet.getRange(2, 12).getValue()).trim() !== 'Сектор') {
+    sheet.getRange(2, 12).setValue('Сектор')
+      .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.setColumnWidth(12, 110);
+  }
   return sheet;
 }
 
@@ -4245,7 +4264,8 @@ function readPersonnel() {
     .map((r, i) => ({ row: 3 + i,
       id: String(r[0]).trim(), callsign: String(r[1]).trim(), name: String(r[2]).trim(),
       role: String(r[3]).trim(), status: String(r[4]).trim(), pass: String(r[5]).trim(),
-      admin: chk_(r[7]), rightInv: chk_(r[8]), rightCrew: chk_(r[9]), rightInfo: chk_(r[10]) }))
+      admin: chk_(r[7]), rightInv: chk_(r[8]), rightCrew: chk_(r[9]), rightInfo: chk_(r[10]),
+      sector: String(r[11] || '').trim() }))
     .filter(p => p.id && p.status !== 'Видалений');
 }
 
@@ -4278,7 +4298,8 @@ function personPublic(p) {
     // права (адмін має все). Фронтенд дивиться на canInv/canCrew.
     rightInv: !!p.rightInv, rightCrew: !!p.rightCrew, rightInfo: !!p.rightInfo,
     canInv: !!(p.admin || p.rightInv), canCrew: !!(p.admin || p.rightCrew),
-    canInfo: !!(p.admin || p.rightInfo) };
+    canInfo: !!(p.admin || p.rightInfo),
+    sector: p.sector || '' };
 }
 
 // Список персоналу для сторінки екіпажів (доступний після входу або адміну)
@@ -5673,6 +5694,154 @@ function infoMove(itemId, targetFolderId) {
 // щоразу читає аркуш «Персонал») і власне звернення до таблиці.
 // Тут усе збирається за один виклик: одна сесія, один round-trip.
 // needCaps — чи потрібні права інвентарю (фронтенд тягне їх раз за сесію).
+// ============================================================
+// СЕКТОРИ (спільні для всіх користувачів)
+// ============================================================
+// Аркуш «Сектори»: ID | Назва | Тип | Статус | Дані | _TS
+// «Дані» — JSON з геометрією: {bounds, positions, landmarks}.
+// Редагування секторів — право «Екіпажі» або адмін (як на фронтенді).
+// Розподіл особового складу по секторах (Персонал, колонка «Сектор») —
+// ТІЛЬКИ адмін: setPersonSector нижче.
+
+function ensureSectorsSheet(ss) {
+  const s = ss || SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = getSheet(s, 'Сектори');
+  if (!sheet) {
+    sheet = s.insertSheet('Сектори');
+    sheet.getRange('A1:E1').merge().setValue('⬡ СЕКТОРИ')
+      .setBackground('#1a3a5c').setFontColor('#fff').setFontSize(13).setFontWeight('bold')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sheet.setRowHeight(1, 38);
+    sheet.getRange(2, 1, 1, 6)
+      .setValues([['ID','Назва','Тип','Статус','Дані','_TS']])
+      .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.setFrozenRows(2);
+    [90, 180, 110, 110, 400, 10].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+    try { sheet.hideColumns(6, 1); } catch(e) {}
+  }
+  return sheet;
+}
+
+function sectorsGuard_() {
+  const email = apiUserEmail_() || '';
+  if (isAdmin(email) || apiRight_('crew')) return;
+  throw new Error('Потрібне право «Екіпажі» або права адміністратора');
+}
+
+function getSectors() {
+  const sheet = ensureSectorsSheet();
+  if (sheet.getLastRow() < 3) return [];
+  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 5).getValues()
+    .filter(r => String(r[0]).trim() !== '')
+    .map(r => {
+      let geo = {};
+      try { geo = JSON.parse(String(r[4] || '{}')) || {}; } catch(e) {}
+      return {
+        id: String(r[0]).trim(), name: String(r[1]).trim(),
+        type: String(r[2] || '').trim(), status: String(r[3] || '').trim() || 'Активний',
+        bounds: Array.isArray(geo.bounds) ? geo.bounds : [],
+        positions: Array.isArray(geo.positions) ? geo.positions : [],
+        landmarks: Array.isArray(geo.landmarks) ? geo.landmarks : [],
+      };
+    });
+}
+
+// Створити або оновити сектор (upsert за ID). sec: {id?, name, type?, status?,
+// bounds, positions, landmarks}. Без id — генерується SEC-N.
+function saveSector(sec) {
+  sectorsGuard_();
+  if (!sec || !String(sec.name || '').trim()) throw new Error('Назва сектору порожня');
+  return withScriptLock(function() {
+    const sheet = ensureSectorsSheet();
+    const geo = JSON.stringify({
+      bounds: sec.bounds || [], positions: sec.positions || [], landmarks: sec.landmarks || []
+    });
+    let id = String(sec.id || '').trim();
+    const lastRow = sheet.getLastRow();
+    const ids = lastRow >= 3
+      ? sheet.getRange(3, 1, lastRow - 2, 1).getValues().flat().map(String)
+      : [];
+    if (!id) {
+      let maxN = 0;
+      ids.forEach(x => { const m = x.match(/-(\d+)$/); if (m) maxN = Math.max(maxN, +m[1]); });
+      id = 'SEC-' + (maxN + 1);
+    }
+    const idx = ids.indexOf(id);
+    const rowVals = [id, String(sec.name).trim(), String(sec.type || '').trim(),
+      String(sec.status || 'Активний').trim(), geo, nowTS()];
+    if (idx === -1) sheet.appendRow(rowVals);
+    else sheet.getRange(idx + 3, 1, 1, 6).setValues([rowVals]);
+    return { id: id };
+  });
+}
+
+// Видалити сектор + прибрати посилання на нього з Персоналу та екіпажів,
+// щоб не лишалося «мертвих» призначень
+function deleteSector(id) {
+  sectorsGuard_();
+  id = String(id || '').trim();
+  if (!id) throw new Error('Не вказано ID сектора');
+  return withScriptLock(function() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ensureSectorsSheet(ss);
+    if (sheet.getLastRow() >= 3) {
+      const ids = sheet.getRange(3, 1, sheet.getLastRow() - 2, 1).getValues().flat().map(String);
+      const idx = ids.indexOf(id);
+      if (idx !== -1) sheet.deleteRow(idx + 3);
+    }
+    const pers = getSheet(ss, 'Персонал');
+    if (pers && pers.getLastRow() >= 3) {
+      const vals = pers.getRange(3, 12, pers.getLastRow() - 2, 1).getValues();
+      vals.forEach((v, i) => {
+        if (String(v[0]).trim() === id) pers.getRange(i + 3, 12).setValue('');
+      });
+    }
+    const fl = getSheet(ss, 'Журнал польоту');
+    if (fl && fl.getLastRow() >= 3) {
+      const vals = fl.getRange(3, 26, fl.getLastRow() - 2, 1).getValues();
+      vals.forEach((v, i) => {
+        if (String(v[0]).trim() === id) fl.getRange(i + 3, 26).setValue('');
+      });
+    }
+    return { id: id };
+  });
+}
+
+// Розподілити людину в сектор (sectorId = '' — зняти розподіл). ТІЛЬКИ адмін.
+function setPersonSector(personId, sectorId) {
+  if (!isAdmin(apiUserEmail_() || '')) throw new Error('Розподіл особового складу — тільки адміністратор');
+  personId = String(personId || '').trim();
+  sectorId = String(sectorId || '').trim();
+  if (sectorId && !getSectors().some(s => s.id === sectorId)) {
+    throw new Error('Сектор не знайдено: ' + sectorId);
+  }
+  return withScriptLock(function() {
+    const sheet = ensurePersonnelSheet();
+    const p = readPersonnel().find(x => x.id === personId);
+    if (!p) throw new Error('Особу не знайдено: ' + personId);
+    sheet.getRange(p.row, 12).setValue(sectorId);
+    sheet.getRange(p.row, 7).setValue(nowTS());
+    return { id: personId, sector: sectorId };
+  });
+}
+
+// Перевірка складу екіпажу проти його сектора: людина, розподілена в інший
+// сектор, не може бути в цьому екіпажі. Люди без сектора — можуть скрізь.
+function assertCrewSector_(crewSector, mainId, membersStr) {
+  crewSector = String(crewSector || '').trim();
+  if (!crewSector) return; // екіпаж без сектора видно скрізь — обмежень немає
+  const people = readPersonnel();
+  const opIds = [String(mainId || '').trim()]
+    .concat(String(membersStr || '').split('|').map(s => s.trim()))
+    .filter(Boolean);
+  opIds.forEach(op => {
+    const p = people.find(x => x.id === op);
+    if (p && p.sector && p.sector !== crewSector) {
+      throw new Error('«' + p.callsign + '» розподілений в інший сектор — спершу перемісти його (вкладка «Розподіл»)');
+    }
+  });
+}
+
 function getAllData(needCaps) {
   const out = {
     me:        getCurrentUserEmail(),
@@ -5683,6 +5852,7 @@ function getAllData(needCaps) {
     sims:      getSimList(),
     freq:      getFrequencyAnalysis(),
     personnel: getPersonnelList(),
+    sectors:   getSectors(),
   };
   if (needCaps) out.caps = getInventoryCaps();
   return out;

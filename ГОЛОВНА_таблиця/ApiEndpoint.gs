@@ -41,6 +41,8 @@ const API_FUNCTIONS = [
   'webUpdateLossRecord',
   // комплекти (перевіряють право «Інвентар» усередині)
   'assignToKit', 'removeFromKit',
+  // сектори (редагування — право «Екіпажі»; розподіл людей — тільки адмін)
+  'getSectors', 'saveSector', 'deleteSector', 'setPersonSector',
   // інформація (документи підрозділу) — права перевіряють самі функції
   'infoListFolder', 'infoGetFile', 'infoCreateFolder', 'infoUploadFile', 'infoRenameFolder', 'infoUploadSession', 'infoTrashFolder', 'infoFileInfo', 'infoGetFileChunk', 'infoRenameFile', 'infoTrashFile', 'infoMediaTicket', 'infoUploadCheck', 'infoMove',
   // витратники
