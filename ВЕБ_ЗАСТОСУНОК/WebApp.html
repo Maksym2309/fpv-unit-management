@@ -1421,6 +1421,9 @@ function setView(v) {
 var _lastRenderedView = null;
 function renderView() {
   var c = $('content');
+  // Сектор (sectorFitHeight) звужує нижній відступ контейнера, щоб смуга
+  // погоди стояла впритул до краю — для решти розділів повертаємо стандартний
+  if (S.view !== 'sector') c.style.paddingBottom = '';
   // Плашка складу комплекту висить на body — інакше лишилась би висіти
   // над уже перемальованим списком
   if (typeof invKitPopClose === 'function') invKitPopClose();
@@ -3436,16 +3439,29 @@ function sectorFitHeight() {
     // Прокручується main.content, а не вікно: зміщення рахуємо всередині
     // нього, інакше після прокрученої «Статистики» висота їде
     var sc = lay.closest('main.content');
+    // Стандартні 40px знизу тут — змарнований простір: карта має тягнутися
+    // до краю. Звужуємо відступ ДО замірів; renderView повертає його назад
+    // при переході в інший розділ
+    if (sc) sc.style.paddingBottom = '12px';
     var scRect = sc ? sc.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
     var top = lay.getBoundingClientRect().top - scRect.top + (sc ? sc.scrollTop : window.scrollY);
     var h = Math.max(180,(scRect.bottom - scRect.top) - top - 16);
     lay.style.height = h + 'px';
     if (side) side.style.overflowY = 'auto';
     if (map) { map.style.flex = '1 1 0'; map.style.height = ''; }
-    // Під областю ще смуга погоди й кнопок — вона теж має бути видна без
-    // прокрутки за будь-якої висоти вікна: якщо контейнер переповнився,
-    // зменшуємо карту рівно на величину переповнення
+    // Під областю ще смуга погоди й кнопок — вона має стояти впритул до
+    // нижнього краю без прокрутки. Формула вище цього не гарантує (запас
+    // -16 плюс нижні відступи смуги й контейнера), тому міряємо фактичний
+    // зазор під смугою і віддаємо його карті; перевірка переповнення нижче
+    // лишається останнім словом — вона підрізає, якщо перебрали
     if (sc) {
+      var bar = $('sectorBottomBar');
+      if (bar) {
+        var tail = parseFloat(getComputedStyle(bar).marginBottom) || 0;
+        tail += parseFloat(getComputedStyle(sc).paddingBottom) || 0;
+        var slack = scRect.bottom - bar.getBoundingClientRect().bottom - tail;
+        if (slack > 0) { h += slack; lay.style.height = h + 'px'; }
+      }
       var over = sc.scrollHeight - sc.clientHeight;
       if (over > 0) lay.style.height = Math.max(180,h - over) + 'px';
     }
@@ -3454,6 +3470,8 @@ function sectorFitHeight() {
     lay.style.height = '';
     if (side) side.style.overflowY = '';
     if (map) { map.style.flex = '0 0 auto'; map.style.height = '56vh'; }
+    var scM = lay.closest('main.content');
+    if (scM) scM.style.paddingBottom = '';
   }
   if (_sectorMapObj) { try { _sectorMapObj.invalidateSize(); } catch(e) {} }
 }
@@ -3691,7 +3709,7 @@ function renderSector(c) {
       '<div id="sectorSide" style="min-height:0">'+side+'</div>'+
     '</div>'+
     // Нижня смуга як у макеті: погода зліва, дії справа
-    '<div class="filter-row" style="margin-top:10px;justify-content:space-between">'+
+    '<div class="filter-row" id="sectorBottomBar" style="margin-top:10px;margin-bottom:0;justify-content:space-between">'+
       '<div class="type-chips" style="gap:6px">'+
         '<span class="filter-chip" id="wxWind" style="cursor:default">≋ Вітер: …</span>'+
         '<span class="filter-chip" id="wxTemp" style="cursor:default">🌡 …</span>'+
