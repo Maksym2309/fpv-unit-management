@@ -486,6 +486,11 @@ textarea { height: 54px; resize: vertical; }
 /* Рядок вибору сектора: селект + «+»/«−» + перемикач типу ОДНІЄЮ лінією.
    nowrap — селект стискається замість переносити перемикач на другий рядок */
 .sec-pick { display: flex; align-items: center; gap: 8px; max-width: 100%; }
+/* Шапка сектора: заголовок ліворуч, блок вибору сектора праворуч зверху.
+   На десктопі nowrap — блок НІКОЛИ не сповзає під заголовок (у повноекранному
+   вікні має виглядати так само, як у звичайному); на мобільному — стовпчиком */
+.sec-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; }
+@media (min-width: 801px) { .sec-head { flex-wrap: nowrap; } }
 @media (max-width: 800px) {
   /* Компактніший перемикач Навчальний/Військовий, щоб лінія влізла у вузький екран */
   .sec-pick .inv-mode-btn { padding: 6px 7px; font-size: 9px; letter-spacing: .04em; white-space: nowrap; }
@@ -3766,7 +3771,7 @@ function renderSector(c) {
     '<button class="inv-tab'+(sectorTab==='dist'?' active':'')+'" onclick="sectorTab=\'dist\';renderView()">Розподіл</button>'+
   '</div>';
 
-  var head = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
+  var head = '<div class="flex-head sec-head">'+
     '<div><div class="view-title">Управління <span class="accent">сектором</span></div>'+
     '<div class="view-sub">Сектор · '+(sectorTab==='stats' ? 'Статистика' : sectorTab==='dist' ? 'Розподіл особового складу' : 'Карта сектору')+' · '+(sectorEdit && sectorTab==='map' ? 'Редагування' : 'Перегляд')+'</div></div>'+
     // Підпис «Сектор:» окремим рядком зверху, під ним ОДНА лінія:
