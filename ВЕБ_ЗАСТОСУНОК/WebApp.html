@@ -3429,8 +3429,12 @@ function sectorFitHeight() {
   var lay = $('sectorLayout'), side = $('sectorSide'), map = $('sectorMap');
   if (!lay) return;
   if (window.innerWidth > 1100) {
-    var top = lay.getBoundingClientRect().top + window.scrollY;
-    lay.style.height = Math.max(420, window.innerHeight - top - 16) + 'px';
+    // Прокручується main.content, а не вікно: зміщення рахуємо всередині
+    // нього, інакше після прокрученої «Статистики» висота їде
+    var sc = lay.closest('main.content');
+    var scRect = sc ? sc.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    var top = lay.getBoundingClientRect().top - scRect.top + (sc ? sc.scrollTop : window.scrollY);
+    lay.style.height = Math.max(420, (scRect.bottom - scRect.top) - top - 16) + 'px';
     if (side) side.style.overflowY = 'auto';
     if (map) { map.style.flex = '1 1 0'; map.style.height = ''; }
   } else {
