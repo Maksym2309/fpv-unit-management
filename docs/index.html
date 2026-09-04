@@ -3886,8 +3886,8 @@ function renderSectorMap(sec) {
         .addTo(map).bindTooltip('🟢 '+(ps.name||'Позиція'), { direction: 'top', offset: [0, -10] });
       if (sectorEdit) posMk.bindPopup('<div style="font-family:monospace;font-size:12px"><b>🟢 '+esc(ps.name||'Позиція')+'</b>'+
         '<br><a href="#" onclick="sectorMoveArm(\'pos\','+i+');return false">✥ перемістити</a> · '+
-        '<a href="#" onclick="sectorPosRename('+i+');return false">✎ назва</a> · '+
-        '<a href="#" style="color:#e74c3c" onclick="sectorPosDelete('+i+');return false">🗑</a></div>');
+        '<a href="#" onclick="sectorPosRename('+i+');return false">✎ назва</a>'+
+        '<br><a href="#" style="color:#e74c3c" onclick="sectorPosDelete('+i+');return false">🗑 видалити</a></div>');
     });
     // Орієнтири — янтарні ромби; картка з відео-заглушкою, в редагуванні ✎/🗑
     sec.landmarks.forEach(function(lm, i){
@@ -3899,9 +3899,9 @@ function renderSectorMap(sec) {
           '<br><span style="color:#888">'+lm.coords[0].toFixed(5)+', '+lm.coords[1].toFixed(5)+'</span>'+
           '<br>'+sectorLmMediaHtml(lm)+
           (sectorEdit ? '<br><a href="#" onclick="sectorMoveArm(\'lm\','+i+');return false">✥ перемістити</a> · '+
-            '<a href="#" onclick="sectorLmRename('+i+');return false">✎ назва</a> · '+
-            '<a href="#" onclick="sectorLmMedia('+i+');return false">🎬 медіа</a> · '+
-            '<a href="#" style="color:#e74c3c" onclick="sectorLmDelete('+i+');return false">🗑</a>' : '')+
+            '<a href="#" onclick="sectorLmRename('+i+');return false">✎ назва</a>'+
+            '<br><a href="#" onclick="sectorLmMedia('+i+');return false">🎬 медіа</a> · '+
+            '<a href="#" style="color:#e74c3c" onclick="sectorLmDelete('+i+');return false">🗑 видалити</a>' : '')+
         '</div>', { maxWidth: 260 });
     });
     // Втрати з реальної карти втрат — червоні ✕, якщо дані вже завантажені
