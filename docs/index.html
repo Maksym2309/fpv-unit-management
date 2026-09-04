@@ -2930,7 +2930,10 @@ function layoutSpecLabels() {
     m.style.zIndex = String(10 + lvls[i]); // вищі поверхи — зверху над нижчими лініями
   });
 }
-window.addEventListener('resize', function(){ if (S.view === 'freq') layoutSpecLabels(); });
+window.addEventListener('resize', function(){
+  if (S.view === 'freq') layoutSpecLabels();
+  if (S.view === 'sector' && typeof sectorFitHeight === 'function') sectorFitHeight();
+});
 function togglePanel(key) { sidePanels[key] = !sidePanels[key]; renderView(); }
 function toggleSpec() { specOpen = !specOpen; renderView(); }
 // Розкриті резервні частоти в таблиці «Наші екіпажі» (без обмеження кількості)
@@ -3401,7 +3404,7 @@ var _sectorDrawLayer = null;
 var SECTORS = (function(){
   try {
     var s = JSON.parse(localStorage.getItem('wh_sectors') || 'null');
-    if (Array.isArray(s) && s.length) return s;
+    if (Array.isArray(s)) return s;   // порожній масив = користувач видалив усі, демо не підставляємо
   } catch(e) {}
   return [{
     id: 'PLG-1', name: 'ПОЛІГОН-1', status: 'Активний',
@@ -3414,6 +3417,40 @@ var SECTORS = (function(){
   }];
 })();
 function sectorById(id) { return SECTORS.find(function(s){ return s.id === id; }) || SECTORS[0]; }
+// Дати/часи з журналу приходять то рядком «2026-08-20», то Date-рядком
+// «Thu Aug 20 2026 00:00:00 GMT…» (час — узагалі «Sat Dec 30 1899 10:51…»)
+function sectorYmd(v) {
+  var s = String(v || '');
+  var m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  var d = new Date(s);
+  if (isNaN(d)) return '';
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+function sectorHm(v) {
+  var s = String(v || '');
+  var m = s.match(/(\d{1,2}):(\d{2})/);
+  return m ? ('0'+m[1]).slice(-2)+':'+m[2] : s;
+}
+// Висота робочої області: на десктопі карта й бічна колонка закінчуються
+// рівно на нижньому краї дисплея (замість сірої порожнечі під картою),
+// бічна колонка прокручується всередині. На мобільному — природний потік.
+function sectorFitHeight() {
+  var lay = $('sectorLayout'), side = $('sectorSide'), map = $('sectorMap');
+  if (!lay) return;
+  if (window.innerWidth > 1100) {
+    var top = lay.getBoundingClientRect().top + window.scrollY;
+    lay.style.height = Math.max(420, window.innerHeight - top - 16) + 'px';
+    if (side) side.style.overflowY = 'auto';
+    if (map) { map.style.flex = '1 1 0'; map.style.height = ''; }
+  } else {
+    // flex-basis 0 перебив би явну висоту — тому тут basis auto
+    lay.style.height = '';
+    if (side) side.style.overflowY = '';
+    if (map) { map.style.flex = '0 0 auto'; map.style.height = '56vh'; }
+  }
+  if (_sectorMapObj) { try { _sectorMapObj.invalidateSize(); } catch(e) {} }
+}
 // Позицій у секторі може бути кілька; старе одинарне поле position мігрує в масив
 function sectorPositions(sec) {
   if (!sec.positions) sec.positions = (sec.position && sec.position.coords) ? [sec.position] : [];
@@ -3500,9 +3537,9 @@ function renderSector(c) {
   var sec = sectorById(sectorSel);
   var today = new Date().toISOString().slice(0,10);
   var flts = S.flights.filter(function(f){ return f.id.indexOf('CRW-') !== 0; });
-  var fToday = flts.filter(function(f){ return String(f.date||'').slice(0,10) === today; }).length;
+  var fToday = flts.filter(function(f){ return sectorYmd(f.date) === today; }).length;
   var fMonth = flts.filter(function(f){
-    var d = new Date(String(f.date||'').slice(0,10));
+    var d = new Date(sectorYmd(f.date));
     return !isNaN(d) && (Date.now() - d.getTime()) < 30*864e5;
   }).length;
   var doneN = flts.filter(function(f){ return f.status === 'Завершений'; }).length;
@@ -3525,7 +3562,7 @@ function renderSector(c) {
   // додати, червоний контурний «−» — видалити поточний (якщо він не останній)
   var addSecBtn = sectorCanEdit()
     ? '<button class="icon-btn" title="Додати сектор" style="position:relative;background:var(--accent);color:var(--on-accent)" onclick="sectorAddModal()">'+sectorHexIcon('plus')+'</button>'+
-      (SECTORS.length > 1
+      (sec
         ? '<button class="icon-btn" title="Видалити сектор «'+esc(sec.name)+'»" style="position:relative;border:1px solid var(--red);color:var(--red)" onclick="sectorDeleteCur()">'+sectorHexIcon('minus')+'</button>'
         : '')
     : '';
@@ -3540,7 +3577,7 @@ function renderSector(c) {
   }).join('');
 
   var lastFl = flts.slice(-5).reverse().map(function(f){
-    return '<tr><td class="mono">'+esc(f.date||'')+'<div class="hint">'+esc(f.start||'')+(f.end?' → '+esc(f.end):'')+'</div></td>'+
+    return '<tr><td class="mono">'+esc(sectorYmd(f.date))+'<div class="hint">'+esc(sectorHm(f.start))+(f.end?' → '+esc(sectorHm(f.end)):'')+'</div></td>'+
       '<td>'+esc(crewNameOnly(f.crew||''))+'</td><td>'+statusChip(f.status)+'</td></tr>';
   }).join('');
 
@@ -3577,9 +3614,14 @@ function renderSector(c) {
   var head = '<div class="flex-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px">'+
     '<div><div class="view-title">Управління <span class="accent">сектором</span></div>'+
     '<div class="view-sub">Сектор · '+(sectorTab==='stats' ? 'Статистика' : 'Карта сектору')+' · '+(sectorEdit && sectorTab!=='stats' ? 'Редагування' : 'Перегляд')+'</div></div>'+
-    '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">'+typeToggle+
-      '<label class="hint">Сектор:</label><select onchange="sectorSel=this.value;sectorDraw=null;sectorMoveTarget=null;renderView()">'+secOpts+'</select>'+
-      addSecBtn+'</div>'+
+    // flex-wrap: коли місця бракує (мобільний) — вибір сектора й кнопки
+    // переносяться на наступний рядок, а не обрізаються
+    '<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:center;gap:10px">'+typeToggle+
+      '<span style="display:flex;align-items:center;gap:8px"><label class="hint">Сектор:</label>'+
+      (SECTORS.length
+        ? '<select style="min-width:140px" onchange="sectorSel=this.value;sectorDraw=null;sectorMoveTarget=null;renderView()">'+secOpts+'</select>'
+        : '<span class="hint">немає</span>')+
+      addSecBtn+'</span></div>'+
   '</div>'+
     '<div class="stat-row">'+
       '<div class="stat-tile blue"><div class="stat-num">'+fToday+'</div><div class="stat-lbl">Вильоти сьогодні · '+fMonth+' за 30 дн.</div></div>'+
@@ -3596,6 +3638,12 @@ function renderSector(c) {
 
   if (sectorTab === 'stats') {
     c.innerHTML = head + renderSectorStats(flts);
+    return;
+  }
+  // Секторів немає (усі видалено) — порожній стан із запрошенням створити
+  if (!sec) {
+    c.innerHTML = head + '<div class="matrix-panel" style="margin-top:12px"><div class="empty" style="padding:40px 12px">'+
+      '⬡ Секторів немає'+(sectorCanEdit() ? ' — натисни жовтий шестикутник «+», щоб створити перший' : '')+'</div></div>';
     return;
   }
 
@@ -3623,14 +3671,18 @@ function renderSector(c) {
 
   // Кнопки редагування й перемикач режиму — у шапці панелі карти, щоб
   // карта стояла одразу під вкладками без зайвого рядка
+  // Група кнопок притиснута вправо (margin-left:auto), перемикач Перегляд/
+  // Редагування — завжди останній, тож не стрибає, коли зʼявляються кнопки
+  // меж/орієнтира/позиції. Карта заповнює панель (flex:1), висоту робочої
+  // області задає sectorFitHeight.
   c.innerHTML = head +
-    '<div class="freq-layout" style="margin-top:12px">'+
+    '<div class="freq-layout" id="sectorLayout" style="margin-top:12px">'+
       '<div class="matrix-panel">'+
         '<div class="matrix-panel-head"><span class="cap">Карта сектору · '+esc(sec.name)+'</span>'+
-          '<div class="staff-actions" style="display:flex;gap:6px;align-items:center">'+editBtns+modeToggle+'</div></div>'+
-        '<div id="sectorMap" style="height:56vh;background:var(--panel-2);position:relative"></div>'+
+          '<div style="display:flex;gap:6px;align-items:center;margin-left:auto">'+editBtns+modeToggle+'</div></div>'+
+        '<div id="sectorMap" style="flex:1;min-height:0;background:var(--panel-2);position:relative"></div>'+
       '</div>'+
-      '<div>'+side+'</div>'+
+      '<div id="sectorSide" style="min-height:0">'+side+'</div>'+
     '</div>'+
     // Нижня смуга як у макеті: погода зліва, дії справа
     '<div class="filter-row" style="margin-top:10px;justify-content:space-between">'+
@@ -3643,6 +3695,7 @@ function renderSector(c) {
         '<button class="btn" disabled title="У розробці" style="opacity:.5">⬇ Звіт по сектору (PDF)</button>'+
       '</div>'+
     '</div>';
+  sectorFitHeight();
   renderSectorMap(sec);
   loadSectorWeather(sec);
 }
@@ -3839,11 +3892,11 @@ function sectorMediaSave(kind, i) {
 }
 function sectorDeleteCur() {
   var sec = sectorById(sectorSel);
-  if (SECTORS.length <= 1) { toast('⚠ Останній сектор видалити не можна', true); return; }
-  if (!confirm('🗑 Видалити сектор «'+sec.name+'» з усіма орієнтирами?')) return;
+  if (!sec) return;
+  if (!confirm('🗑 Видалити сектор «'+sec.name+'» з усіма позиціями й орієнтирами?')) return;
   SECTORS = SECTORS.filter(function(s){ return s.id !== sec.id; });
-  sectorSel = SECTORS[0].id;
-  sectorDraw = null;
+  sectorSel = SECTORS.length ? SECTORS[0].id : '';
+  sectorDraw = null; sectorMoveTarget = null;
   saveSectors(); renderView();
   toast('🗑 Сектор «'+sec.name+'» видалено');
 }
@@ -4023,7 +4076,7 @@ function loadSectorWeather(sec) {
 function renderSectorStats(flts) {
   // 1) Вильоти за останні 14 днів — стовпчики (сьогодні — акцент)
   var byDay = {}, days = [];
-  flts.forEach(function(f){ var d = String(f.date||'').slice(0,10); if (d) byDay[d] = (byDay[d]||0)+1; });
+  flts.forEach(function(f){ var d = sectorYmd(f.date); if (d) byDay[d] = (byDay[d]||0)+1; });
   for (var i = 13; i >= 0; i--) {
     var dt = new Date(Date.now() - i*864e5).toISOString().slice(0,10);
     days.push({ d: dt, n: byDay[dt] || 0 });
