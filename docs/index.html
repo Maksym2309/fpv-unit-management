@@ -3420,6 +3420,12 @@ function sectorPositions(sec) {
   delete sec.position;
   return sec.positions;
 }
+// Піктограма сектора — шестикутник (як ⬡ у навігації) з «+» або «−»
+function sectorHexIcon(sign) {
+  return '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">'+
+    '<path d="M12 2.5 20.2 7.25v9.5L12 21.5 3.8 16.75v-9.5z"/>'+
+    (sign === 'plus' ? '<path d="M12 8.5v7M8.5 12h7"/>' : '<path d="M8.5 12h7"/>')+'</svg>';
+}
 // Піктограма «ромб із плюсом» — форма маркера орієнтира/позиції на карті
 function sectorDiamondPlus(color) {
   return '<svg viewBox="0 0 24 24" width="13" height="13" style="vertical-align:-2px">'+
@@ -3511,9 +3517,13 @@ function renderSector(c) {
   var secOpts = SECTORS.map(function(s){
     return '<option value="'+esc(s.id)+'"'+(s.id===sectorSel?' selected':'')+'>'+esc(s.name)+'</option>';
   }).join('');
-  // Жовтий «+» — додати сектор (замість статусної плашки)
+  // Компактні кнопки сектора в стилі його іконки ⬡: жовтий шестикутник «+» —
+  // додати, червоний контурний «−» — видалити поточний (якщо він не останній)
   var addSecBtn = sectorCanEdit()
-    ? '<button class="icon-btn" title="Додати сектор" style="background:var(--accent);color:var(--on-accent)" onclick="sectorAddModal()">'+svgIcon('plus')+'</button>'
+    ? '<button class="icon-btn" title="Додати сектор" style="background:var(--accent);color:var(--on-accent)" onclick="sectorAddModal()">'+sectorHexIcon('plus')+'</button>'+
+      (SECTORS.length > 1
+        ? '<button class="icon-btn" title="Видалити сектор «'+esc(sec.name)+'»" style="border:1px solid var(--red);color:var(--red)" onclick="sectorDeleteCur()">'+sectorHexIcon('minus')+'</button>'
+        : '')
     : '';
 
   // Бічні панелі
@@ -3597,8 +3607,7 @@ function renderSector(c) {
       // янтарний — орієнтир, зелений — позиція (позицій може бути кілька)
       editBtns = '<button class="btn btn-mini btn-sec" title="Редагувати межі: тягни вершини" onclick="sectorArm(\'bounds\')">✎ Межі</button>'+
         '<button class="btn btn-mini btn-sec" title="Додати орієнтир — клік по карті" onclick="sectorArm(\'landmark\')">'+sectorDiamondPlus('#ffb800')+'</button>'+
-        '<button class="btn btn-mini btn-sec" title="Додати позицію — клік по карті" onclick="sectorArm(\'position\')">'+sectorDiamondPlus('#2ecc71')+'</button>'+
-        (SECTORS.length > 1 ? '<button class="btn btn-mini btn-red" title="Видалити сектор" onclick="sectorDeleteCur()">🗑</button>' : '');
+        '<button class="btn btn-mini btn-sec" title="Додати позицію — клік по карті" onclick="sectorArm(\'position\')">'+sectorDiamondPlus('#2ecc71')+'</button>';
     }
   }
   var modeToggle = canEd
