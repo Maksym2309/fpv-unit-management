@@ -3491,6 +3491,7 @@ function renderSector(c) {
   var lost = S.items.filter(function(it){ return String(it.status||'').trim() === 'Втрачений'; });
   var confN = countConflicts();
   var crews = activeCrews();
+  var staffInCrews = S.personnel.filter(function(p){ return p.crewId; }).length;
 
   // Перемикач типу сектора: військовий поки заблоковано
   var typeToggle = '<div class="inv-mode">'+
@@ -3561,7 +3562,9 @@ function renderSector(c) {
       '<div class="stat-tile green"><div class="stat-num">'+succPct+'</div><div class="stat-lbl">Успішні вильоти</div></div>'+
       '<div class="stat-tile green"><div class="stat-num">'+activeFlights().length+'</div><div class="stat-lbl">Зараз в ефірі</div></div>'+
       '<div class="stat-tile red"><div class="stat-num">'+lost.length+'</div><div class="stat-lbl">Втрати бортів</div></div>'+
-      '<div class="stat-tile"><div class="stat-num">'+crews.length+'</div><div class="stat-lbl">Задок. екіпажі</div></div>'+
+      '<div class="stat-tile"><div class="stat-num">'+crews.length+'</div><div class="stat-lbl">Активні екіпажі</div></div>'+
+      '<div class="stat-tile blue"><div class="stat-num">'+S.personnel.length+'</div><div class="stat-lbl">Особовий склад'+
+        (staffInCrews ? ' · '+staffInCrews+' в екіпажах' : '')+'</div></div>'+
       '<div class="stat-tile"><div class="stat-num">'+sectorAvgFlight()+'</div><div class="stat-lbl">Сер. тривалість</div></div>'+
       '<div class="stat-tile'+(confN?' click active':'')+'" '+(confN?'onclick="setView(\'freq\')" title="Перейти до карти частот" style="border-left-color:var(--yellow)"':'')+'>'+
         '<div class="stat-num">'+confN+'</div><div class="stat-lbl">Конфлікти частот</div></div>'+
