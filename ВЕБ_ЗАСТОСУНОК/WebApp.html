@@ -3434,9 +3434,17 @@ function sectorFitHeight() {
     var sc = lay.closest('main.content');
     var scRect = sc ? sc.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
     var top = lay.getBoundingClientRect().top - scRect.top + (sc ? sc.scrollTop : window.scrollY);
-    lay.style.height = Math.max(420, (scRect.bottom - scRect.top) - top - 16) + 'px';
+    var h = Math.max(180,(scRect.bottom - scRect.top) - top - 16);
+    lay.style.height = h + 'px';
     if (side) side.style.overflowY = 'auto';
     if (map) { map.style.flex = '1 1 0'; map.style.height = ''; }
+    // Під областю ще смуга погоди й кнопок — вона теж має бути видна без
+    // прокрутки за будь-якої висоти вікна: якщо контейнер переповнився,
+    // зменшуємо карту рівно на величину переповнення
+    if (sc) {
+      var over = sc.scrollHeight - sc.clientHeight;
+      if (over > 0) lay.style.height = Math.max(180,h - over) + 'px';
+    }
   } else {
     // flex-basis 0 перебив би явну висоту — тому тут basis auto
     lay.style.height = '';
