@@ -182,6 +182,10 @@ textarea { height: 54px; resize: vertical; }
 .filter-chip.c-red    { border-color: var(--red);    color: var(--red-soft); }
 .filter-chip.c-orange { border-color: var(--orange); color: var(--orange); }
 .filter-chip.c-purple { border-color: var(--purple); color: #c9a6dd; }
+/* Компактний варіант (Сектор): вужчі плитки, щоб увесь ряд умістився в один рядок */
+.stat-row.compact { grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 8px; }
+.stat-row.compact .stat-tile { padding: 8px 10px; }
+.stat-row.compact .stat-num { font-size: 21px; }
 .stat-tile.click { cursor: pointer; }
 .stat-tile.click:hover { background: var(--panel-3); }
 /* Активна плитка: жовта рамка з трьох боків, ліва смужка лишається кольором легенди */
@@ -3635,7 +3639,7 @@ function renderSector(c) {
         : '<span class="hint">немає</span>')+
       addSecBtn+'</span></div>'+
   '</div>'+
-    '<div class="stat-row">'+
+    '<div class="stat-row compact">'+
       '<div class="stat-tile blue"><div class="stat-num">'+fToday+'</div><div class="stat-lbl">Вильоти сьогодні · '+fMonth+' за 30 дн.</div></div>'+
       '<div class="stat-tile green"><div class="stat-num">'+succPct+'</div><div class="stat-lbl">Успішні вильоти</div></div>'+
       '<div class="stat-tile green"><div class="stat-num">'+activeFlights().length+'</div><div class="stat-lbl">Зараз в ефірі</div></div>'+
@@ -4320,9 +4324,12 @@ function renderSectorStats(flts) {
       '<div style="padding:12px">'+scChartBody(cfg, flts)+'</div>'+
     '</div>';
   }).join('');
-  return '<div class="filter-row" style="margin-top:12px;justify-content:space-between">'+
-      '<div class="hint" style="align-self:center">Конструктор: обери дані, вигляд і період · набір зберігається на цьому пристрої</div>'+
-      '<button class="icon-btn" title="Додати графік" style="background:var(--accent);color:var(--on-accent)" onclick="scAdd()">'+svgIcon('plus')+'</button>'+
+  // Свідомо НЕ filter-row: та на мобільному розкладається у стовпчик і
+  // розтягує кнопку «+» на весь рядок. Тут кнопка завжди компактна праворуч,
+  // а підказка переносить текст усередині себе.
+  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px">'+
+      '<div class="hint" style="min-width:0">Конструктор: обери дані, вигляд і період · набір зберігається на цьому пристрої</div>'+
+      '<button class="icon-btn" title="Додати графік" style="background:var(--accent);color:var(--on-accent);flex:0 0 auto" onclick="scAdd()">'+svgIcon('plus')+'</button>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:12px">'+
     (cards || '<div class="empty">Графіків немає — додай перший кнопкою «+»</div>')+
