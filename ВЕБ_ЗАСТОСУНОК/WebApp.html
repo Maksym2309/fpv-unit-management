@@ -3396,7 +3396,7 @@ var SECTORS = (function(){
   return [{
     id: 'PLG-1', name: 'ПОЛІГОН-1', status: 'Активний',
     bounds: [[48.560,34.960],[48.565,35.060],[48.520,35.090],[48.495,35.040],[48.505,34.975]],
-    position: { name: 'Позиція', coords: [48.527, 35.005] },
+    positions: [{ name: 'Позиція', coords: [48.527, 35.005] }],
     landmarks: [
       { name: 'Орієнтир-1 · Водонапірна вежа', coords: [48.545, 35.045], video: '' },
       { name: 'Орієнтир-2 · Роздоріжжя',       coords: [48.512, 35.060], video: '' }
@@ -3404,6 +3404,18 @@ var SECTORS = (function(){
   }];
 })();
 function sectorById(id) { return SECTORS.find(function(s){ return s.id === id; }) || SECTORS[0]; }
+// Позицій у секторі може бути кілька; старе одинарне поле position мігрує в масив
+function sectorPositions(sec) {
+  if (!sec.positions) sec.positions = (sec.position && sec.position.coords) ? [sec.position] : [];
+  delete sec.position;
+  return sec.positions;
+}
+// Піктограма «ромб із плюсом» — форма маркера орієнтира/позиції на карті
+function sectorDiamondPlus(color) {
+  return '<svg viewBox="0 0 24 24" width="13" height="13" style="vertical-align:-2px">'+
+    '<path d="M12 2.6 21.4 12 12 21.4 2.6 12z" fill="none" stroke="'+color+'" stroke-width="2"/>'+
+    '<path d="M12 8.2v7.6M8.2 12h7.6" stroke="'+color+'" stroke-width="2"/></svg>';
+}
 function saveSectors() { try { localStorage.setItem('wh_sectors', JSON.stringify(SECTORS)); } catch(e) {} }
 // Редагування секторів — адмін або право «Екіпажі»
 function sectorCanEdit() { return canEditCrews(); }
@@ -3568,8 +3580,11 @@ function renderSector(c) {
       editBtns = '<button class="btn btn-mini btn-green" id="secDoneBtn" onclick="sectorBoundsDone()">✓ Готово ('+sectorDrawPts.length+')</button>'+
         '<button class="btn btn-mini btn-sec" onclick="sectorDrawCancel()">✕ Скасувати</button>';
     } else {
-      editBtns = '<button class="btn btn-mini btn-sec'+(sectorDraw==='bounds'?' active':'')+'" title="Перемалювати межі кліками по карті" onclick="sectorArm(\'bounds\')">✎ Межі</button>'+
-        '<button class="btn btn-mini btn-sec" title="Клік по карті — нова позиція" onclick="sectorArm(\'position\')">📍 Позиція</button>'+
+      // Компактні «ромб+» — та сама форма, що й маркери на карті:
+      // янтарний — орієнтир, зелений — позиція (позицій може бути кілька)
+      editBtns = '<button class="btn btn-mini btn-sec" title="Редагувати межі: тягни вершини" onclick="sectorArm(\'bounds\')">✎ Межі</button>'+
+        '<button class="btn btn-mini btn-sec" title="Додати орієнтир — клік по карті" onclick="sectorArm(\'landmark\')">'+sectorDiamondPlus('#ffb800')+'</button>'+
+        '<button class="btn btn-mini btn-sec" title="Додати позицію — клік по карті" onclick="sectorArm(\'position\')">'+sectorDiamondPlus('#2ecc71')+'</button>'+
         (SECTORS.length > 1 ? '<button class="btn btn-mini btn-red" title="Видалити сектор" onclick="sectorDeleteCur()">🗑</button>' : '');
     }
   }
@@ -3583,7 +3598,7 @@ function renderSector(c) {
   c.innerHTML = head +
     '<div class="filter-row" style="margin-top:12px">'+
       '<div class="hint" style="align-self:center">'+
-        (sectorEdit ? 'Редагування: клік по маркеру — картка з ✎/🗑, кнопки праворуч — межі та позиція' : esc(sec.name)+' · '+esc(sec.status||''))+'</div>'+
+        (sectorEdit ? 'Редагування: клік по маркеру — картка з ✎/🗑, праворуч — межі, ◆ орієнтир, ◆ позиція' : esc(sec.name)+' · '+esc(sec.status||''))+'</div>'+
       '<div class="staff-actions">'+editBtns+modeToggle+'</div>'+
     '</div>'+
     '<div class="freq-layout">'+
@@ -3602,7 +3617,6 @@ function renderSector(c) {
       '</div>'+
       '<div class="staff-actions">'+
         '<button class="btn" disabled title="У розробці" style="opacity:.5">⬇ Звіт по сектору (PDF)</button>'+
-        '<button class="btn" style="background:var(--accent);color:var(--on-accent)" onclick="sectorAddLandmark()">＋ Додати орієнтир</button>'+
       '</div>'+
     '</div>';
   renderSectorMap(sec);
@@ -3620,10 +3634,9 @@ function sectorArm(mode) {
     : [];
   renderView();
   toast(mode === 'bounds' ? '✎ Тягни вершини · клік по вершині — видалити · клік по карті — нова'
-    : mode === 'position' ? '📍 Клікни нову позицію на карті'
+    : mode === 'position' ? '📍 Клікни точку нової позиції на карті'
     : '🔶 Клікни точку орієнтира на карті');
 }
-function sectorAddLandmark() { sectorArm('landmark'); }
 function sectorBoundsDone() {
   if (sectorDrawPts.length < 3) { toast('⚠ Потрібно мінімум 3 вершини — площа не існує', true); return; }
   sectorById(sectorSel).bounds = sectorDrawPts.map(function(p){ return p.slice(); });
@@ -3694,6 +3707,20 @@ function sectorInsertVertex(ll, map) {
   sectorBoundsRefresh(map);
   sectorBoundsHandles(map);
 }
+function sectorPosRename(i) {
+  var ps = sectorPositions(sectorById(sectorSel));
+  if (!ps[i]) return;
+  var name = prompt('Назва позиції:', ps[i].name || 'Позиція');
+  if (name === null || !name.trim()) return;
+  ps[i].name = name.trim();
+  saveSectors(); renderView();
+}
+function sectorPosDelete(i) {
+  var ps = sectorPositions(sectorById(sectorSel));
+  if (!ps[i] || !confirm('🗑 Видалити позицію «'+(ps[i].name||'Позиція')+'»?')) return;
+  ps.splice(i, 1);
+  saveSectors(); renderView();
+}
 function sectorLmRename(i) {
   var sec = sectorById(sectorSel);
   var lm = sec.landmarks[i];
@@ -3733,7 +3760,7 @@ function sectorAddDo() {
   var maxN = 0;
   SECTORS.forEach(function(s){ var m = String(s.id).match(/-(\d+)$/); if (m) maxN = Math.max(maxN, +m[1]); });
   var id = 'SEC-' + (maxN + 1);
-  SECTORS.push({ id: id, name: name, status: 'Активний', bounds: [], position: null, landmarks: [] });
+  SECTORS.push({ id: id, name: name, status: 'Активний', bounds: [], positions: [], landmarks: [] });
   sectorSel = id;
   saveSectors();
   closeModal();
@@ -3752,7 +3779,7 @@ function renderSectorMap(sec) {
       var hint = document.createElement('div');
       hint.className = 'map-hint';
       hint.textContent = sectorDraw === 'bounds' ? '✎ Тягни вершини · клік по вершині — видалити · клік по карті — нова'
-        : sectorDraw === 'position' ? '📍 Клікни нову позицію'
+        : sectorDraw === 'position' ? '📍 Клікни точку нової позиції'
         : '🔶 Клікни точку орієнтира';
       el.parentElement.appendChild(hint);
       el._hint = hint;
@@ -3770,13 +3797,14 @@ function renderSectorMap(sec) {
       L.polygon(sec.bounds, { color: '#ffb800', weight: 2, dashArray: '6 4', fillColor: '#ffb800', fillOpacity: .06 })
         .addTo(map).bindTooltip('Межі роботи · '+sec.name, { sticky: true });
     }
-    // Позиція — зелений ромб з підписом (як у макеті)
-    if (sec.position && sec.position.coords) {
-      var posMk = hudMarker(sec.position.coords, 'diamond', '#2ecc71', sec.position.name || 'Позиція')
-        .addTo(map).bindTooltip('🟢 '+(sec.position.name||'Позиція'), { direction: 'top', offset: [0, -10] });
-      if (sectorEdit) posMk.bindPopup('<div style="font-family:monospace;font-size:12px"><b>🟢 '+esc(sec.position.name||'Позиція')+'</b>'+
-        '<br><a href="#" onclick="sectorArm(\'position\');return false">📍 перемістити</a></div>');
-    }
+    // Позиції — зелені ромби з підписами; їх може бути кілька
+    sectorPositions(sec).forEach(function(ps, i){
+      var posMk = hudMarker(ps.coords, 'diamond', '#2ecc71', ps.name || 'Позиція')
+        .addTo(map).bindTooltip('🟢 '+(ps.name||'Позиція'), { direction: 'top', offset: [0, -10] });
+      if (sectorEdit) posMk.bindPopup('<div style="font-family:monospace;font-size:12px"><b>🟢 '+esc(ps.name||'Позиція')+'</b>'+
+        '<br><a href="#" onclick="sectorPosRename('+i+');return false">✎ перейменувати</a> · '+
+        '<a href="#" style="color:#e74c3c" onclick="sectorPosDelete('+i+');return false">🗑 видалити</a></div>');
+    });
     // Орієнтири — янтарні ромби; картка з відео-заглушкою, в редагуванні ✎/🗑
     sec.landmarks.forEach(function(lm, i){
       var short = String(lm.name).split('·')[0].trim();
@@ -3809,17 +3837,20 @@ function renderSectorMap(sec) {
         saveSectors(); renderView();
         toast('🔶 Орієнтир «'+name.trim()+'» додано');
       } else if (sectorDraw === 'position') {
-        sec.position = { name: 'Позиція', coords: ll };
+        var ps = sectorPositions(sec);
+        var pname = prompt('Назва позиції:', 'Позиція'+(ps.length ? '-'+(ps.length+1) : ''));
+        if (pname === null || !pname.trim()) return;
+        ps.push({ name: pname.trim(), coords: ll });
         sectorDraw = null;
         saveSectors(); renderView();
-        toast('📍 Позицію оновлено');
+        toast('📍 Позицію «'+pname.trim()+'» додано');
       } else if (sectorDraw === 'bounds') {
         sectorInsertVertex(ll, map);
       }
     });
 
     if (sec.bounds && sec.bounds.length >= 3) map.fitBounds(sec.bounds, { padding: [30, 30] });
-    else if (sec.position && sec.position.coords) map.setView(sec.position.coords, 13);
+    else if (sectorPositions(sec).length) map.setView(sectorPositions(sec)[0].coords, 13);
     else map.setView([48.5, 35.0], 6);
     setTimeout(function(){ map.invalidateSize(); }, 150);
   });
@@ -3846,7 +3877,8 @@ function loadSectorWeather(sec) {
       el.style.color = _wx.kp >= 7 ? 'var(--red)' : (_wx.kp >= 5 ? 'var(--yellow)' : '');
     }
   }
-  var c = (sec && sec.position && sec.position.coords) ||
+  var p0 = sec ? sectorPositions(sec)[0] : null;
+  var c = (p0 && p0.coords) ||
           (sec && sec.bounds && sec.bounds.length ? sec.bounds[0] : null);
   if (!c || typeof fetch === 'undefined') { paint(); return; }
   if (_wx.data && Date.now() - _wx.ts < 10*60*1000) { paint(); return; }
@@ -6973,6 +7005,13 @@ setInterval(function(){
   if (document.hidden || (MODE === 'api' && !authToken()) || userIsBusy()) return;
   // На вкладці карти втрат — не смикати: тихе оновлення даних без ререндеру
   if (S.view === 'trackers' && trkTab === 'map') { loadAll(false, true); return; }
+  // Сектор: у редагуванні не оновлюємо ВЗАГАЛІ — ререндер зносить ручки
+  // вершин і режим малювання посеред роботи; у перегляді — тихо,
+  // щоб карта не скидала зум і позицію кожні 90 секунд
+  if (S.view === 'sector') {
+    if (!sectorEdit && !sectorDraw) loadAll(false, true);
+    return;
+  }
   loadAll();
 }, 90000);
 </script>
