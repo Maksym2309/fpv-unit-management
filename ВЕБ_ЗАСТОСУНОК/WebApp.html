@@ -3553,7 +3553,7 @@ function renderSector(c) {
     '<div><div class="view-title">Управління <span class="accent">сектором</span></div>'+
     '<div class="view-sub">Концепт · межі й орієнтири зберігаються локально до появи бекенду</div></div>'+
     '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">'+typeToggle+
-      '<label class="hint">Сектор:</label><select onchange="sectorSel=this.value;sectorDraw=null;renderView()">'+secOpts+'</select>'+
+      '<label class="hint">Сектор:</label><select onchange="sectorSel=this.value;sectorDraw=null;sectorMoveTarget=null;renderView()">'+secOpts+'</select>'+
       addSecBtn+'</div>'+
   '</div>'+
     '<div class="stat-row">'+
@@ -3590,7 +3590,7 @@ function renderSector(c) {
   }
   var modeToggle = canEd
     ? '<div class="inv-mode">'+
-        '<button class="inv-mode-btn'+(!sectorEdit?' active':'')+'" onclick="sectorEdit=false;sectorDraw=null;renderView()">Перегляд</button>'+
+        '<button class="inv-mode-btn'+(!sectorEdit?' active':'')+'" onclick="sectorEdit=false;sectorDraw=null;sectorMoveTarget=null;renderView()">Перегляд</button>'+
         '<button class="inv-mode-btn'+(sectorEdit?' active':'')+'" onclick="sectorEdit=true;renderView()">Редагування</button>'+
       '</div>'
     : '';
@@ -3644,7 +3644,7 @@ function sectorBoundsDone() {
   saveSectors(); renderView();
   toast('💾 Межі сектору оновлено');
 }
-function sectorDrawCancel() { sectorDraw = null; sectorDrawPts = []; renderView(); }
+function sectorDrawCancel() { sectorDraw = null; sectorDrawPts = []; sectorMoveTarget = null; renderView(); }
 
 /* ── Редагування меж «по-живому»: полігон + вершини-ручки ── */
 var _secHandles = [];
@@ -3707,6 +3707,16 @@ function sectorInsertVertex(ll, map) {
   sectorBoundsRefresh(map);
   sectorBoundsHandles(map);
 }
+// Перемістити конкретний маркер: озброюємо режим, наступний клік по карті — нова точка
+var sectorMoveTarget = null;   // { kind:'pos'|'lm', i }
+function sectorMoveArm(kind, i) {
+  if (!sectorCanEdit()) { toast('⚠ Потрібне право «Екіпажі» або адмін', true); return; }
+  sectorEdit = true;
+  sectorDraw = 'move';
+  sectorMoveTarget = { kind: kind, i: i };
+  renderView();
+  toast('✥ Клікни нову точку на карті');
+}
 function sectorPosRename(i) {
   var ps = sectorPositions(sectorById(sectorSel));
   if (!ps[i]) return;
@@ -3736,6 +3746,68 @@ function sectorLmDelete(i) {
   if (!lm || !confirm('🗑 Видалити орієнтир «'+lm.name+'»?')) return;
   sec.landmarks.splice(i, 1);
   saveSectors(); renderView();
+}
+// Медіа орієнтира: data-URL (файл) або зовнішнє посилання. Сумісність зі
+// старим полем video. Перегляд — у картці маркера.
+function sectorLmMediaHtml(lm) {
+  var m = lm.media || (lm.video ? { type:'video', src: lm.video } : null);
+  if (!m || !m.src) return '<span style="color:#888">🎬 Медіа — не додано</span>';
+  if (m.type === 'video') return '<video src="'+esc(m.src)+'" controls preload="metadata" style="max-width:220px;max-height:150px;margin-top:4px;background:#000"></video>';
+  return '<img src="'+esc(m.src)+'" style="max-width:220px;max-height:150px;margin-top:4px" alt="">';
+}
+function sectorLmMedia(i) {
+  var lm = sectorById(sectorSel).landmarks[i];
+  if (!lm) return;
+  var curUrl = (lm.media && /^https?:/.test(lm.media.src)) ? lm.media.src : '';
+  openModal('🎬 Медіа орієнтира: '+esc(lm.name),
+    (lm.media || lm.video ? '<div class="hint" style="margin-bottom:8px">Уже додано: '+((lm.media&&lm.media.type==='video')||lm.video?'відео':'фото')+
+      ' — <a href="#" style="color:var(--red)" onclick="sectorLmMediaClear('+i+');return false">🗑 прибрати</a></div>' : '')+
+    '<div class="f"><label>Файл — фото або коротке відео</label><input type="file" id="lmFile" accept="image/*,video/*"></div>'+
+    '<div class="hint" style="text-align:center;margin:6px 0">— або —</div>'+
+    '<div class="f"><label>Посилання на фото/відео</label><input type="text" id="lmUrl" placeholder="https://…" value="'+esc(curUrl)+'"></div>'+
+    '<div class="hint" style="margin-bottom:8px">До появи бекенду медіа зберігається локально на цьому пристрої, тож великі відео краще давати посиланням.</div>'+
+    '<button class="btn btn-green" id="lmMediaBtn" onclick="sectorLmMediaSave('+i+')">💾 Зберегти</button>'
+  );
+}
+function sectorLmMediaClear(i) {
+  var lm = sectorById(sectorSel).landmarks[i];
+  if (!lm) return;
+  delete lm.media; delete lm.video;
+  saveSectors(); closeModal(); renderView();
+  toast('🗑 Медіа прибрано');
+}
+function sectorLmMediaSave(i) {
+  var lm = sectorById(sectorSel).landmarks[i];
+  if (!lm) return;
+  var url = ($('lmUrl').value || '').trim();
+  var fileEl = $('lmFile');
+  var file = fileEl && fileEl.files && fileEl.files[0];
+  function apply(media) {
+    var prev = lm.media, prevV = lm.video;
+    lm.media = media; delete lm.video;
+    try {
+      localStorage.setItem('wh_sectors', JSON.stringify(SECTORS));
+    } catch(e) {
+      lm.media = prev; lm.video = prevV;   // відкат, сховище переповнене
+      toast('❌ Замало місця для файлу локально — постав менший або дай посилання', true);
+      return;
+    }
+    closeModal(); renderView();
+    toast('🎬 Медіа орієнтира збережено');
+  }
+  if (file) {
+    var btn = $('lmMediaBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Читання…'; }
+    var type = file.type.indexOf('video') === 0 ? 'video' : 'image';
+    var reader = new FileReader();
+    reader.onload = function(){ apply({ type: type, src: String(reader.result) }); };
+    reader.onerror = function(){ if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; } toast('❌ Не вдалося прочитати файл', true); };
+    reader.readAsDataURL(file);
+  } else if (url) {
+    apply({ type: /\.(mp4|webm|mov|ogg|m4v)(\?|#|$)/i.test(url) ? 'video' : 'image', src: url });
+  } else {
+    toast('⚠ Обери файл або встав посилання', true);
+  }
 }
 function sectorDeleteCur() {
   var sec = sectorById(sectorSel);
@@ -3780,6 +3852,7 @@ function renderSectorMap(sec) {
       hint.className = 'map-hint';
       hint.textContent = sectorDraw === 'bounds' ? '✎ Тягни вершини · клік по вершині — видалити · клік по карті — нова'
         : sectorDraw === 'position' ? '📍 Клікни точку нової позиції'
+        : sectorDraw === 'move' ? '✥ Клікни нову точку маркера'
         : '🔶 Клікни точку орієнтира';
       el.parentElement.appendChild(hint);
       el._hint = hint;
@@ -3802,8 +3875,9 @@ function renderSectorMap(sec) {
       var posMk = hudMarker(ps.coords, 'diamond', '#2ecc71', ps.name || 'Позиція')
         .addTo(map).bindTooltip('🟢 '+(ps.name||'Позиція'), { direction: 'top', offset: [0, -10] });
       if (sectorEdit) posMk.bindPopup('<div style="font-family:monospace;font-size:12px"><b>🟢 '+esc(ps.name||'Позиція')+'</b>'+
-        '<br><a href="#" onclick="sectorPosRename('+i+');return false">✎ перейменувати</a> · '+
-        '<a href="#" style="color:#e74c3c" onclick="sectorPosDelete('+i+');return false">🗑 видалити</a></div>');
+        '<br><a href="#" onclick="sectorMoveArm(\'pos\','+i+');return false">✥ перемістити</a> · '+
+        '<a href="#" onclick="sectorPosRename('+i+');return false">✎ назва</a> · '+
+        '<a href="#" style="color:#e74c3c" onclick="sectorPosDelete('+i+');return false">🗑</a></div>');
     });
     // Орієнтири — янтарні ромби; картка з відео-заглушкою, в редагуванні ✎/🗑
     sec.landmarks.forEach(function(lm, i){
@@ -3813,11 +3887,12 @@ function renderSectorMap(sec) {
         .bindTooltip('🔶 '+lm.name, { direction: 'top', offset: [0, -10] })
         .bindPopup('<div style="font-family:monospace;font-size:12px;min-width:200px"><b>🔶 '+esc(lm.name)+'</b>'+
           '<br><span style="color:#888">'+lm.coords[0].toFixed(5)+', '+lm.coords[1].toFixed(5)+'</span>'+
-          (lm.video ? '<br><a href="'+esc(lm.video)+'" target="_blank">▶ відео орієнтира</a>'
-                    : '<br><span style="color:#888">▶ Відео орієнтира — буде додано</span>')+
-          (sectorEdit ? '<br><a href="#" onclick="sectorLmRename('+i+');return false">✎ перейменувати</a> · '+
-            '<a href="#" style="color:#e74c3c" onclick="sectorLmDelete('+i+');return false">🗑 видалити</a>' : '')+
-        '</div>');
+          '<br>'+sectorLmMediaHtml(lm)+
+          (sectorEdit ? '<br><a href="#" onclick="sectorMoveArm(\'lm\','+i+');return false">✥ перемістити</a> · '+
+            '<a href="#" onclick="sectorLmRename('+i+');return false">✎ назва</a> · '+
+            '<a href="#" onclick="sectorLmMedia('+i+');return false">🎬 медіа</a> · '+
+            '<a href="#" style="color:#e74c3c" onclick="sectorLmDelete('+i+');return false">🗑</a>' : '')+
+        '</div>', { maxWidth: 260 });
     });
     // Втрати з реальної карти втрат — червоні ✕, якщо дані вже завантажені
     (S.lostMap || []).filter(function(x){ return x.lat && x.lng; }).forEach(function(x){
@@ -3844,6 +3919,13 @@ function renderSectorMap(sec) {
         sectorDraw = null;
         saveSectors(); renderView();
         toast('📍 Позицію «'+pname.trim()+'» додано');
+      } else if (sectorDraw === 'move' && sectorMoveTarget) {
+        var t = sectorMoveTarget;
+        if (t.kind === 'pos') { var ps = sectorPositions(sec); if (ps[t.i]) ps[t.i].coords = ll; }
+        else if (sec.landmarks[t.i]) sec.landmarks[t.i].coords = ll;
+        sectorDraw = null; sectorMoveTarget = null;
+        saveSectors(); renderView();
+        toast('✥ Переміщено');
       } else if (sectorDraw === 'bounds') {
         sectorInsertVertex(ll, map);
       }
