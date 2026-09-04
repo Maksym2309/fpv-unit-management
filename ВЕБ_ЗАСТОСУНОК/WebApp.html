@@ -4109,7 +4109,7 @@ var SC_METRICS = {
   flByCrew:   { name: 'Вильоти по екіпажах',     kind: 'cat',    color: '#3498db' },
   lossByCrew: { name: 'Втрати по екіпажах',      kind: 'cat',    color: '#e74c3c' },
   outcome:    { name: 'Результат вильотів',      kind: 'parts' },
-  invStatus:  { name: 'Інвентар за статусами',   kind: 'parts', noDays: true },
+  invStatus:  { name: 'Інвентар за статусами',   kind: 'parts', noDays: true, idFilter: true },
   trkStatus:  { name: 'Трекери за статусами',    kind: 'parts', noDays: true }
 };
 var SC_TYPES = { series: [['bar','Стовпчики'],['line','Лінія']], cat: [['hbar','Смуги']], parts: [['share','Частки']] };
@@ -4129,9 +4129,14 @@ function scSet(i, key, val) {
   if (!c) return;
   if (key === 'days') c.days = +val;
   else c[key] = val;
-  // Дані іншого роду — вигляд скидається на перший сумісний
-  if (key === 'm') c.t = SC_TYPES[SC_METRICS[c.m].kind][0][0];
+  // Дані іншого роду — вигляд скидається на перший сумісний, фільтр типу теж
+  if (key === 'm') { c.t = SC_TYPES[SC_METRICS[c.m].kind][0][0]; delete c.f; }
   scSave(); renderView();
+}
+
+// Тип предмета за ID: префікс до дефіса (STNG-3 → STNG, FPV-101 → FPV)
+function scIdPrefix(id) {
+  return String(id || '').split('-')[0].trim().toUpperCase();
 }
 
 // Зріз вильотів за період (0 = увесь час)
@@ -4299,6 +4304,8 @@ function scChartBody(cfg, allFlts) {
       color: pct>=80 ? '#2ecc71' : (pct>=50 ? '#f1c40f' : '#e74c3c') });
   }
   var src = cfg.m === 'invStatus' ? S.items : S.trackers;
+  // Зріз за типом предмета (префікс ID: STNG, FPV, GNST…) — якщо обрано
+  if (M.idFilter && cfg.f) src = (src||[]).filter(function(x){ return scIdPrefix(x.id) === cfg.f; });
   var cnt2 = {};
   (src||[]).forEach(function(x){ var s = String(x.status||'').trim() || '—'; cnt2[s] = (cnt2[s]||0)+1; });
   return scChartShare(Object.keys(cnt2).sort(function(a,b){ return cnt2[b]-cnt2[a]; })
@@ -4323,10 +4330,21 @@ function renderSectorStats(flts) {
           if (M.kind === 'series' && !d[0]) return ''; // ряд по днях без межі не має сенсу
           return '<option value="'+d[0]+'"'+(d[0]===(cfg.days||0)?' selected':'')+'>'+d[1]+'</option>';
         }).join('')+'</select>';
+    // Зріз за типом предмета — список префіксів ID, зібраний із самого інвентарю
+    var fSel = '';
+    if (M.idFilter) {
+      var seen = {};
+      (S.items||[]).forEach(function(x){ var p = scIdPrefix(x.id); if (p) seen[p] = 1; });
+      fSel = '<select '+selStyle+' data-i="'+i+'" onchange="scSet(this.dataset.i,\'f\',this.value)">'+
+        '<option value="">Всі типи</option>'+
+        Object.keys(seen).sort().map(function(p){
+          return '<option value="'+p+'"'+(p===(cfg.f||'')?' selected':'')+'>'+p+'</option>';
+        }).join('')+'</select>';
+    }
     return '<div class="matrix-panel">'+
       '<div class="matrix-panel-head" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
         '<select '+selStyle+' data-i="'+i+'" onchange="scSet(this.dataset.i,\'m\',this.value)">'+mOpts+'</select>'+
-        tSel + dSel +
+        tSel + dSel + fSel +
         '<button class="inv-act inv-act--del" title="Прибрати графік" style="margin-left:auto" data-i="'+i+'" onclick="scDel(this.dataset.i)">'+svgIcon('x')+'</button>'+
       '</div>'+
       '<div style="padding:12px">'+scChartBody(cfg, flts)+'</div>'+
