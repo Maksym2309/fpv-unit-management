@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="uk">
 <head>
 <meta charset="utf-8">
@@ -886,6 +886,7 @@ var DEMO_DATA = {
         f.status = 'Завершено';
         var e = new Date(end);
         f.end = ('0'+e.getHours()).slice(-2)+':'+('0'+e.getMinutes()).slice(-2);
+        f.note = (f.note ? f.note + '\n' : '') + '⏱ Автозавершення (20 хв)';
       }
     });
   },
@@ -902,15 +903,20 @@ var DEMO_DATA = {
     try { localStorage.setItem('wh_training', JSON.stringify(weeks)); } catch(e) {}
     return { id: wk.id };
   },
-  trainingStartFlight: function(data){
+  // Звичайний старт вильоту (з підтримкою навчального і студента)
+  startFlight: function(data){
     var n = DEMO_DATA.getFlightList.filter(function(f){ return f.id.indexOf('FLT-') === 0; }).length;
     var id = 'FLT-9' + String(n + 1).padStart(2, '0');
     var now = new Date();
     var start = ('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2);
-    DEMO_DATA.getFlightList.push({ id: id, date: now.toISOString().slice(0,10), crew: data.crew,
-      gnst: data.gnst||'', drones: data.drones||'', bind: data.bind||'', pilot: '', tracker: data.tracker||'',
+    // Дата ЛОКАЛЬНА (не toISOString/UTC): час теж локальний, інакше після
+    // півночі сторож 20 хв бачив би «добовий» виліт і закривав миттєво
+    var date = now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2)+'-'+('0'+now.getDate()).slice(-2);
+    DEMO_DATA.getFlightList.push({ id: id, date: date, crew: data.crew,
+      gnst: data.gnst||'', drones: data.drones||'', bind: data.bind||'', pilot: data.pilot||'', tracker: data.tracker||'',
       trackerOk: '', start: start, end: '', status: 'Активний', note: data.note||'', creatorEmail: 'pilot@unit.mil',
-      system: data.system||'', freq: data.freq||'', reserves: '', training: true });
+      system: data.system||'', freq: data.freq||'', reserves: '',
+      training: !!data.training, student: data.student||'' });
     return { id: id, start: start };
   },
   trainingIncident: function(flightId, note, droneId, droneStatus){
@@ -2753,10 +2759,12 @@ function flightCard(f) {
   return '<div class="tcard '+(mine?'mine':'other')+'">'+
     '<div class="tcard-head">'+
       '<span class="tcard-id">'+esc(f.drones)+'</span>'+
+      (f.training?'<span class="chip" title="Навчальний виліт — сам завершиться через '+TRAIN_MIN+' хв">🎓</span>':'')+
       (f.freq?'<span class="chip chip-freq">'+esc(f.freq)+'</span>':'')+
       statusChip(f.status)+
     '</div>'+
     '<div class="tcard-meta mono">🕐 '+esc(f.start)+(f.pilot?' · 👤 '+esc(f.pilot):'')+' · '+esc(f.crew)+bindInfo+
+    (f.student?'<br>🎓 Студент: <b>'+esc(f.student)+'</b>':'')+
     (f.tracker?'<br>📡 '+esc(f.tracker):'')+(f.system?' · 📹 '+esc(f.system):'')+'</div>'+
     stBtns+
   '</div>';
@@ -2790,15 +2798,23 @@ function renderLogTable() {
     return (f.id+' '+f.drones+' '+f.pilot+' '+f.crew+' '+f.status).toLowerCase().indexOf(q) !== -1;
   });
   var rows = list.slice(0, 100).map(function(f){
+    // Навчальний: 🎓 (+студент), ⏱ якщо закрив сторож; свій завершений
+    // навчальний можна відредагувати (ЧП, статус борта) — «якщо проїбав»
+    var auto = String(f.note||'').indexOf('Автозавершення') !== -1;
+    var marks = (f.training?' <span title="Навчальний виліт">🎓</span>':'')+
+      (auto?' <span title="Завершено автоматично через '+TRAIN_MIN+' хв">⏱</span>':'');
+    var canFix = f.training && f.status !== 'Активний' && isMine(f) && canInstructor();
     return '<tr>'+
-      '<td class="mono">'+esc(f.id)+'</td>'+
+      '<td class="mono">'+esc(f.id)+marks+'</td>'+
       '<td class="mono">'+esc(f.date)+'</td>'+
       '<td class="mono">'+esc(f.start)+(f.end?' → '+esc(f.end):'')+'</td>'+
-      '<td class="mono">'+esc(f.drones)+'</td>'+
+      '<td class="mono">'+esc(f.drones)+(f.student?'<div class="hint">🎓 '+esc(f.student)+'</div>':'')+'</td>'+
       '<td>'+esc(f.pilot)+'</td>'+
       '<td class="mono">'+esc(f.crew)+'</td>'+
       '<td class="mono">'+esc(f.freq||'')+'</td>'+
-      '<td>'+statusChip(f.status)+'</td>'+
+      '<td>'+statusChip(f.status)+
+        (canFix?' <button class="inv-act" title="Редагувати виліт (ЧП, статус борта)" data-id="'+esc(f.id)+'" onclick="trainIncidentModal(this.dataset.id)">'+svgIcon('edit')+'</button>':'')+
+      '</td>'+
     '</tr>';
   }).join('');
   $('logTable').innerHTML = '<thead><tr><th>ID</th><th>Дата</th><th>Час</th><th>Борт</th><th>Пілот</th><th>Екіпаж</th><th>Частота</th><th>Статус</th></tr></thead>'+
@@ -2826,10 +2842,22 @@ function openNewFlightModal() {
     return '<option value="'+esc(c.id)+'">'+esc(c.crewName || c.id)+' — '+esc(dl.join(', '))+'</option>';
   }).join('');
   var sysOpts = VIDEO_SYSTEMS.map(function(s){ return '<option value="'+s+'">'+s+'</option>'; }).join('');
+  // Перемикач навчальний/звичайний — тільки інструкторам; дефолт навчальний.
+  // Навчальний сам завершується через 20 хв успішним, студент пишеться у виліт
+  nfTraining = canInstructor();
+  var trainBlock = canInstructor()
+    ? '<div class="f"><label>Тип вильоту</label><div class="inv-mode" style="margin-left:0">'+
+        '<button type="button" class="inv-mode-btn active" id="nfModeTrain" onclick="nfSetMode(true)">🎓 Навчальний</button>'+
+        '<button type="button" class="inv-mode-btn" id="nfModeStd" onclick="nfSetMode(false)">Звичайний</button>'+
+      '</div><div class="hint">Навчальний завершиться сам через '+TRAIN_MIN+' хв: без втрати борта — успішний</div></div>'+
+      '<div class="f" id="nfStudentBlock"><label>🎓 Студент (хто летить)</label>'+
+        '<select id="nfStudent"><option value="">— без студента —</option></select></div>'
+    : '';
   openModal(
     '🛫 Новий виліт',
     '<div class="f"><label>Екіпаж *</label><select id="nfCrew" onchange="nfCrewChange()"><option value="">— оберіть —</option>'+crewOpts+'</select></div>'+
     '<div id="nfCrewInfo"></div>'+
+    trainBlock+
     '<div class="f"><label>Відповідальна особа *</label><input type="text" id="nfPilot" placeholder="Позивний або ПІБ…"></div>'+
     '<div class="f" id="nfDroneBlock" style="display:none"><label>Борт (який летить зараз) *</label><select id="nfDrone" onchange="nfDroneChange()"></select></div>'+
     '<div class="f" id="nfTrkBlock" style="display:none"><label>Sinotrack з цим бортом</label><select id="nfTrk"></select></div>'+
@@ -2839,10 +2867,44 @@ function openNewFlightModal() {
     '<div class="hint">📻 Перевір карту частот на конфлікти</div></div>'+
     '<button class="btn btn-green" id="nfBtn" onclick="doStartFlight()">🛫 Злетів</button>'
   );
-  // Відповідальна особа: свій екіпаж одразу вибраний, позивний підставлений
+  // Свій екіпаж одразу вибраний (відповідальну особу підставить nfCrewChange —
+  // за замовчуванням це головний екіпажу)
   if (!isAdminUser() && S.auth) {
     if ($('nfPilot')) $('nfPilot').value = S.auth.callsign;
     if (crews.length === 1) { $('nfCrew').value = crews[0].id; nfCrewChange(); }
+  }
+  if (canInstructor()) nfFillStudents();
+}
+// Перемикання навчальний/звичайний у формі вильоту
+var nfTraining = false;
+function nfSetMode(t) {
+  nfTraining = t;
+  var bt = $('nfModeTrain'), bs = $('nfModeStd'), sb = $('nfStudentBlock');
+  if (bt) bt.classList.toggle('active', t);
+  if (bs) bs.classList.toggle('active', !t);
+  if (sb) sb.style.display = t ? '' : 'none';
+}
+// Студенти особистої групи інструктора на поточний тиждень
+function nfFillStudents() {
+  var sel = $('nfStudent');
+  if (!sel) return;
+  var fill = function() {
+    if (!$('nfStudent')) return; // модалку вже закрили
+    var wk = (trainState.data && trainState.data.weeks || []).find(function(w){
+      return w.instructor === ((S.auth && S.auth.id) || '') && w.week === trainMonday();
+    });
+    var st = (wk && wk.students) || [];
+    $('nfStudent').innerHTML = '<option value="">— без студента —</option>' + st.map(function(s){
+      return '<option value="'+esc(s.n)+'">'+esc(s.n)+'</option>';
+    }).join('');
+  };
+  if (trainState.data) fill();
+  else {
+    // Групу ще не тягнули — довантажуємо і наповнюємо селект по готовності
+    rpc('getTraining', [], function(d){
+      trainState.data = d && d.weeks ? d : { week: trainMonday(), weeks: [] };
+      fill();
+    }, function(){ /* без групи — лишається «без студента» */ });
   }
 }
 function nfCrewChange() {
@@ -2865,6 +2927,13 @@ function nfCrewChange() {
   '</div></div>';
 
   if (c.system) $('nfSystem').value = c.system;
+
+  // Відповідальна особа за замовчуванням — ГОЛОВНИЙ відповідальний екіпажу
+  // (а не той, хто відкрив форму); поле лишається редагованим
+  if (c.main && $('nfPilot')) {
+    var mainP = S.personnel.find(function(p){ return p.id === c.main; });
+    if (mainP) $('nfPilot').value = mainP.callsign;
+  }
 
   // Частоти: якщо екіпаж задав — тільки основна + резервні
   var freqSel = $('nfFreq');
@@ -2952,19 +3021,28 @@ function doStartFlight() {
   var btn = $('nfBtn'); btn.disabled = true; btn.textContent = '⏳ Запис…';
   var fltTrk = $('nfTrk') ? $('nfTrk').value : '';
   var fltSystem = $('nfSystem').value, fltFreq = $('nfFreq').value;
+  var isTrain = nfTraining && canInstructor();
+  var student = isTrain && $('nfStudent') ? $('nfStudent').value : '';
   rpc('startFlight', [{
     crew: crewId, gnst: '', drones: drone, bind: '', pilot: pilot,
     tracker: fltTrk, trackerOk: (c && c.trackerOk) || '',
     note: '', system: fltSystem, freq: fltFreq,
+    training: isTrain || undefined, student: student || undefined,
     token: crewToken() || undefined
   }], function(res){
     closeModal();
-    toast('🛫 Виліт '+ (res && res.id ? res.id : '') +' розпочато');
-    // Одразу показуємо виліт локально — без очікування перезавантаження
-    S.flights.push({ id:(res && res.id) || ('FLT-' + Date.now()), date:new Date().toISOString().slice(0,10),
+    toast(isTrain
+      ? '🎓 Виліт '+ (res && res.id ? res.id : '') +' — автостоп через '+TRAIN_MIN+' хв'
+      : '🛫 Виліт '+ (res && res.id ? res.id : '') +' розпочато');
+    // Одразу показуємо виліт локально — без очікування перезавантаження.
+    // Дата локальна (не UTC) — від неї рахується автостоп навчального
+    var _d = new Date();
+    S.flights.push({ id:(res && res.id) || ('FLT-' + Date.now()),
+      date:_d.getFullYear()+'-'+('0'+(_d.getMonth()+1)).slice(-2)+'-'+('0'+_d.getDate()).slice(-2),
       crew:crewId, gnst:'', drones:drone, bind:'', pilot:pilot, tracker:fltTrk,
       trackerOk:(c && c.trackerOk) || '', start:(res && res.start) || '', end:'', status:'Активний',
-      note:'', creatorEmail:S.me, system:fltSystem, freq:fltFreq, reserves:'', equip:'' });
+      note:'', creatorEmail:S.me, system:fltSystem, freq:fltFreq, reserves:'', equip:'',
+      training:isTrain, student:student });
     renderView();
     updateTopStats();
     loadAll();
@@ -4633,19 +4711,17 @@ function sectorAssign(opId, secId) {
   }, function(e){ toast('❌ '+((e && e.message) || e), true); renderView(); });
 }
 
-/* ═══════════ ВИД: НАВЧАННЯ (режим інструктора) ═══════════ */
-/* За реальним фідбеком інструктора: мінімум кліків, усе з мобіли.
-   Рамка — «інструктор × робочий тиждень» (аркуш «Навчання»): студенти з
-   чеклістами. Спорядження й частоти НЕ бронюються окремо — беруться з
-   ЕКІПАЖУ інструктора. Виліт стартує парою дропдаунів, завершується сам
-   через 20 хв (лінивий сторож на бекенді), «той самий конфіг?» — одна
-   кнопка, ЧП фіксується по факту з оновленням статусу борта. */
-var trainTab = 'fly';            // fly | students
+/* ═══════════ ВИД: НАВЧАЛЬНИЙ ПРОЦЕС ═══════════ */
+/* Розділ зосереджений ЛИШЕ на студентах і фіксації результатів:
+   «Загальний потік» (зведення груп усіх інструкторів) · «Особиста група»
+   (мої студенти з чеклістами) · «Екзамен» (логіка згодом).
+   Самі навчальні вильоти живуть у звичайному потоці: форма «Новий виліт»
+   має перемикач навчальний/звичайний (інструкторам), навчальний сам
+   завершується через 20 хв успішним, ЧП редагується в Журналі польоту. */
+var trainTab = 'group';          // flow | group | exam
 var trainState = { data: null, loading: false, err: null };
-var trainInstrSel = '';          // адмін може дивитися тиждень будь-якого інструктора
+var trainInstrSel = '';          // адмін може дивитися групу будь-якого інструктора
 var trainWeekSel = '';           // обраний тиждень (дата понеділка)
-var _trainTick = null;           // секундний таймер зворотного відліку
-var _trainPrevCfg = null;        // конфіг «того самого» вильоту для швидкої кнопки
 var TRAIN_CHECK = [['sim','Симулятор'],['tol','Зліт / посадка'],['route','Політ по маршруту'],['exam','Іспит']];
 var TRAIN_MARKS = ['—','Добре','Задовільно','Здав','Не здав'];
 var TRAIN_MIN = 20;
@@ -4669,26 +4745,14 @@ function trainLoad() {
     if (S.view === 'train') renderView();
   });
 }
-// Момент старту вильоту в мс (дата + час «HH:mm»)
-function trainStartMs(f) {
-  var ymd = sectorYmd(f.date), hm = String(f.start || '').match(/(\d{1,2}):(\d{2})/);
-  var dm = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!dm || !hm) return 0;
-  return new Date(+dm[1], +dm[2]-1, +dm[3], +hm[1], +hm[2]).getTime();
-}
 function trainInstructorId() {
   if (isAdminUser() && trainInstrSel) return trainInstrSel;
   return (S.auth && S.auth.id) || '';
 }
-function trainCrewOf(opId) {
-  var p = S.personnel.find(function(x){ return x.id === opId; });
-  return p && p.crewId ? crewById(p.crewId) : null;
-}
 
 function renderTrain(c) {
-  if (_trainTick) { clearInterval(_trainTick); _trainTick = null; }
   var head = '<div class="view-title">Навчальний <span class="accent">процес</span></div>'+
-    '<div class="view-sub">Студенти · чеклісти · швидкі навчальні вильоти</div>';
+    '<div class="view-sub">Студенти · чеклісти · результати тижня</div>';
   if (!canInstructor()) {
     c.innerHTML = head + '<div class="side-panel" style="margin-top:14px"><div class="side-panel-body">'+
       '<div class="empty">Немає доступу до цього розділу.</div>'+
@@ -4718,13 +4782,42 @@ function renderTrain(c) {
       }).join('')+'</select></span>';
   }
   var tabs = '<div class="inv-tabs">'+
-    '<button class="inv-tab'+(trainTab==='fly'?' active':'')+'" onclick="trainTab=\'fly\';renderView()">Вильоти</button>'+
-    '<button class="inv-tab'+(trainTab==='students'?' active':'')+'" onclick="trainTab=\'students\';renderView()">Студенти</button>'+
+    '<button class="inv-tab'+(trainTab==='flow'?' active':'')+'" onclick="trainTab=\'flow\';renderView()">Загальний потік</button>'+
+    '<button class="inv-tab'+(trainTab==='group'?' active':'')+'" onclick="trainTab=\'group\';renderView()">Особиста група</button>'+
+    '<button class="inv-tab'+(trainTab==='exam'?' active':'')+'" onclick="trainTab=\'exam\';renderView()">Екзамен</button>'+
   '</div>';
-  var top = '<div class="sec-head" style="margin-bottom:12px">'+ '<div>'+head+'</div>'+ instrSel +'</div>' + tabs;
+  var top = '<div class="sec-head" style="margin-bottom:12px">'+ '<div>'+head+'</div>'+ (trainTab==='group' ? instrSel : '') +'</div>' + tabs;
 
-  c.innerHTML = top + (trainTab === 'students' ? trainStudentsHtml(instr) : trainFlyHtml(instr));
-  trainTickStart();
+  var body;
+  if (trainTab === 'flow') body = trainFlowHtml();
+  else if (trainTab === 'exam') body = '<div class="side-panel" style="margin-top:12px"><div class="side-panel-body">'+
+    '<div class="empty">🎓 Екзамен — у розробці</div>'+
+    '<div class="hint" style="margin-top:8px">Логіку екзамену уточнимо окремо; поки результат іспиту ставиться у чеклісті групи.</div></div></div>';
+  else body = trainStudentsHtml(instr);
+  c.innerHTML = top + body;
+}
+
+/* ── «Загальний потік»: зведення груп усіх інструкторів на поточний тиждень ── */
+function trainFlowHtml() {
+  var cur = trainMonday();
+  var weeks = (trainState.data.weeks || []).filter(function(w){ return w.week === cur; });
+  var panels = weeks.map(function(w){
+    var p = S.personnel.find(function(x){ return x.id === w.instructor; });
+    var rows = (w.students || []).map(function(st){
+      return '<tr><td style="font-weight:700">'+esc(st.n)+'</td>'+
+        TRAIN_CHECK.map(function(ch){ return '<td>'+esc((st.c && st.c[ch[0]]) || '—')+'</td>'; }).join('')+'</tr>';
+    }).join('');
+    return '<div class="matrix-panel" style="margin-top:12px">'+
+      '<div class="matrix-panel-head"><span class="cap">🎓 '+esc(p ? p.callsign : w.instructor)+'</span>'+
+        '<span class="count-pill">'+(w.students||[]).length+'</span></div>'+
+      (rows
+        ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th>Студент</th>'+
+          TRAIN_CHECK.map(function(ch){ return '<th>'+ch[1]+'</th>'; }).join('')+'</tr>'+rows+'</table></div>'
+        : '<div class="empty">Групу ще не набрано</div>')+
+    '</div>';
+  }).join('');
+  return '<div class="hint" style="margin-top:12px">Зведення всіх груп на поточний тиждень (перегляд). Редагування — у «Особиста група».</div>'+
+    (panels || '<div class="empty" style="margin-top:12px">Цього тижня груп ще немає</div>');
 }
 
 /* ── Вкладка «Студенти»: чеклісти тижня ── */
@@ -4816,161 +4909,7 @@ function trainRemoveStudent(i) {
   renderView();
 }
 
-/* ── Вкладка «Вильоти»: конфіг з екіпажу, автостоп 20 хв ── */
-function trainFlights(crew) {
-  return S.flights.filter(function(f){
-    return f.training && f.id.indexOf('FLT-') === 0 && crew && f.crew === crew.id;
-  }).sort(function(a, b){ return trainStartMs(b) - trainStartMs(a); });
-}
-function trainFlyHtml(instr) {
-  var crew = trainCrewOf(instr);
-  if (!crew) {
-    return '<div class="side-panel" style="margin-top:12px"><div class="side-panel-body">'+
-      '<div class="empty">Інструктор не в екіпажі.</div>'+
-      '<div class="hint" style="margin-top:8px">Борти, трекери й частоти для навчальних вильотів беруться з екіпажу — створи або приєднайся до екіпажу в розділі «Екіпаж».</div>'+
-    '</div></div>';
-  }
-  var mine = trainFlights(crew).slice(0, 15);
-  var crewLine = '<div class="hint" style="margin-top:12px">Екіпаж <b style="color:var(--text)">'+esc(crew.crewName || crew.id)+'</b>'+
-    ' · частота <b style="color:var(--text)">'+esc(cleanCode(crew.freq) || '—')+'</b>'+
-    ' · бортів: '+(crew.drones ? crew.drones.split('|').filter(Boolean).length : 0)+
-    ' — конфіг вильоту береться звідси</div>';
-  var rows = mine.map(function(f){
-    var active = f.status === 'Активний';
-    var cd = '';
-    if (active) {
-      cd = ' <span class="badge-main" style="background:var(--green);color:#0d0d0d" id="trainCd_'+esc(f.id)+'">'+trainCountdown(f)+'</span>';
-    }
-    return '<tr><td class="mono">'+esc(sectorYmd(f.date).slice(5))+'<div class="hint">'+esc(sectorHm(f.start))+(f.end?' → '+esc(sectorHm(f.end)):'')+'</div></td>'+
-      '<td>'+esc(f.drones || '—')+'<div class="hint">'+esc(cleanCode(f.freq) || '')+'</div></td>'+
-      '<td>'+statusChip(f.status)+cd+'</td>'+
-      '<td style="text-align:right"><button class="btn btn-mini btn-sec" data-id="'+esc(f.id)+'" onclick="trainIncidentModal(this.dataset.id)">⚠ ЧП</button></td></tr>';
-  }).join('');
-  return crewLine +
-    '<button class="btn btn-green" style="margin-top:12px;width:100%;padding:14px;font-size:14px" onclick="trainNewFlight()">▶ НОВИЙ ВИЛІТ</button>'+
-    '<div class="hint" style="margin-top:6px;text-align:center">Виліт завершиться сам через '+TRAIN_MIN+' хв — якщо все добре, більше нічого натискати не треба</div>'+
-    '<div class="matrix-panel" style="margin-top:12px">'+
-      '<div class="matrix-panel-head"><span class="cap">✈ Навчальні вильоти</span><span class="count-pill">'+mine.length+'</span></div>'+
-      (rows
-        ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th>Час</th><th>Борт · частота</th><th>Статус</th><th></th></tr>'+rows+'</table></div>'
-        : '<div class="empty">Вильотів ще не було — тисни «Новий виліт»</div>')+
-    '</div>';
-}
-function trainCountdown(f) {
-  var left = trainStartMs(f) + TRAIN_MIN * 60000 - Date.now();
-  if (left <= 0) return '⏱ завершується…';
-  var m = Math.floor(left / 60000), s = Math.floor(left % 60000 / 1000);
-  return '⏱ ' + m + ':' + ('0'+s).slice(-2);
-}
-// Секундний тік: оновлює лічильники без повного перерендеру;
-// коли час вийшов — один loadAll, і сторож на бекенді закриє виліт
-var _trainTickReloaded = false;
-function trainTickStart() {
-  var crew = trainCrewOf(trainInstructorId());
-  if (!crew || !trainFlights(crew).some(function(f){ return f.status === 'Активний'; })) return;
-  _trainTickReloaded = false;
-  _trainTick = setInterval(function(){
-    if (S.view !== 'train') { clearInterval(_trainTick); _trainTick = null; return; }
-    var crew2 = trainCrewOf(trainInstructorId());
-    var anyActive = false;
-    (crew2 ? trainFlights(crew2) : []).forEach(function(f){
-      if (f.status !== 'Активний') return;
-      anyActive = true;
-      var el = $('trainCd_' + f.id);
-      if (el) el.textContent = trainCountdown(f);
-      if (trainStartMs(f) + TRAIN_MIN * 60000 <= Date.now() && !_trainTickReloaded) {
-        _trainTickReloaded = true;
-        loadAll(); // сторож у getFlightList закриє прострочений виліт
-      }
-    });
-    if (!anyActive) { clearInterval(_trainTick); _trainTick = null; }
-  }, 1000);
-}
-// Останній конфіг = крайній навчальний виліт екіпажу
-function trainLastCfg(crew) {
-  var last = trainFlights(crew)[0];
-  return last ? { drone: last.drones || '', tracker: last.tracker || '', freq: last.freq || '' } : null;
-}
-function trainNewFlight() {
-  var crew = trainCrewOf(trainInstructorId());
-  if (!crew) return;
-  var last = trainLastCfg(crew);
-  if (last && last.drone) {
-    _trainPrevCfg = last;
-    openModal('▶ Новий виліт',
-      '<div class="hint" style="margin-bottom:10px">Використати попередні налаштування?</div>'+
-      '<div class="side-panel"><div class="side-panel-body" style="padding:10px 12px">'+
-        '<b>'+esc(last.drone)+'</b>'+(last.tracker?' · '+esc(last.tracker):'')+' · '+esc(cleanCode(last.freq)||'—')+
-      '</div></div>'+
-      '<div class="btn-row" style="margin-top:12px">'+
-        '<button class="btn btn-green" onclick="closeModal();trainGo(_trainPrevCfg)">⚡ Так, той самий</button>'+
-        '<button class="btn btn-sec" onclick="closeModal();trainFlightModal()">Ні, новий конфіг</button>'+
-      '</div>');
-    return;
-  }
-  trainFlightModal();
-}
-function trainFlightModal() {
-  var crew = trainCrewOf(trainInstructorId());
-  if (!crew) return;
-  var busy = {};
-  activeFlights().forEach(function(f){
-    String(f.drones||'').split('|').forEach(function(d){ if (d.trim()) busy[d.trim()] = f.id; });
-  });
-  var drones = String(crew.drones||'').split('|').map(function(s){ return s.trim(); }).filter(Boolean);
-  // ⭐ основний борт — першим і обраним
-  drones.sort(function(a, b){ return (b===crew.mainDrone) - (a===crew.mainDrone); });
-  var dOpts = drones.map(function(d, i){
-    var b = busy[d];
-    return '<option value="'+esc(d)+'"'+(b?' disabled':'')+((!b && i===0)?' selected':'')+'>'+
-      (d===crew.mainDrone?'⭐ ':'')+esc(d)+(b?' 🔒 в польоті':'')+'</option>';
-  }).join('');
-  var trks = String(crew.tracker||'').split('|').map(function(s){ return s.trim(); }).filter(Boolean);
-  var tOpts = '<option value="">— без трекера —</option>' + trks.map(function(t, i){
-    return '<option value="'+esc(t)+'"'+(i===0?' selected':'')+'>'+esc(t)+'</option>';
-  }).join('');
-  var freqs = [crew.freq].concat(String(crew.reserves||'').split('|')).map(function(s){ return String(s||'').trim(); }).filter(Boolean);
-  var fOpts = freqs.map(function(fr, i){
-    return '<option value="'+esc(fr)+'"'+(i===0?' selected':'')+'>'+esc(fr)+(i===0?' · основна':' · резерв')+'</option>';
-  }).join('') || '<option value="">— не вказано —</option>';
-  openModal('▶ Новий навчальний виліт',
-    '<div class="f"><label>Борт</label><select id="tfDrone">'+dOpts+'</select></div>'+
-    '<div class="f"><label>Трекер</label><select id="tfTracker">'+tOpts+'</select></div>'+
-    '<div class="f"><label>Частота</label><select id="tfFreq">'+fOpts+'</select></div>'+
-    '<button class="btn btn-green" id="tfBtn" style="width:100%;padding:12px" onclick="trainGoFromModal()">▶ Полетіли</button>'
-  );
-}
-function trainGoFromModal() {
-  var d = $('tfDrone') ? $('tfDrone').value : '';
-  if (!d) { toast('⚠ Обери борт', true); return; }
-  trainGo({ drone: d, tracker: $('tfTracker').value, freq: $('tfFreq').value }, $('tfBtn'));
-  closeModal();
-}
-function trainGo(cfg, btn) {
-  var crew = trainCrewOf(trainInstructorId());
-  if (!crew) return;
-  var act = activeFlights().find(function(f){ return String(f.drones||'').split('|').indexOf(cfg.drone) !== -1; });
-  if (act) { toast('⚠ '+cfg.drone+' вже в польоті ('+act.id+')', true); return; }
-  if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
-  var payload = {
-    crew: crew.id, gnst: crew.gnst || '', drones: cfg.drone, bind: crew.bind || '',
-    tracker: cfg.tracker || '', system: crew.system || '', freq: cfg.freq || '',
-    note: 'Навчальний виліт'
-  };
-  var tok = (!isAdminUser() && authToken && authToken()) || '';
-  if (tok) payload.token = tok;
-  rpc('trainingStartFlight', [payload], function(res){
-    toast('▶ Виліт '+((res && res.id) || '')+' — автостоп через '+TRAIN_MIN+' хв');
-    S.flights.push({ id: (res && res.id) || ('FLT-L'+Date.now()), date: new Date().toISOString().slice(0,10),
-      crew: crew.id, gnst: payload.gnst, drones: payload.drones, bind: payload.bind,
-      pilot: (S.auth && S.auth.callsign) || '', tracker: payload.tracker, trackerOk: '',
-      start: (res && res.start) || new Date().toTimeString().slice(0,5), end: '',
-      status: 'Активний', note: payload.note, creatorEmail: S.me,
-      system: payload.system, freq: payload.freq, reserves: '', training: true });
-    renderView();
-    updateTopStats();
-  }, function(e){ toast('❌ '+((e && e.message) || e), true); renderView(); });
-}
+/* ЧП по навчальному вильоту — редагування свого вильоту з Журналу польоту */
 function trainIncidentModal(flightId) {
   var f = S.flights.find(function(x){ return x.id === flightId; });
   if (!f) return;

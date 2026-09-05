@@ -3691,7 +3691,7 @@ function getFlightList() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) return [];
-  const values = sheet.getRange(3, 1, sheet.getLastRow() - 2, 27).getValues();
+  const values = sheet.getRange(3, 1, sheet.getLastRow() - 2, 28).getValues();
   // Автозавершення прострочених навчальних вильотів — «ліниво», при читанні
   try { trainingAutoEnd_(sheet, values); } catch(e) { Logger.log('trainingAutoEnd: ' + e); }
   return values
@@ -3722,6 +3722,7 @@ function getFlightList() {
       mainDrone:    String(row[24] || ''), // col Y — Основний борт екіпажу
       sector:       String(row[25] || ''), // col Z — Сектор екіпажу (порожньо = всюди)
       training:     String(row[26] || '').trim() === 'НАВЧ', // col AA — навчальний виліт
+      student:      String(row[27] || ''), // col AB — студент, який летів
     }));
 }
 
@@ -3776,6 +3777,10 @@ function startFlight(data) {
   sheet.getRange(insertedRow, 10).setNumberFormat('@'); // початок
   sheet.getRange(insertedRow, 11).setNumberFormat('@'); // кінець
   if (data.note) touchFlightNote(sheet, insertedRow);
+  // Навчальний виліт: мітка «НАВЧ» (col AA) вмикає автозавершення через
+  // TRAINING_FLIGHT_MIN хв; студент, який летить, — col AB
+  if (data.training) sheet.getRange(insertedRow, 27).setValue('НАВЧ');
+  if (data.student)  sheet.getRange(insertedRow, 28).setValue(String(data.student).slice(0, 80));
   // Захист не ставимо тут — рядок ще активний (Кінець порожній)
   const row = sheet.getLastRow();
   sheet.getRange(row, 1, 1, 16)
@@ -3977,6 +3982,8 @@ function endFlight(flightId, droneStatuses, note) {
         if (lostInfo) updated.push.apply(updated, lostInfo);
       } catch(e) { Logger.log('Каскад втрати трекера ' + tid + ': ' + e); }
     });
+    // Результат вильоту виводиться сам: з втратою борта — неуспішний
+    sheet.getRange(row, 12).setValue('Втрачений');
   }
 
   // Записати примітку вильоту (включно з деталями втрати якщо є)
@@ -5898,12 +5905,11 @@ function trainingWeekMonday_() {
   return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
-// Тижні: адмін бачить усіх інструкторів, інструктор — свої
+// Тижні всіх інструкторів: «Загальний потік» бачать усі інструктори,
+// а редагування чужого і так відсікає trainingSaveStudents
 function getTraining() {
   trainingGuard_();
   const sheet = ensureTrainingSheet();
-  const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
-  const admin = isAdmin(apiUserEmail_() || '');
   let rows = [];
   if (sheet.getLastRow() >= 3) {
     rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 4).getValues()
@@ -5915,7 +5921,6 @@ function getTraining() {
                  week: String(r[2]).trim(), students: Array.isArray(st) ? st : [] };
       });
   }
-  if (!admin && me) rows = rows.filter(w => w.instructor === me.id);
   return { week: trainingWeekMonday_(), weeks: rows };
 }
 
@@ -5958,19 +5963,6 @@ function trainingSaveStudents(instructorId, week, students) {
   });
 }
 
-// Швидкий навчальний виліт: звичайний startFlight + мітка «НАВЧ» (авто-стоп)
-function trainingStartFlight(data) {
-  trainingGuard_();
-  const res = startFlight(data || {});
-  try {
-    const sheet = getSheet(SpreadsheetApp.getActiveSpreadsheet(), 'Журнал польоту');
-    const ids = sheet.getRange(3, 1, sheet.getLastRow() - 2, 1).getValues().flat().map(String);
-    const idx = ids.indexOf(res.id);
-    if (idx !== -1) sheet.getRange(idx + 3, 27).setValue('НАВЧ');
-  } catch(e) { Logger.log('training mark: ' + e); }
-  return res;
-}
-
 // «Лінивий» сторож: активні навчальні вильоти старші за TRAINING_FLIGHT_MIN
 // хвилин закриваються при будь-якому читанні журналу (мутує values на місці)
 function trainingAutoEnd_(sheet, values) {
@@ -5995,7 +5987,12 @@ function trainingAutoEnd_(sheet, values) {
     const endStr = Utilities.formatDate(new Date(endMs), Session.getScriptTimeZone(), 'HH:mm');
     sheet.getRange(i + 3, 11).setValue(endStr);       // K — Кінець
     sheet.getRange(i + 3, 12).setValue('Завершено');  // L — Статус (як в endFlight)
-    row[10] = endStr; row[11] = 'Завершено';
+    // Позначка в примітці: видно, що виліт закрив сторож, а не людина
+    const oldNote = String(row[12] || '');
+    const auto = '⏱ Автозавершення (' + TRAINING_FLIGHT_MIN + ' хв)';
+    sheet.getRange(i + 3, 13).setValue(oldNote ? oldNote + '\n' + auto : auto);
+    try { touchFlightNote(sheet, i + 3); } catch(e) {}
+    row[10] = endStr; row[11] = 'Завершено'; row[12] = oldNote ? oldNote + '\n' + auto : auto;
   });
 }
 
