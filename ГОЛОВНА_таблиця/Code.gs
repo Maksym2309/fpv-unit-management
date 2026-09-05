@@ -3691,7 +3691,10 @@ function getFlightList() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Журнал польоту');
   if (!sheet || sheet.getLastRow() < 3) return [];
-  return sheet.getRange(3, 1, sheet.getLastRow() - 2, 26).getValues()
+  const values = sheet.getRange(3, 1, sheet.getLastRow() - 2, 27).getValues();
+  // Автозавершення прострочених навчальних вильотів — «ліниво», при читанні
+  try { trainingAutoEnd_(sheet, values); } catch(e) { Logger.log('trainingAutoEnd: ' + e); }
+  return values
     .filter(row => String(row[0]).trim() !== '')
     .map(row => ({
       id:           String(row[0]),
@@ -3718,6 +3721,7 @@ function getFlightList() {
       grid:         String(row[23] || ''), // col X — Сітка каналів VTX
       mainDrone:    String(row[24] || ''), // col Y — Основний борт екіпажу
       sector:       String(row[25] || ''), // col Z — Сектор екіпажу (порожньо = всюди)
+      training:     String(row[26] || '').trim() === 'НАВЧ', // col AA — навчальний виліт
     }));
 }
 
@@ -4209,7 +4213,9 @@ function protectSinotrackSheets() {
 // (склад, створення, особовий склад). Роздає тільки адмін; адмін має всі права.
 // «Сектор» — ID сектора, до якого людина розподілена (аркуш «Сектори»).
 // Порожньо = не розподілена, може бути в екіпажах будь-якого сектора.
-const PERSONNEL_COLS = 12;
+// «Інструктор» (чекбокс) — доступ до розділу «Навчання»: студенти,
+// чеклісти, швидкі навчальні вильоти. Роздає адмін.
+const PERSONNEL_COLS = 13;
 const PERSON_ROLES = ['Пілот','Штурман','Технік','Сапер','Оператор','Командир'];
 
 function ensurePersonnelSheet(ss) {
@@ -4222,14 +4228,14 @@ function ensurePersonnelSheet(ss) {
       .setHorizontalAlignment('center').setVerticalAlignment('middle');
     sheet.setRowHeight(1, 38);
     sheet.getRange(2, 1, 1, PERSONNEL_COLS)
-      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін','Інвентар','Екіпажі','Інформація','Сектор']])
+      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін','Інвентар','Екіпажі','Інформація','Сектор','Інструктор']])
       .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
     sheet.setFrozenRows(2);
-    [90, 140, 180, 110, 110, 10, 10, 70, 90, 90, 100, 110].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+    [90, 140, 180, 110, 110, 10, 10, 70, 90, 90, 100, 110, 110].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
     try { sheet.hideColumns(6, 2); } catch(e) {} // пароль і _TS приховані
   }
   // Міграція: чекбокс-колонки для аркушів, створених раніше
-  [[8, 'Адмін', 70], [9, 'Інвентар', 90], [10, 'Екіпажі', 90], [11, 'Інформація', 100]].forEach(([col, title, width]) => {
+  [[8, 'Адмін', 70], [9, 'Інвентар', 90], [10, 'Екіпажі', 90], [11, 'Інформація', 100], [13, 'Інструктор', 110]].forEach(([col, title, width]) => {
     if (String(sheet.getRange(2, col).getValue()).trim() === title) return;
     sheet.getRange(2, col).setValue(title)
       .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
@@ -4265,7 +4271,7 @@ function readPersonnel() {
       id: String(r[0]).trim(), callsign: String(r[1]).trim(), name: String(r[2]).trim(),
       role: String(r[3]).trim(), status: String(r[4]).trim(), pass: String(r[5]).trim(),
       admin: chk_(r[7]), rightInv: chk_(r[8]), rightCrew: chk_(r[9]), rightInfo: chk_(r[10]),
-      sector: String(r[11] || '').trim() }))
+      sector: String(r[11] || '').trim(), rightInstr: chk_(r[12]) }))
     .filter(p => p.id && p.status !== 'Видалений');
 }
 
@@ -4299,6 +4305,7 @@ function personPublic(p) {
     rightInv: !!p.rightInv, rightCrew: !!p.rightCrew, rightInfo: !!p.rightInfo,
     canInv: !!(p.admin || p.rightInv), canCrew: !!(p.admin || p.rightCrew),
     canInfo: !!(p.admin || p.rightInfo),
+    rightInstr: !!p.rightInstr, canInstr: !!(p.admin || p.rightInstr),
     sector: p.sector || '' };
 }
 
@@ -4451,7 +4458,7 @@ function apiRight_(kind) {
   if (typeof __API_CTX === 'undefined' || !__API_CTX || !__API_CTX.person) return false;
   const p = __API_CTX.person;
   if (p.admin) return true;
-  return kind === 'inv' ? !!p.rightInv : kind === 'crew' ? !!p.rightCrew : kind === 'info' ? !!p.rightInfo : false;
+  return kind === 'inv' ? !!p.rightInv : kind === 'crew' ? !!p.rightCrew : kind === 'info' ? !!p.rightInfo : kind === 'instr' ? !!p.rightInstr : false;
 }
 
 // ── Адміністрування персоналу ──
@@ -4474,7 +4481,7 @@ function adminListPersonnel() {
 function adminSavePerson(d) {
   adminGuard();
   const fullAdmin = isAdmin(apiUserEmail_() || '');
-  if (!fullAdmin) { delete d.admin; delete d.rightInv; delete d.rightCrew; delete d.rightInfo; }
+  if (!fullAdmin) { delete d.admin; delete d.rightInv; delete d.rightCrew; delete d.rightInfo; delete d.rightInstr; }
   return withScriptLock(function() {
     const sheet = ensurePersonnelSheet();
     const list = readPersonnel();
@@ -4496,6 +4503,7 @@ function adminSavePerson(d) {
       if (d.rightInv  !== undefined) sheet.getRange(p.row, 9).setValue(!!d.rightInv);
       if (d.rightCrew !== undefined) sheet.getRange(p.row, 10).setValue(!!d.rightCrew);
       if (d.rightInfo !== undefined) sheet.getRange(p.row, 11).setValue(!!d.rightInfo);
+      if (d.rightInstr !== undefined) sheet.getRange(p.row, 13).setValue(!!d.rightInstr);
       if (d.newPassword) {
         const salt = makeSalt();
         sheet.getRange(p.row, 6).setValue(salt + '$' + hashPassword(d.newPassword, salt));
@@ -4517,7 +4525,8 @@ function adminSavePerson(d) {
     const newId = 'OP-' + String(maxN + 1).padStart(3, '0');
     const salt = makeSalt();
     sheet.appendRow([newId, cs, d.name || '', d.role || '', d.status || 'Активний',
-      salt + '$' + hashPassword(d.newPassword, salt), nowTS(), !!d.admin, !!d.rightInv, !!d.rightCrew, !!d.rightInfo]);
+      salt + '$' + hashPassword(d.newPassword, salt), nowTS(), !!d.admin, !!d.rightInv, !!d.rightCrew, !!d.rightInfo,
+      '', !!d.rightInstr]);
     return { id: newId };
   });
 }
@@ -5840,6 +5849,186 @@ function assertCrewSector_(crewSector, mainId, membersStr) {
       throw new Error('«' + p.callsign + '» розподілений в інший сектор — спершу перемісти його (вкладка «Розподіл»)');
     }
   });
+}
+
+// ============================================================
+// НАВЧАННЯ (інструктори · студенти · швидкі навчальні вильоти)
+// ============================================================
+// Аркуш «Навчання»: ID | Інструктор (OP-ID) | Тиждень (понеділок,
+// yyyy-MM-dd) | Студенти (JSON) | _TS
+// Рамка — рядок «інструктор × робочий тиждень». Студенти — просто список
+// імен із чеклістом (без акаунтів): [{n:'Імʼя', c:{sim:'Добре', …}}].
+// Спорядження й частоти НЕ бронюються окремо — вони живуть в екіпажі
+// інструктора, як усе інше в застосунку.
+// Навчальний виліт — звичайний рядок «Журналу польоту» з міткою «НАВЧ»
+// у колонці AA(27); він автозавершується через TRAINING_FLIGHT_MIN хвилин
+// «лінивим» сторожем у getFlightList — без тригерів.
+
+const TRAINING_FLIGHT_MIN = 20;
+
+function ensureTrainingSheet(ss) {
+  const s = ss || SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = getSheet(s, 'Навчання');
+  if (!sheet) {
+    sheet = s.insertSheet('Навчання');
+    sheet.getRange('A1:D1').merge().setValue('🎓 НАВЧАННЯ — ТИЖНІ ІНСТРУКТОРІВ')
+      .setBackground('#1a3a5c').setFontColor('#fff').setFontSize(13).setFontWeight('bold')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sheet.setRowHeight(1, 38);
+    sheet.getRange(2, 1, 1, 5)
+      .setValues([['ID','Інструктор','Тиждень','Студенти','_TS']])
+      .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.setFrozenRows(2);
+    [80, 110, 110, 500, 10].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+  }
+  return sheet;
+}
+
+function trainingGuard_() {
+  const email = apiUserEmail_() || '';
+  if (isAdmin(email) || apiRight_('instr')) return;
+  throw new Error('Потрібне право «Інструктор» або права адміністратора');
+}
+
+// Понеділок поточного тижня — ключ рамки
+function trainingWeekMonday_() {
+  const d = new Date();
+  const shift = (d.getDay() + 6) % 7; // пн=0 … нд=6
+  d.setDate(d.getDate() - shift);
+  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+// Тижні: адмін бачить усіх інструкторів, інструктор — свої
+function getTraining() {
+  trainingGuard_();
+  const sheet = ensureTrainingSheet();
+  const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
+  const admin = isAdmin(apiUserEmail_() || '');
+  let rows = [];
+  if (sheet.getLastRow() >= 3) {
+    rows = sheet.getRange(3, 1, sheet.getLastRow() - 2, 4).getValues()
+      .filter(r => String(r[0]).trim() !== '')
+      .map(r => {
+        let st = [];
+        try { st = JSON.parse(String(r[3] || '[]')) || []; } catch(e) {}
+        return { id: String(r[0]), instructor: String(r[1]).trim(),
+                 week: String(r[2]).trim(), students: Array.isArray(st) ? st : [] };
+      });
+  }
+  if (!admin && me) rows = rows.filter(w => w.instructor === me.id);
+  return { week: trainingWeekMonday_(), weeks: rows };
+}
+
+// Зберегти студентів тижня (upsert рядка «інструктор × тиждень»).
+// Адмін — будь-якому інструктору, інструктор — тільки собі.
+function trainingSaveStudents(instructorId, week, students) {
+  trainingGuard_();
+  instructorId = String(instructorId || '').trim();
+  week = String(week || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
+  const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
+  if (!isAdmin(apiUserEmail_() || '') && (!me || me.id !== instructorId)) {
+    throw new Error('Інструктор редагує лише своїх студентів');
+  }
+  if (!Array.isArray(students) || students.length > 100) throw new Error('Некоректний список студентів');
+  const clean = students.map(s => ({
+    n: String((s && s.n) || '').trim().slice(0, 80),
+    c: (s && typeof s.c === 'object' && s.c) ? s.c : {}
+  })).filter(s => s.n);
+  const json = JSON.stringify(clean);
+  if (json.length > 30000) throw new Error('Список студентів завеликий');
+  return withScriptLock(function() {
+    const sheet = ensureTrainingSheet();
+    const lastRow = sheet.getLastRow();
+    let rowNum = 0, maxN = 0;
+    if (lastRow >= 3) {
+      sheet.getRange(3, 1, lastRow - 2, 3).getValues().forEach((r, i) => {
+        const m = String(r[0]).match(/TRN-(\d+)/);
+        if (m) maxN = Math.max(maxN, +m[1]);
+        if (String(r[1]).trim() === instructorId && String(r[2]).trim() === week) rowNum = i + 3;
+      });
+    }
+    if (rowNum) {
+      sheet.getRange(rowNum, 4, 1, 2).setValues([[json, nowTS()]]);
+      return { id: String(sheet.getRange(rowNum, 1).getValue()) };
+    }
+    const id = 'TRN-' + String(maxN + 1).padStart(3, '0');
+    sheet.appendRow([id, instructorId, week, json, nowTS()]);
+    return { id: id };
+  });
+}
+
+// Швидкий навчальний виліт: звичайний startFlight + мітка «НАВЧ» (авто-стоп)
+function trainingStartFlight(data) {
+  trainingGuard_();
+  const res = startFlight(data || {});
+  try {
+    const sheet = getSheet(SpreadsheetApp.getActiveSpreadsheet(), 'Журнал польоту');
+    const ids = sheet.getRange(3, 1, sheet.getLastRow() - 2, 1).getValues().flat().map(String);
+    const idx = ids.indexOf(res.id);
+    if (idx !== -1) sheet.getRange(idx + 3, 27).setValue('НАВЧ');
+  } catch(e) { Logger.log('training mark: ' + e); }
+  return res;
+}
+
+// «Лінивий» сторож: активні навчальні вильоти старші за TRAINING_FLIGHT_MIN
+// хвилин закриваються при будь-якому читанні журналу (мутує values на місці)
+function trainingAutoEnd_(sheet, values) {
+  const now = Date.now();
+  values.forEach((row, i) => {
+    if (String(row[26] || '').trim() !== 'НАВЧ') return;
+    if (String(row[11]).trim() !== 'Активний') return;
+    if (String(row[0]).indexOf('FLT-') !== 0) return;
+    const m = String(row[9] || '').match(/(\d{1,2}):(\d{2})/);
+    if (!m) return;
+    // Дата приходить або Date-об'єктом, або рядком yyyy-MM-dd — розбираємо самі,
+    // щоб не зловити зсув часової зони від new Date('yyyy-MM-dd')
+    let d = row[1] instanceof Date ? new Date(row[1]) : null;
+    if (!d) {
+      const dm = String(row[1] || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!dm) return;
+      d = new Date(+dm[1], +dm[2] - 1, +dm[3]);
+    }
+    d.setHours(+m[1], +m[2], 0, 0);
+    const endMs = d.getTime() + TRAINING_FLIGHT_MIN * 60000;
+    if (now < endMs) return;
+    const endStr = Utilities.formatDate(new Date(endMs), Session.getScriptTimeZone(), 'HH:mm');
+    sheet.getRange(i + 3, 11).setValue(endStr);       // K — Кінець
+    sheet.getRange(i + 3, 12).setValue('Завершено');  // L — Статус (як в endFlight)
+    row[10] = endStr; row[11] = 'Завершено';
+  });
+}
+
+// ЧП по навчальному вильоту: примітка, за потреби — статус вильоту і борта.
+// Дозволено інструктору-автору вильоту або адміну.
+function trainingIncident(flightId, note, droneId, droneStatus) {
+  trainingGuard_();
+  flightId = String(flightId || '').trim();
+  note = String(note || '').trim();
+  if (!note) throw new Error('Опиши, що сталося');
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getSheet(ss, 'Журнал польоту');
+  const ids = sheet.getRange(3, 1, sheet.getLastRow() - 2, 1).getValues().flat().map(String);
+  const idx = ids.indexOf(flightId);
+  if (idx === -1) throw new Error('Виліт не знайдено: ' + flightId);
+  const row = idx + 3;
+  if (String(sheet.getRange(row, 27).getValue()).trim() !== 'НАВЧ') {
+    throw new Error('Це не навчальний виліт — редагуй через Журнал польоту');
+  }
+  const email = apiUserEmail_() || '';
+  const creator = String(sheet.getRange(row, 14).getValue() || '');
+  if (!isAdmin(email) && creator && creator !== email) {
+    throw new Error('ЧП по чужому вильоту фіксує його автор або адмін');
+  }
+  const oldNote = String(sheet.getRange(row, 13).getValue() || '');
+  sheet.getRange(row, 13).setValue((oldNote ? oldNote + '\n' : '') + '⚠ ЧП: ' + note);
+  touchFlightNote(sheet, row);
+  if (droneStatus === 'Втрачений') sheet.getRange(row, 12).setValue('Втрачений');
+  // Статус борта — існуючим механізмом (Журнал руху, коментар до клітинки)
+  if (droneId && droneStatus) {
+    updateItemStatusById({ id: String(droneId), status: String(droneStatus) });
+  }
+  return { id: flightId };
 }
 
 function getAllData(needCaps) {

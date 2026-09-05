@@ -43,6 +43,8 @@ const API_FUNCTIONS = [
   'assignToKit', 'removeFromKit',
   // сектори (редагування — право «Екіпажі»; розподіл людей — тільки адмін)
   'getSectors', 'saveSector', 'deleteSector', 'setPersonSector',
+  // навчання (право «Інструктор» перевіряють самі функції)
+  'getTraining', 'trainingSaveStudents', 'trainingStartFlight', 'trainingIncident',
   // інформація (документи підрозділу) — права перевіряють самі функції
   'infoListFolder', 'infoGetFile', 'infoCreateFolder', 'infoUploadFile', 'infoRenameFolder', 'infoUploadSession', 'infoTrashFolder', 'infoFileInfo', 'infoGetFileChunk', 'infoRenameFile', 'infoTrashFile', 'infoMediaTicket', 'infoUploadCheck', 'infoMove',
   // витратники
