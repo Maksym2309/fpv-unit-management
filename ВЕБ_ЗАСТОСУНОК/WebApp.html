@@ -4936,40 +4936,109 @@ function trainOwners(week) {
 function trainWeekLbl(k) {
   return 'з ' + k.slice(8,10) + '.' + k.slice(5,7);
 }
-// Пул студентів редагує адміністратор курсу (без окремого перемикача);
-// розклад (дні, графік) — тільки олівцем біля тижня
+// Перемикач Перегляд/Редагування (бачить лише адмін курсу) розблоковує
+// дії ПУЛУ: додати студента, імпорт із файлу, видалення. Розклад (дні,
+// календар, графік) — як і раніше, тільки олівцем біля тижня.
+var trainFlowMode = 'view';
 function trainFlowHtml() {
-  var canEd = isAdminUser();
+  var isAdm = isAdminUser();
+  var canEd = isAdm && trainFlowMode === 'edit';
   var cur = trainMonday();
   if (!trainWeekSel || trainWeekSel === 'POOL') trainWeekSel = cur;
   var pool = trainFlowRow('POOL').students;
   var owner = trainOwners(trainWeekSel);
+  var range = trainWeekRangeLbl(trainWeekSel);
+  var cols = trainColOrder();
 
-  // ── Головна колонка: загал студентів ──
-  var rows = pool.map(function(st, i){
+  // Навчальні групи вибраного тижня: нумерація за алфавітом інструкторів
+  var groups = (trainState.data.weeks || []).filter(function(w){
+    return w.instructor !== 'FLOW' && w.week === trainWeekSel && Array.isArray(w.students) && w.students.length;
+  });
+  groups.sort(function(a, b){
+    var pa = S.personnel.find(function(x){ return x.id === a.instructor; });
+    var pb = S.personnel.find(function(x){ return x.id === b.instructor; });
+    return String(pa ? pa.callsign : a.instructor).localeCompare(String(pb ? pb.callsign : b.instructor), 'uk');
+  });
+  var groupNo = {};    // позивний інструктора → № групи
+  var studentRow = {}; // імʼя студента → його запис із клітинками
+  groups.forEach(function(g, gi){
+    var p = S.personnel.find(function(x){ return x.id === g.instructor; });
+    groupNo[p ? p.callsign : g.instructor] = gi + 1;
+    g.students.forEach(function(st){ if (!studentRow[st.n]) studentRow[st.n] = st; });
+  });
+
+  // Короткий зріз статусів по активностях: кольорові крапки в порядку графіка
+  function mini(st) {
+    if (!st) return '<span class="hint">—</span>';
+    return cols.map(function(ch){
+      var cell = trainCellOf(st, ch[0]);
+      var ds = trainCellStatus(cell, ch[0]);
+      var extra = cell.t === 'grade' && cell.score !== null ? ' · ' + cell.score + '/10'
+        : cell.t === 'time' ? ' · ' + trainFmtTime(trainEffSec(cell)) : '';
+      return '<span title="'+esc(ch[1]+': '+ds+extra)+'" style="color:'+trainStColor(ds)+';font-size:11px;cursor:default">●</span>';
+    }).join(' ');
+  }
+
+  // ── Загал студентів: № (група → алфавіт), група, короткі статуси ──
+  var entries = pool.map(function(st, i){ return { st: st, idx: i }; });
+  entries.sort(function(a, b){
+    var ga = owner[a.st.n] ? (groupNo[owner[a.st.n]] || 98) : 99;
+    var gb = owner[b.st.n] ? (groupNo[owner[b.st.n]] || 98) : 99;
+    if (ga !== gb) return ga - gb;
+    return a.st.n.localeCompare(b.st.n, 'uk');
+  });
+  var rows = entries.map(function(e, i){
+    var st = e.st;
     return '<tr'+(i % 2 ? ' style="background:var(--panel-2)"' : '')+'>'+
+      '<td class="mono" style="color:var(--dim);width:34px">'+(i+1)+'</td>'+
       '<td style="font-weight:700">'+esc(st.n)+'</td>'+
       '<td>'+(owner[st.n]
-        ? '<span class="badge-main">🎓 '+esc(owner[st.n])+'</span>'
+        ? '<span class="badge-main">'+(groupNo[owner[st.n]] ? 'гр.'+groupNo[owner[st.n]]+' · ' : '')+'🎓 '+esc(owner[st.n])+'</span>'
         : '<span class="hint">не розподілений</span>')+'</td>'+
-      (canEd ? '<td style="text-align:right"><button class="inv-act inv-act--del" title="Прибрати з потоку" data-i="'+i+'" onclick="trainPoolRemove(this.dataset.i)">'+svgIcon('x')+'</button></td>' : '')+
+      '<td>'+mini(studentRow[st.n])+'</td>'+
+      (canEd ? '<td style="text-align:right"><button class="inv-act inv-act--del" title="Прибрати з потоку" data-i="'+e.idx+'" onclick="trainPoolRemove(this.dataset.i)">'+svgIcon('x')+'</button></td>' : '')+
     '</tr>';
   }).join('');
+  var flowToggle = isAdm
+    ? '<div class="inv-mode" style="margin-left:0">'+
+        '<button class="inv-mode-btn'+(trainFlowMode !== 'edit' ? ' active' : '')+'" onclick="trainFlowMode=\'view\';renderView()">Перегляд</button>'+
+        '<button class="inv-mode-btn'+(trainFlowMode === 'edit' ? ' active' : '')+'" onclick="trainFlowMode=\'edit\';renderView()">Редагування</button>'+
+      '</div>'
+    : '';
   var acts = '<div class="info-acts" style="align-items:center;gap:8px">'+
     (canEd
       ? '<button class="icon-btn" title="Додати студента в потік" style="background:var(--accent);color:var(--on-accent)" onclick="trainPoolAddModal()">'+svgIcon('personAdd')+'</button>'+
         '<button class="icon-btn" title="Імпорт списку з файлу (.txt/.csv — один студент на рядок)" onclick="$(\'trainImpFile\').click()">'+svgIcon('upload')+'</button>'
-      : '')+'</div>'+
+      : '')+flowToggle+'</div>'+
     (canEd ? '<input type="file" id="trainImpFile" accept=".txt,.csv,text/plain" style="display:none" onchange="trainPoolImport(this)">' : '');
   var main = '<div class="matrix-panel">'+
     '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 Загал студентів</span>'+
       '<span class="count-pill">'+pool.length+'</span>'+acts+'</div>'+
     (rows
-      ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th>Студент</th><th>Група · '+esc(trainWeekLbl(trainWeekSel))+'</th>'+(canEd?'<th></th>':'')+'</tr>'+rows+'</table></div>'
+      ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th style="width:34px">№</th><th>Студент</th><th>Група · '+esc(range)+'</th><th>Статуси за активностями</th>'+(canEd?'<th></th>':'')+'</tr>'+rows+'</table></div>'
       : '<div class="empty">Потік порожній'+(canEd?' — додай студентів або імпортуй список із файлу':'')+'</div>')+
   '</div>';
 
-  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(canEd)+'</div></div>';
+  // ── Навчальні групи тижня: №, інструктор, період з-по, склад ──
+  var gRows = groups.map(function(g, gi){
+    var p = S.personnel.find(function(x){ return x.id === g.instructor; });
+    return '<tr'+(gi % 2 ? ' style="background:var(--panel-2)"' : '')+'>'+
+      '<td class="mono" style="width:44px">гр.'+(gi+1)+'</td>'+
+      '<td style="font-weight:700">🎓 '+esc(p ? p.callsign : g.instructor)+'</td>'+
+      '<td class="mono" style="white-space:nowrap">'+esc(range)+'</td>'+
+      '<td>'+g.students.map(function(s){ return esc(s.n); }).join(', ')+'</td>'+
+      '<td class="mono" style="text-align:right">'+g.students.length+'</td>'+
+    '</tr>';
+  }).join('');
+  var groupsPanel = '<div class="matrix-panel" style="margin-top:14px">'+
+    '<div class="matrix-panel-head"><span class="cap">👥 Навчальні групи</span>'+
+      '<span class="count-pill">'+groups.length+'</span></div>'+
+    (gRows
+      ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th>№</th><th>Інструктор</th><th>Період</th><th>Склад</th><th style="text-align:right">Осіб</th></tr>'+gRows+'</table></div>'
+      : '<div class="empty">Груп на цей тиждень ще немає — інструктори добирають студентів у «Особистій групі»</div>')+
+  '</div>';
+
+  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+groupsPanel+'</div><div>'+trainSideHtml(canEd)+'</div></div>';
 }
 
 // ── Спільна бокова колонка: календар із забитими днями + графік дат ──
