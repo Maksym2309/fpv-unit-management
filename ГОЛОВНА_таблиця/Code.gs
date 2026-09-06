@@ -5950,13 +5950,18 @@ function trainingSaveStudents(instructorId, week, students) {
   }
   let json;
   if (isFlow && week !== 'POOL') {
-    // План тижня: {days:{1..7: ['Теорія', …]}} — до 6 активностей на день
+    // Графік рамки: {days:{'yyyy-mm-dd': ['Теорія', …]}} — конкретні дати
+    // («тиждень» може бути несуцільним); старі ключі 1..7 теж приймаються
     const days = (students && typeof students === 'object' && students.days) || {};
     const clean = {};
-    for (let d = 1; d <= 7; d++) {
-      const arr = Array.isArray(days[d]) ? days[d] : (Array.isArray(days[String(d)]) ? days[String(d)] : []);
-      clean[d] = arr.map(x => String(x).slice(0, 40)).slice(0, 6);
-    }
+    let n = 0;
+    Object.keys(days).forEach(k => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(k) && !/^[1-7]$/.test(String(k))) return;
+      const arr = Array.isArray(days[k]) ? days[k] : [];
+      if (!arr.length || n >= 60) return;
+      clean[k] = arr.map(x => String(x).slice(0, 40)).slice(0, 8);
+      n++;
+    });
     json = JSON.stringify({ days: clean });
   } else {
     if (!Array.isArray(students) || students.length > 200) throw new Error('Некоректний список студентів');

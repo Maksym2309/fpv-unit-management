@@ -894,13 +894,25 @@ var DEMO_DATA = {
     var weeks = null;
     try { weeks = JSON.parse(localStorage.getItem('wh_training') || 'null'); } catch(e) {}
     if (Array.isArray(weeks)) return { week: trainMonday(), weeks: weeks };
-    // Тестові дані для обкатки логіки: пул, план тижня, групи двох інструкторів
+    // Тестові дані для обкатки логіки: пул, графік датами (з несуцільним
+    // прикладом — екзамен у вівторок НАСТУПНОГО тижня), групи інструкторів
     var m = trainMonday();
+    var dd = function(off){
+      var d = new Date(m + 'T00:00:00'); d.setDate(d.getDate() + off);
+      return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+    };
+    var plan1 = { days: {} };
+    plan1.days[dd(0)] = ['Теорія'];
+    plan1.days[dd(2)] = ['Вступний залік','Симулятор'];
+    plan1.days[dd(3)] = ['Зліт/посадка','Маневрування'];
+    plan1.days[dd(4)] = ['Виявлення/супровід цілі','Робота в екіпажі'];
+    var plan2 = { days: {} };
+    plan2.days[dd(8)] = ['Екзамен']; // вівторок наступного тижня — окремий день
     return { week: m, weeks: [
       { id:'TRN-P', instructor:'FLOW', week:'POOL', students:[
         {n:'Петро'},{n:'Андрій'},{n:'Марія'},{n:'Олег'},{n:'Ігор'},{n:'Соломія'}] },
-      { id:'TRN-PL', instructor:'FLOW', week:m, students:{ days:{
-        1:['Теорія'], 3:['Вступний залік','Симулятор'], 4:['Зліт/посадка','Маневрування'], 5:['Екзамен'] } } },
+      { id:'TRN-PL', instructor:'FLOW', week:m, students: plan1 },
+      { id:'TRN-PL2', instructor:'FLOW', week:dd(7), students: plan2 },
       { id:'TRN-1', instructor:'OP-004', week:m, students:[
         { n:'Петро', c:{ sim:{t:'time',sec:9840,run:0,st:'Пауза',note:'перерва на обід'},
                          intro:{t:'grade',score:9},
@@ -4920,83 +4932,143 @@ function trainFlowHtml() {
   return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(canEd)+'</div></div>';
 }
 
-// ── Спільна бокова колонка (потік і особиста група): тижні + план днів ──
-function trainSideHtml(canEd) {
-  var cur = trainMonday();
-  var weekKeys = [cur];
-  var next = (function(){ var d = new Date(cur); d.setDate(d.getDate() + 7);
-    return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); })();
-  weekKeys.push(next);
-  (trainState.data.weeks || []).forEach(function(w){
-    if (/^\d{4}-\d{2}-\d{2}$/.test(w.week) && weekKeys.indexOf(w.week) === -1) weekKeys.push(w.week);
+// ── Спільна бокова колонка: календар із забитими днями + графік дат ──
+// «Тиждень» потоку може бути НЕсуцільним: план тримає конкретні ДАТИ
+// (yyyy-mm-dd → активності). День зберігається у FLOW-рядку свого
+// календарного тижня, тож і тиждень підряд, і окремі розкидані дні
+// живуть кожен у своїй рамці. Старий формат {1..7} мігрується на льоту.
+var trainCalMonth = ''; // 'yyyy-mm' — місяць, показаний у календарі
+function trainFmtDate(d) {
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+function trainMondayOf(dateStr) {
+  var d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return trainFmtDate(d);
+}
+function trainDayLbl(dateStr) {
+  var d = new Date(dateStr + 'T00:00:00');
+  return TRAIN_DAYS[(d.getDay() + 6) % 7] + ' ' + dateStr.slice(8,10) + '.' + dateStr.slice(5,7);
+}
+// План рамки у форматі дат (старі ключі 1..7 конвертуються від понеділка)
+function trainPlanDays(weekKey) {
+  var wk = trainFlowRow(weekKey);
+  var days = (wk.students && wk.students.days) || {};
+  var out = {};
+  Object.keys(days).forEach(function(k){
+    var arr = days[k];
+    if (!Array.isArray(arr) || !arr.length) return;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k)) { out[k] = arr; return; }
+    var n = parseInt(k, 10);
+    if (n >= 1 && n <= 7 && /^\d{4}-\d{2}-\d{2}$/.test(weekKey)) {
+      var d = new Date(weekKey + 'T00:00:00');
+      d.setDate(d.getDate() + n - 1);
+      out[trainFmtDate(d)] = arr;
+    }
   });
-  weekKeys.sort().reverse();
-  var weekRows = weekKeys.map(function(k){
-    var sel = k === trainWeekSel;
-    return '<div class="member-row" style="margin-bottom:4px;padding:6px 8px;cursor:pointer'+(sel?';border-color:var(--accent)':'')+'" onclick="trainWeekPick(\''+esc(k)+'\')">'+
-      '<div style="flex:1"><b>'+esc(trainWeekLbl(k))+'</b>'+
-        (k === cur ? ' <span class="badge-main">поточний</span>' : '')+
-        (sel ? ' <span class="badge-main" style="background:var(--accent);color:var(--on-accent)">робочий</span>' : '')+'</div>'+
-      '<button class="inv-act" title="Працювати з тижнем '+esc(trainWeekLbl(k))+'" data-w="'+esc(k)+'" onclick="event.stopPropagation();trainWeekPick(this.dataset.w)">'+svgIcon('edit')+'</button>'+
-    '</div>';
-  }).join('');
+  wk.students.days = out;
+  return out;
+}
+// Всі забиті дні всіх рамок: дата → активності (для позначок у календарі)
+function trainBusyDays() {
+  var busy = {};
+  (trainState.data.weeks || []).forEach(function(w){
+    if (w.instructor !== 'FLOW' || !/^\d{4}-\d{2}-\d{2}$/.test(w.week)) return;
+    var days = trainPlanDays(w.week);
+    Object.keys(days).forEach(function(dt){ busy[dt] = days[dt]; });
+  });
+  return busy;
+}
+function trainCalShift(m) {
+  var p = (trainCalMonth || trainMonday().slice(0,7)).split('-');
+  var d = new Date(+p[0], +p[1] - 1 + m, 1);
+  trainCalMonth = d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);
+  renderView();
+}
+function trainSideHtml(canEd) {
+  var todayStr = trainFmtDate(new Date());
+  if (!trainCalMonth) trainCalMonth = (/^\d{4}-\d{2}/.test(trainWeekSel || '') ? trainWeekSel : todayStr).slice(0,7);
+  var busy = trainBusyDays();
+  var p = trainCalMonth.split('-');
+  var first = new Date(+p[0], +p[1]-1, 1);
+  var start = new Date(first);
+  start.setDate(1 - ((first.getDay() + 6) % 7)); // понеділок першого рядка сітки
+  var MONTHS = ['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'];
+  var head = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'+
+    '<button class="inv-act" title="Попередній місяць" onclick="trainCalShift(-1)">‹</button>'+
+    '<b style="flex:1;text-align:center;font:700 11px var(--font-data);text-transform:uppercase;letter-spacing:.06em">'+MONTHS[+p[1]-1]+' '+p[0]+'</b>'+
+    '<button class="inv-act" title="Наступний місяць" onclick="trainCalShift(1)">›</button></div>';
+  var grid = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">'+
+    TRAIN_DAYS.map(function(dn){ return '<div class="hint" style="font-size:9px">'+dn+'</div>'; }).join('');
+  var d = new Date(start);
+  for (var i = 0; i < 42; i++) {
+    var ds = trainFmtDate(d);
+    var inMonth = (d.getMonth() + 1) === +p[1];
+    var isBusy = !!busy[ds];
+    var inFrame = trainMondayOf(ds) === trainWeekSel;
+    var style = 'padding:3px 0 1px;cursor:pointer;font:700 11px var(--font-data);border:1px solid transparent;'+
+      (inMonth ? '' : 'opacity:.3;')+
+      (inFrame ? 'background:var(--panel-3);' : '')+
+      (isBusy ? 'color:var(--accent);' : '')+
+      (ds === todayStr ? 'border-color:var(--accent);' : '');
+    grid += '<div style="'+style+'" title="'+esc(trainDayLbl(ds))+(isBusy ? ': '+esc(busy[ds].join(', ')) : '')+'" data-d="'+ds+'" onclick="trainDayClick(this.dataset.d)">'+
+      d.getDate()+'<div style="font-size:7px;line-height:5px;height:5px;color:var(--accent)">'+(isBusy ? '●' : '')+'</div></div>';
+    d.setDate(d.getDate() + 1);
+  }
+  grid += '</div>';
 
-  var plan = trainFlowRow(trainWeekSel).students;
-  var dayRows = TRAIN_DAYS.map(function(dn, di){
-    var d = di + 1;
-    var list = (plan.days && plan.days[d]) || plan.days && plan.days[String(d)] || [];
-    var chips = list.map(function(a, ai){
+  // Графік робочої рамки: конкретні дати з активностями
+  var days = trainPlanDays(trainWeekSel);
+  var keys = Object.keys(days).sort();
+  var dayRows = keys.map(function(dt){
+    var chips = days[dt].map(function(a, ai){
       return '<span class="chip'+(canEd?' click':'')+'"'+
-        (canEd?' title="Прибрати" data-d="'+d+'" data-i="'+ai+'" onclick="trainDayDelAct(this.dataset.d, this.dataset.i)"':'')+
+        (canEd?' title="Прибрати" data-d="'+esc(dt)+'" data-i="'+ai+'" onclick="trainDayDelAct(this.dataset.d, this.dataset.i)"':'')+
         '>'+esc(a)+(canEd?' ✕':'')+'</span>';
-    }).join('') || '<span class="hint">—</span>';
-    var add = canEd
-      ? '<select class="inv-status-sel" style="width:auto;min-width:30px;flex:0 0 auto" data-d="'+d+'" onchange="trainDayAddAct(this.dataset.d, this.value);this.value=\'\'">'+
-          '<option value="">＋</option>'+
-          TRAIN_ACTS.map(function(a){ return '<option value="'+esc(a)+'">'+esc(a)+'</option>'; }).join('')+
-        '</select>'
-      : '';
-    return '<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--line)">'+
-      '<span style="width:26px;font:700 10px var(--font-data);color:var(--dim)">'+dn+'</span>'+
-      '<div style="flex:1;display:flex;flex-wrap:wrap;gap:4px;min-width:0">'+chips+'</div>'+add+
+    }).join('');
+    return '<div style="display:flex;align-items:flex-start;gap:6px;padding:5px 0;border-bottom:1px solid var(--line)">'+
+      '<span style="width:58px;flex:0 0 auto;font:700 10px var(--font-data);color:var(--dim);cursor:pointer" title="Відкрити день" data-d="'+esc(dt)+'" onclick="trainDayClick(this.dataset.d)">'+trainDayLbl(dt)+'</span>'+
+      '<div style="flex:1;display:flex;flex-wrap:wrap;gap:4px;min-width:0">'+chips+'</div>'+
     '</div>';
-  }).join('');
+  }).join('') || '<div class="empty" style="padding:8px 0">Днів із заняттями ще немає'+(canEd ? ' — клікни день у календарі' : '')+'</div>';
 
-  var side = '<div class="side-panel">'+
-      '<div class="side-head"><span class="cap">📅 Тижні</span>'+
-        (canEd ? '<button class="icon-btn" title="Додати тиждень (вибір дати в календарі)" style="background:var(--accent);color:var(--on-accent)" onclick="trainWeekAddModal()">＋</button>' : '')+
+  return '<div class="side-panel">'+
+      '<div class="side-head"><span class="cap">📅 Календар</span>'+
+        '<span class="hint">робочий: '+esc(trainWeekLbl(trainWeekSel))+'</span></div>'+
+      '<div class="side-body" style="padding:8px">'+head+grid+
+        '<div class="hint" style="margin-top:6px">'+(canEd
+          ? 'Клік по дню — активності дня: тиждень може бути несуцільним, хоч підряд, хоч окремі дні. Клік також робить тиждень дня робочим.'
+          : '● — день із заняттями. Клік по дню — вибрати робочий тиждень.')+'</div>'+
       '</div>'+
-      '<div class="side-body" style="padding:8px">'+weekRows+'</div>'+
     '</div>'+
     '<div class="side-panel">'+
-      '<div class="side-head"><span class="cap">🗓 План · '+esc(trainWeekLbl(trainWeekSel))+'</span></div>'+
-      '<div class="side-body" style="padding:8px 10px">'+dayRows+
-        '<div class="hint" style="margin-top:6px">Розкидай активності по днях: теорія, залік, симулятор, зліт/посадка, маневрування, екзамен.</div>'+
-      '</div>'+
+      '<div class="side-head"><span class="cap">🗓 Графік · '+esc(trainWeekLbl(trainWeekSel))+'</span></div>'+
+      '<div class="side-body" style="padding:8px 10px">'+dayRows+'</div>'+
     '</div>';
-  return side;
 }
 function trainWeekPick(k) { trainWeekSel = k; renderView(); }
-// Додати тиждень: дата з календаря → понеділок того тижня → порожній
-// план у FLOW-рядку (щоб тиждень зʼявився в списку і зберігся)
-function trainWeekAddModal() {
-  openModal('📅 Додати тиждень',
-    '<div class="f"><label>Будь-який день потрібного тижня</label><input type="date" id="twDate"></div>'+
-    '<div class="hint" style="margin-bottom:8px">Тиждень рахується з понеділка обраної дати.</div>'+
-    '<button class="btn btn-green" onclick="trainWeekAddDo()">＋ Додати тиждень</button>');
+// Клік по дню календаря: тиждень дня стає робочим; адмін у режимі
+// редагування одразу отримує модалку активностей цього дня
+function trainDayClick(dateStr) {
+  trainWeekSel = trainMondayOf(dateStr);
+  var canEd = isAdminUser() && ((trainTab === 'flow' && trainFlowMode === 'edit') || (trainTab === 'group' && trainMode === 'edit'));
+  renderView();
+  if (canEd) trainDayModal(dateStr);
 }
-function trainWeekAddDo() {
-  var v = $('twDate') ? $('twDate').value : '';
-  if (!v) { toast('⚠ Обери дату в календарі', true); return; }
-  var d = new Date(v + 'T00:00:00');
-  if (isNaN(d)) { toast('⚠ Некоректна дата', true); return; }
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  var mon = d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
-  var wk = trainFlowRow(mon);
-  trainFlowSave(wk);
-  trainWeekSel = mon;
-  closeModal(); renderView();
-  toast('📅 Тиждень '+trainWeekLbl(mon)+' додано');
+// Модалка активностей конкретного дня (редагування — адмін курсу)
+function trainDayModal(dateStr) {
+  var acts = trainPlanDays(trainMondayOf(dateStr))[dateStr] || [];
+  var chips = acts.map(function(a, ai){
+    return '<span class="chip click" title="Прибрати" data-d="'+esc(dateStr)+'" data-i="'+ai+'" onclick="trainDayDelAct(this.dataset.d, this.dataset.i);trainDayModal(this.dataset.d)">'+esc(a)+' ✕</span>';
+  }).join('') || '<span class="hint">активностей немає</span>';
+  openModal('🗓 '+esc(trainDayLbl(dateStr)),
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">'+chips+'</div>'+
+    '<div class="f"><label>Додати активність</label>'+
+      '<select id="tdAct">'+TRAIN_ACTS.map(function(a){ return '<option value="'+esc(a)+'">'+esc(a)+'</option>'; }).join('')+'</select></div>'+
+    '<div class="btn-row">'+
+      '<button class="btn btn-green" data-d="'+esc(dateStr)+'" onclick="trainDayAddAct(this.dataset.d, $(\'tdAct\').value);trainDayModal(this.dataset.d)">＋ Додати</button>'+
+      '<button class="btn btn-sec" onclick="closeModal()">Готово</button>'+
+    '</div>');
 }
 function trainPoolAddModal() {
   openModal('➕ Студент у потік',
@@ -5050,20 +5122,26 @@ function trainPoolImport(inp) {
   };
   rd.readAsText(file);
 }
-function trainDayAddAct(d, v) {
+// Активності дня живуть у рамці СВОГО календарного тижня — тому окремі
+// розкидані дні зберігаються коректно, кожен у своєму FLOW-рядку
+function trainDayAddAct(dateStr, v) {
   if (!v) return;
-  var wk = trainFlowRow(trainWeekSel);
-  wk.students.days = wk.students.days || {};
-  var arr = wk.students.days[d] = wk.students.days[d] || [];
+  var wk = trainFlowRow(trainMondayOf(dateStr));
+  var days = trainPlanDays(wk.week);
+  var arr = days[dateStr] = days[dateStr] || [];
   if (arr.indexOf(v) === -1) arr.push(v);
+  wk.students.days = days;
   trainFlowSave(wk);
   renderView();
 }
-function trainDayDelAct(d, i) {
-  var wk = trainFlowRow(trainWeekSel);
-  var arr = wk.students.days && wk.students.days[d];
+function trainDayDelAct(dateStr, i) {
+  var wk = trainFlowRow(trainMondayOf(dateStr));
+  var days = trainPlanDays(wk.week);
+  var arr = days[dateStr];
   if (!arr) return;
   arr.splice(+i, 1);
+  if (!arr.length) delete days[dateStr];
+  wk.students.days = days;
   trainFlowSave(wk);
   renderView();
 }
@@ -5086,19 +5164,33 @@ var TRAIN_STATUSES = ['—','В процесі','Пауза','Повтор','П�
 var TRAIN_GRADE_PRE = ['—','В процесі','Повтор'];
 var TRAIN_TYPE_DEF = { sim: 'time', intro: 'grade', tol: 'status', route: 'status', target: 'status', crew: 'status' };
 var TRAIN_TYPES = [['time','⏱ Час'],['status','☰ Статус'],['grade','🔟 Оцінка']];
-// Порядок колонок групи — за розкладом адміна (перша поява активності в
-// плані робочого тижня); дисципліни поза планом ідуть у кінці
+// Порядок колонок групи — за графіком адміна (перша поява активності
+// серед дат робочої рамки); дисципліни поза графіком ідуть у кінці
 function trainColOrder() {
-  var plan = trainFlowRow(trainWeekSel && /^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel) ? trainWeekSel : trainMonday()).students;
+  var frame = /^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel || '') ? trainWeekSel : trainMonday();
+  var days = trainPlanDays(frame);
   var seen = {}, out = [];
-  for (var d = 1; d <= 7; d++) {
-    (((plan && plan.days) || {})[d] || ((plan && plan.days) || {})[String(d)] || []).forEach(function(a){
+  Object.keys(days).sort().forEach(function(dt){
+    days[dt].forEach(function(a){
       var k = TRAIN_ACT2KEY[a];
       if (k && !seen[k]) { seen[k] = 1; out.push(TRAIN_CHECK.find(function(c){ return c[0] === k; })); }
     });
-  }
+  });
   TRAIN_CHECK.forEach(function(c){ if (!seen[c[0]]) out.push(c); });
   return out;
+}
+// Дати днів робочої рамки, де запланована дисципліна — для шапок колонок
+function trainColDates() {
+  var frame = /^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel || '') ? trainWeekSel : trainMonday();
+  var days = trainPlanDays(frame);
+  var map = {};
+  Object.keys(days).sort().forEach(function(dt){
+    days[dt].forEach(function(a){
+      var k = TRAIN_ACT2KEY[a];
+      if (k) (map[k] = map[k] || []).push(trainDayLbl(dt));
+    });
+  });
+  return map;
 }
 // Тип колонки: у першого студента групи (усі клітинки колонки тримаються
 // одного типу — тип перемикається в шапці й застосовується до всіх)
@@ -5243,8 +5335,10 @@ function trainStudentsHtml(instr) {
         '<button class="inv-mode-btn'+(trainMode === 'edit' ? ' active' : '')+'" onclick="trainMode=\'edit\';renderView()">Оцінювання</button>'+
       '</div>'
     : '';
-  // Колонки — в порядку розкладу адміна; тип оцінювання перемикається в шапці
+  // Колонки — в порядку графіка адміна; тип оцінювання перемикається в
+  // шапці; під назвою — конкретні дати занять з активностями цієї дисципліни
   var cols = trainColOrder();
+  var colDates = trainColDates();
   var header = '<tr><th>Студент</th>'+cols.map(function(ch){
     var glyph = '';
     if (canMark && trainMode === 'edit') {
@@ -5254,7 +5348,10 @@ function trainStudentsHtml(instr) {
         ' · клік — змінити для всіх (Час → Статус → Оцінка)" data-k="'+ch[0]+'" onclick="trainColTypeCycle(this.dataset.k)">'+
         (t === 'time' ? '⏱' : t === 'grade' ? '🔟' : '☰')+'</button>';
     }
-    return '<th style="white-space:nowrap">'+ch[1]+glyph+'</th>';
+    var dates = colDates[ch[0]]
+      ? '<div class="hint" style="font-weight:400;letter-spacing:0;text-transform:none">'+colDates[ch[0]].join(' · ')+'</div>'
+      : '';
+    return '<th style="white-space:nowrap;vertical-align:top">'+ch[1]+glyph+dates+'</th>';
   }).join('')+
     (canMark && trainMode === 'edit' ? '<th></th>' : '')+'</tr>';
   var rows = (wk.students || []).map(function(st, i){
