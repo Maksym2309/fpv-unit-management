@@ -1707,6 +1707,10 @@ function renderHome(c) {
     { icon:'⬡', name:'Управління сектором', sub:SECTORS.length+' сект. · '+activeFlights().length+' в ефірі', view:'sector' },
     { icon:svgIcon('info'), name:'Інформація', sub:'документи підрозділу', view:'info', iconAccent:true }
   ];
+  // «Навчання» бачать лише інструктори й адмін — як пункт у навігації
+  if (canInstructor()) {
+    tiles.splice(6, 0, { icon:'🎓', name:'Навчальний процес', sub:'студенти · чеклісти · результати', view:'train' });
+  }
   c.innerHTML = '<div class="view-title">Wild Hornets <span class="accent">Tactical OS</span></div>'+
     '<div class="view-sub">'+(S.auth
       ? '👤 '+esc(S.auth.callsign)+(S.auth.crewId ? ' · екіпаж '+esc(S.auth.crewName || S.auth.crewId)+(S.auth.isMain?' · головний':'') : ' · без екіпажу')
