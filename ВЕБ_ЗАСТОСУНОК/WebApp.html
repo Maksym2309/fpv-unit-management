@@ -904,15 +904,18 @@ var DEMO_DATA = {
       { id:'TRN-1', instructor:'OP-004', week:m, students:[
         { n:'Петро', c:{ sim:{t:'time',sec:9840,run:0,st:'Пауза',note:'перерва на обід'},
                          intro:{t:'grade',score:9},
-                         tol:{t:'status',st:'Пройдено'}, exam:{t:'grade',score:8} } },
+                         tol:{t:'status',st:'Пройдено'},
+                         target:{t:'status',st:'Пройдено',note:'ціль вів упевнено'},
+                         crew:{t:'status',st:'В процесі'} } },
         { n:'Андрій', c:{ sim:{t:'time',sec:4520,run:0,st:'Пауза'},
                           intro:{t:'grade',st:'В процесі'},
                           tol:{t:'status',st:'Повтор',note:'вітер, друга спроба'},
-                          exam:{t:'grade',score:5} } } ] },
+                          target:{t:'status',st:'В процесі'} } } ] },
       { id:'TRN-2', instructor:'OP-001', week:m, students:[
         { n:'Марія', c:{ sim:{t:'time',sec:10800,run:0}, intro:{t:'grade',score:10},
                          tol:{t:'status',st:'Пройдено'},
-                         route:{t:'status',st:'В процесі'}, exam:{t:'grade',score:9} } } ] }
+                         route:{t:'status',st:'В процесі'},
+                         crew:{t:'status',st:'Пройдено'} } } ] }
     ] };
   },
   trainingSaveStudents: function(instr, week, students){
@@ -4755,9 +4758,12 @@ var trainTab = 'group';          // flow | group | exam
 var trainState = { data: null, loading: false, err: null };
 var trainInstrSel = '';          // адмін може дивитися групу будь-якого інструктора
 var trainWeekSel = '';           // обраний тиждень (дата понеділка)
-var TRAIN_CHECK = [['sim','Симулятор'],['intro','Вступний залік'],['tol','Зліт / посадка'],['route','Маневрування'],['exam','Екзамен']];
-// Активність плану → дисципліна чекліста («Теорія» — без колонки)
-var TRAIN_ACT2KEY = { 'Симулятор':'sim', 'Вступний залік':'intro', 'Зліт/посадка':'tol', 'Маневрування':'route', 'Екзамен':'exam' };
+// Екзамен НЕ в чеклісті групи — в нього окрема вкладка
+var TRAIN_CHECK = [['sim','Симулятор'],['intro','Вступний залік'],['tol','Зліт / посадка'],['route','Маневрування'],
+  ['target','Виявлення / супровід цілі'],['crew','Робота в складі екіпажу']];
+// Активність плану → дисципліна чекліста («Теорія» і «Екзамен» — без колонки)
+var TRAIN_ACT2KEY = { 'Симулятор':'sim', 'Вступний залік':'intro', 'Зліт/посадка':'tol', 'Маневрування':'route',
+  'Виявлення/супровід цілі':'target', 'Робота в екіпажі':'crew' };
 var TRAIN_MIN = 20;
 
 function trainMonday() {
@@ -4836,7 +4842,7 @@ function renderTrain(c) {
    Нові студенти зʼявляються ТУТ (вручну або імпортом з файлу), особисті
    групи добирають людей із цього пулу. Праворуч — спрощений календар:
    вибір робочого тижня і розкладка активностей по днях. */
-var TRAIN_ACTS = ['Теорія','Вступний залік','Симулятор','Зліт/посадка','Маневрування','Екзамен'];
+var TRAIN_ACTS = ['Теорія','Вступний залік','Симулятор','Зліт/посадка','Маневрування','Виявлення/супровід цілі','Робота в екіпажі','Екзамен'];
 var TRAIN_DAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Нд'];
 
 // FLOW-рядок (пул 'POOL' або план тижня); створюється локально за потреби
@@ -5078,7 +5084,7 @@ var TRAIN_STATUSES = ['—','В процесі','Пауза','Повтор','П�
 // До виставлення бала в клітинці-оцінці доступні лише проміжні статуси;
 // «Здав»/«Не здав» зʼявляються тільки після оцінювання
 var TRAIN_GRADE_PRE = ['—','В процесі','Повтор'];
-var TRAIN_TYPE_DEF = { sim: 'time', intro: 'grade', tol: 'status', route: 'status', exam: 'grade' };
+var TRAIN_TYPE_DEF = { sim: 'time', intro: 'grade', tol: 'status', route: 'status', target: 'status', crew: 'status' };
 var TRAIN_TYPES = [['time','⏱ Час'],['status','☰ Статус'],['grade','🔟 Оцінка']];
 // Порядок колонок групи — за розкладом адміна (перша поява активності в
 // плані робочого тижня); дисципліни поза планом ідуть у кінці
