@@ -2880,8 +2880,10 @@ function openNewFlightModal() {
   // Перемикач навчальний/звичайний — тільки інструкторам; дефолт навчальний.
   // Навчальний сам завершується через 20 хв успішним, студент пишеться у виліт
   nfTraining = canInstructor();
+  // display:inline-flex: у модалці div-контейнер інакше розтягується на всю
+  // ширину, і його фон виглядає як зламана «розтягнута» кнопка
   var trainBlock = canInstructor()
-    ? '<div class="f"><label>Тип вильоту</label><div class="inv-mode" style="margin-left:0">'+
+    ? '<div class="f"><label>Тип вильоту</label><div class="inv-mode" style="margin-left:0;display:inline-flex">'+
         '<button type="button" class="inv-mode-btn active" id="nfModeTrain" onclick="nfSetMode(true)">🎓 Навчальний</button>'+
         '<button type="button" class="inv-mode-btn" id="nfModeStd" onclick="nfSetMode(false)">Звичайний</button>'+
       '</div><div class="hint">Навчальний завершиться сам через '+TRAIN_MIN+' хв: без втрати борта — успішний</div></div>'+
