@@ -5011,13 +5011,22 @@ function trainSideHtml(canEd) {
     if (weekKeys.indexOf(m) === -1) weekKeys.push(m);
   });
   weekKeys.sort().reverse();
+  // Олівець — РЕДАГУВАННЯ активностей тижня (тільки адмін курсу): вмикає
+  // режим, у якому кліки по днях і ✕ на чипах працюють. «Оцінювання» групи
+  // активностей не чіпає — воно лише про оцінки студентів.
+  var planEd = isAdminUser() && trainPlanEdit;
+  canEd = planEd;
   var weekRows = weekKeys.map(function(k){
     var sel = k === trainWeekSel;
     return '<div class="member-row" style="margin-bottom:4px;padding:6px 8px;cursor:pointer'+(sel?';border-color:var(--accent)':'')+'" onclick="trainWeekPick(\''+esc(k)+'\')">'+
       '<div style="flex:1;min-width:0"><b>з '+esc(trainWeekRangeLbl(k))+'</b>'+
-        (k === cur ? ' <span class="badge-main">поточний</span>' : '')+
-        (sel ? ' <span class="badge-main" style="background:var(--accent);color:var(--on-accent)">робочий</span>' : '')+'</div>'+
-      '<button class="inv-act" title="Зробити тиждень робочим" data-w="'+esc(k)+'" onclick="event.stopPropagation();trainWeekPick(this.dataset.w)">'+svgIcon('edit')+'</button>'+
+        (k === cur ? ' <span class="badge-main" style="background:var(--green);color:#0d0d0d">поточний</span>' : '')+
+        (sel ? ' <span class="badge-main" style="background:var(--accent);color:var(--on-accent)">вибраний</span>' : '')+'</div>'+
+      (isAdminUser()
+        ? '<button class="inv-act" title="'+(sel && planEd ? 'Завершити редагування активностей' : 'Редагувати активності тижня (дні, графік)')+'"'+
+            (sel && planEd ? ' style="color:var(--accent);border-color:var(--accent)"' : '')+
+            ' data-w="'+esc(k)+'" onclick="event.stopPropagation();trainPlanEditToggle(this.dataset.w)">'+svgIcon('edit')+'</button>'
+        : '')+
     '</div>';
   }).join('');
 
@@ -5042,10 +5051,12 @@ function trainSideHtml(canEd) {
       var ds = trainFmtDate(d);
       var inMonth = (d.getMonth() + 1) === +p[1];
       var isBusy = !!busy[ds];
-      var inFrame = trainMondayOf(ds) === trainWeekSel;
+      var mOf = trainMondayOf(ds);
+      // Вибраний тиждень — жовтим; поточний — зеленим, і світиться ЗАВЖДИ
+      var frameBg = mOf === trainWeekSel ? 'background:rgba(255,184,0,.16);'
+        : mOf === cur ? 'background:rgba(46,204,113,.13);' : '';
       var style = 'padding:3px 0 1px;cursor:pointer;font:700 11px var(--font-data);border:1px solid transparent;'+
-        (inMonth ? '' : 'opacity:.3;')+
-        (inFrame ? 'background:var(--panel-3);' : '')+
+        (inMonth ? '' : 'opacity:.3;')+frameBg+
         (isBusy ? 'color:var(--accent);' : '')+
         (ds === todayStr ? 'border-color:var(--accent);' : '');
       calHtml += '<div style="'+style+'" title="'+esc(trainDayLbl(ds))+(isBusy ? ': '+esc(busy[ds].join(', ')) : '')+'" data-d="'+ds+'" onclick="trainDayClick(this.dataset.d)">'+
@@ -5055,7 +5066,7 @@ function trainSideHtml(canEd) {
     calHtml += '</div>'+
       '<div class="hint" style="margin-top:6px">'+(canEd
         ? 'Клік по дню — додати/прибрати активності: тиждень може бути несуцільним, хоч підряд, хоч окремі дні.'
-        : '● — день із заняттями. Клік по дню — вибрати робочий тиждень.')+'</div>'+
+        : '● — день із заняттями, зелений тиждень — поточний, жовтий — вибраний. Редагування днів — олівцем біля тижня.')+'</div>'+
     '</div>';
   }
 
@@ -5087,13 +5098,21 @@ function trainSideHtml(canEd) {
     '</div>';
 }
 function trainWeekPick(k) { trainWeekSel = k; renderView(); }
-// Клік по дню календаря: тиждень дня стає робочим; адмін у режимі
-// редагування одразу отримує модалку активностей цього дня
+// Режим редагування активностей (дні, графік) — вмикається ОЛІВЦЕМ біля
+// тижня, тільки адмін курсу. «Оцінювання»/«Редагування» потоку його не дають.
+var trainPlanEdit = false;
+function trainPlanEditToggle(k) {
+  if (!isAdminUser()) return;
+  if (trainWeekSel === k) trainPlanEdit = !trainPlanEdit;
+  else { trainWeekSel = k; trainPlanEdit = true; }
+  renderView();
+}
+// Клік по дню календаря: тиждень дня стає вибраним; якщо олівцем увімкнено
+// редагування активностей — одразу модалка цього дня
 function trainDayClick(dateStr) {
   trainWeekSel = trainMondayOf(dateStr);
-  var canEd = isAdminUser() && ((trainTab === 'flow' && trainFlowMode === 'edit') || (trainTab === 'group' && trainMode === 'edit'));
   renderView();
-  if (canEd) trainDayModal(dateStr);
+  if (isAdminUser() && trainPlanEdit) trainDayModal(dateStr);
 }
 // Модалка активностей конкретного дня (редагування — адмін курсу)
 function trainDayModal(dateStr) {
@@ -5380,18 +5399,25 @@ function trainStudentsHtml(instr) {
   var cols = trainColOrder();
   var colDates = trainColDates();
   var header = '<tr><th>Студент</th>'+cols.map(function(ch){
-    var glyph = '';
+    var glyph = '', colPlay = '';
     if (canMark && trainMode === 'edit') {
       var t = trainColType(wk, ch[0]);
       glyph = ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--dim)" '+
         'title="Тип колонки: '+(TRAIN_TYPES.find(function(x){ return x[0] === t; }) || TRAIN_TYPES[1])[1]+
         ' · клік — змінити для всіх (Час → Статус → Оцінка)" data-k="'+ch[0]+'" onclick="trainColTypeCycle(this.dataset.k)">'+
         (t === 'time' ? '⏱' : t === 'grade' ? '🔟' : '☰')+'</button>';
+      // Час зручно вмикати всій групі одразу — пуск/пауза з шапки колонки
+      if (t === 'time' && (wk.students || []).length) {
+        var anyRun = wk.students.some(function(st){ var c = trainCellOf(st, ch[0]); return c.t === 'time' && c.run; });
+        colPlay = anyRun
+          ? ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--blue)" title="Пауза всій групі" data-k="'+ch[0]+'" onclick="trainColTimePause(this.dataset.k)">⏸</button>'
+          : ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--green)" title="Пуск часу всій групі одразу" data-k="'+ch[0]+'" onclick="trainColTimeStart(this.dataset.k)">▶</button>';
+      }
     }
     var dates = colDates[ch[0]]
       ? '<div class="hint" style="font-weight:400;letter-spacing:0;text-transform:none">'+colDates[ch[0]].join(' · ')+'</div>'
       : '';
-    return '<th style="white-space:nowrap;vertical-align:top">'+ch[1]+glyph+dates+'</th>';
+    return '<th style="white-space:nowrap;vertical-align:top">'+ch[1]+glyph+colPlay+dates+'</th>';
   }).join('')+
     (canMark && trainMode === 'edit' ? '<th></th>' : '')+'</tr>';
   var rows = (wk.students || []).map(function(st, i){
@@ -5414,6 +5440,25 @@ function trainStudentsHtml(instr) {
 }
 /* ── Дії клітинок ── */
 function trainCellSave() { trainSaveStudents(trainWeekRowRef()); }
+// Пуск/пауза часу ВСІЙ групі одразу (кнопка в шапці колонки типу «Час»)
+function trainColTimeStart(key) {
+  var wk = trainWeekRowRef();
+  wk.students.forEach(function(st, i){
+    var c = trainCellRef(i, key);
+    if (c && c.t === 'time' && !c.run) { c.run = Date.now(); c.st = 'В процесі'; }
+  });
+  trainCellSave(); renderView();
+  toast('▶ Час пішов усій групі');
+}
+function trainColTimePause(key) {
+  var wk = trainWeekRowRef();
+  wk.students.forEach(function(st, i){
+    var c = trainCellRef(i, key);
+    if (c && c.t === 'time' && c.run) { c.sec = Math.round(trainEffSec(c)); c.run = 0; c.st = 'Пауза'; }
+  });
+  trainCellSave(); renderView();
+  toast('⏸ Пауза всій групі');
+}
 function trainTimeStart(i, key) {
   var cell = trainCellRef(i, key);
   if (!cell) return;
