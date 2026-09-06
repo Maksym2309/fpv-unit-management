@@ -5975,6 +5975,8 @@ function trainingSaveStudents(instructorId, week, students) {
     const clean = list.map(s => {
       const o = { n: String((s && s.n) || '').trim().slice(0, 80) };
       if (s && typeof s.c === 'object' && s.c && Object.keys(s.c).length) o.c = s.c;
+      // Екзаменний стан (пул): {adm, res, cert} — допуск/результат/сертифікація
+      if (s && typeof s.ex === 'object' && s.ex && Object.keys(s.ex).length) o.ex = s.ex;
       return o;
     }).filter(s => s.n);
     if (prog) {
