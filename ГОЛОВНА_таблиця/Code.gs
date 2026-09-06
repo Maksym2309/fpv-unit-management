@@ -5865,6 +5865,10 @@ function assertCrewSector_(crewSector, mainId, membersStr) {
 // yyyy-MM-dd) | Студенти (JSON) | _TS
 // Рамка — рядок «інструктор × робочий тиждень». Студенти — просто список
 // імен із чеклістом (без акаунтів): [{n:'Імʼя', c:{sim:'Добре', …}}].
+// Службові рядки потоку мають Інструктор='FLOW':
+//   FLOW × 'POOL'      — загальний пул студентів: [{n:'Імʼя'}]
+//   FLOW × <понеділок> — план тижня по днях: {days:{1:['Теорія'],…,7:[]}}
+// FLOW-рядки може правити будь-який інструктор (гуард той самий).
 // Спорядження й частоти НЕ бронюються окремо — вони живуть в екіпажі
 // інструктора, як усе інше в застосунку.
 // Навчальний виліт — звичайний рядок «Журналу польоту» з міткою «НАВЧ»
@@ -5917,31 +5921,50 @@ function getTraining() {
       .map(r => {
         let st = [];
         try { st = JSON.parse(String(r[3] || '[]')) || []; } catch(e) {}
+        // Для груп це масив студентів, для плану тижня (FLOW) — обʼєкт {days}
+        if (!Array.isArray(st) && (typeof st !== 'object' || !st)) st = [];
         return { id: String(r[0]), instructor: String(r[1]).trim(),
-                 week: String(r[2]).trim(), students: Array.isArray(st) ? st : [] };
+                 week: String(r[2]).trim(), students: st };
       });
   }
   return { week: trainingWeekMonday_(), weeks: rows };
 }
 
-// Зберегти студентів тижня (upsert рядка «інструктор × тиждень»).
-// Адмін — будь-якому інструктору, інструктор — тільки собі.
+// Зберегти рядок навчання (upsert «інструктор × тиждень»).
+// Групи: адмін — будь-кому, інструктор — тільки собі.
+// FLOW-рядки (пул 'POOL' або план тижня) — будь-який інструктор.
 function trainingSaveStudents(instructorId, week, students) {
   trainingGuard_();
   instructorId = String(instructorId || '').trim();
   week = String(week || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
+  const isFlow = instructorId === 'FLOW';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week) && !(isFlow && week === 'POOL')) {
+    throw new Error('Некоректний тиждень: ' + week);
+  }
   const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
-  if (!isAdmin(apiUserEmail_() || '') && (!me || me.id !== instructorId)) {
+  if (!isFlow && !isAdmin(apiUserEmail_() || '') && (!me || me.id !== instructorId)) {
     throw new Error('Інструктор редагує лише своїх студентів');
   }
-  if (!Array.isArray(students) || students.length > 100) throw new Error('Некоректний список студентів');
-  const clean = students.map(s => ({
-    n: String((s && s.n) || '').trim().slice(0, 80),
-    c: (s && typeof s.c === 'object' && s.c) ? s.c : {}
-  })).filter(s => s.n);
-  const json = JSON.stringify(clean);
-  if (json.length > 30000) throw new Error('Список студентів завеликий');
+  let json;
+  if (isFlow && week !== 'POOL') {
+    // План тижня: {days:{1..7: ['Теорія', …]}} — до 6 активностей на день
+    const days = (students && typeof students === 'object' && students.days) || {};
+    const clean = {};
+    for (let d = 1; d <= 7; d++) {
+      const arr = Array.isArray(days[d]) ? days[d] : (Array.isArray(days[String(d)]) ? days[String(d)] : []);
+      clean[d] = arr.map(x => String(x).slice(0, 40)).slice(0, 6);
+    }
+    json = JSON.stringify({ days: clean });
+  } else {
+    if (!Array.isArray(students) || students.length > 200) throw new Error('Некоректний список студентів');
+    const clean = students.map(s => {
+      const o = { n: String((s && s.n) || '').trim().slice(0, 80) };
+      if (s && typeof s.c === 'object' && s.c && Object.keys(s.c).length) o.c = s.c;
+      return o;
+    }).filter(s => s.n);
+    json = JSON.stringify(clean);
+  }
+  if (json.length > 30000) throw new Error('Список завеликий');
   return withScriptLock(function() {
     const sheet = ensureTrainingSheet();
     const lastRow = sheet.getLastRow();
