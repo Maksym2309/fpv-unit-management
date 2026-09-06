@@ -4952,7 +4952,9 @@ function trainSideHtml(canEd) {
   }).join('');
 
   var side = '<div class="side-panel">'+
-      '<div class="side-head"><span class="cap">📅 Тижні</span></div>'+
+      '<div class="side-head"><span class="cap">📅 Тижні</span>'+
+        (canEd ? '<button class="icon-btn" title="Додати тиждень (вибір дати в календарі)" style="background:var(--accent);color:var(--on-accent)" onclick="trainWeekAddModal()">＋</button>' : '')+
+      '</div>'+
       '<div class="side-body" style="padding:8px">'+weekRows+'</div>'+
     '</div>'+
     '<div class="side-panel">'+
@@ -4964,6 +4966,27 @@ function trainSideHtml(canEd) {
   return side;
 }
 function trainWeekPick(k) { trainWeekSel = k; renderView(); }
+// Додати тиждень: дата з календаря → понеділок того тижня → порожній
+// план у FLOW-рядку (щоб тиждень зʼявився в списку і зберігся)
+function trainWeekAddModal() {
+  openModal('📅 Додати тиждень',
+    '<div class="f"><label>Будь-який день потрібного тижня</label><input type="date" id="twDate"></div>'+
+    '<div class="hint" style="margin-bottom:8px">Тиждень рахується з понеділка обраної дати.</div>'+
+    '<button class="btn btn-green" onclick="trainWeekAddDo()">＋ Додати тиждень</button>');
+}
+function trainWeekAddDo() {
+  var v = $('twDate') ? $('twDate').value : '';
+  if (!v) { toast('⚠ Обери дату в календарі', true); return; }
+  var d = new Date(v + 'T00:00:00');
+  if (isNaN(d)) { toast('⚠ Некоректна дата', true); return; }
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  var mon = d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+  var wk = trainFlowRow(mon);
+  trainFlowSave(wk);
+  trainWeekSel = mon;
+  closeModal(); renderView();
+  toast('📅 Тиждень '+trainWeekLbl(mon)+' додано');
+}
 function trainPoolAddModal() {
   openModal('➕ Студент у потік',
     '<div class="f"><label>Імʼя студента *</label><input type="text" id="tpName" placeholder="Позивний або ПІБ…" onkeydown="if(event.key===\'Enter\')trainPoolAddDo()"></div>'+
@@ -5094,51 +5117,63 @@ function trainStColor(st) {
     : st === 'В процесі' ? 'var(--blue)'
     : 'var(--dim)';
 }
-// Одна клітинка таблиці групи
+// Чип статусу — як у референсі: рамка кольору статусу, капс
+function trainStChip(st) {
+  if (!st || st === '—') return '<span class="hint">—</span>';
+  var c = trainStColor(st);
+  return '<span style="display:inline-block;border:1px solid '+c+';color:'+c+';padding:1px 6px;font:700 9px var(--font-data);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">'+esc(st)+'</span>';
+}
+// Одна клітинка таблиці групи: значення зверху, чип статусу під ним,
+// коментар — сірим рядком (клік у режимі оцінювання відкриває редагування)
 function trainCellHtml(i, key, st, canMark) {
   var cell = trainCellOf(st, key);
   var ds = trainCellStatus(cell, key);
   var goal = TRAIN_TIME_GOAL[key];
-  var stLine = '<div class="hint" style="color:'+trainStColor(ds)+'">'+esc(ds)+
-    (cell.note ? ' <span title="'+esc(cell.note)+'">💬</span>' : '')+'</div>';
-  // Перегляд або без прав: компактний підсумок
-  if (trainMode !== 'edit' || !canMark) {
-    var top = cell.t === 'time'
-      ? '<b class="mono">'+trainFmtTime(trainEffSec(cell))+(goal ? ' / '+trainFmtTime(goal) : '')+'</b>'+(cell.run ? ' ▶' : '')
-      : cell.t === 'grade' && cell.score !== null
-        ? '<b class="mono">'+cell.score+'/10</b>'
-        : '';
-    return '<td>'+ (top ? top : '') + stLine + '</td>';
-  }
-  // Оцінювання: тип перемикається кнопкою-циклом, контроли за типом
+  var edit = trainMode === 'edit' && canMark;
   var ik = ' data-i="'+i+'" data-k="'+key+'"';
-  var typeBtn = '<button class="inv-act" style="color:var(--dim)" title="Тип: '+
-    (TRAIN_TYPES.find(function(t){ return t[0] === cell.t; }) || TRAIN_TYPES[1])[1]+
-    ' · клік — змінити (Час → Статус → Оцінка)"'+ik+' onclick="trainTypeCycle(this.dataset.i,this.dataset.k)">'+
-    (cell.t === 'time' ? '⏱' : cell.t === 'grade' ? '🔟' : '☰')+'</button>';
-  var noteBtn = '<button class="inv-act" title="'+(cell.note ? esc(cell.note) : 'Коментар')+'"'+
-    (cell.note ? ' style="color:var(--accent);border-color:var(--accent)"' : '')+ik+
-    ' onclick="trainNoteModal(this.dataset.i,this.dataset.k)">💬</button>';
-  var ctl;
-  if (cell.t === 'time') {
-    ctl = '<b class="mono" id="tc_'+i+'_'+key+'" style="color:'+trainStColor(ds)+'">'+
-        trainFmtTime(trainEffSec(cell))+(goal ? ' / '+trainFmtTime(goal) : '')+'</b>'+
-      (cell.run
-        ? '<button class="inv-act" title="Пауза"'+ik+' onclick="trainTimePause(this.dataset.i,this.dataset.k)">⏸</button>'
-        : '<button class="inv-act" title="В процесі (пуск часу)"'+ik+' onclick="trainTimeStart(this.dataset.i,this.dataset.k)">▶</button>');
-  } else if (cell.t === 'grade') {
-    ctl = '<input type="number" min="0" max="10" value="'+(cell.score === null ? '' : cell.score)+'"'+
-        ' style="width:52px;min-width:0;padding:4px 6px"'+ik+' onchange="trainScoreSet(this.dataset.i,this.dataset.k,this.value)">'+
-      '<span class="hint">/10</span>'+
-      '<button class="inv-act'+(cell.st === 'Не пройдено' ? ' inv-act--del' : '')+'" title="Не пройдено (остаточно, вручну)"'+ik+
-        ' onclick="trainFailSet(this.dataset.i,this.dataset.k)">✕</button>';
-  } else {
-    ctl = '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.i,this.dataset.k,this.value)">'+
-      TRAIN_STATUSES.map(function(s){
-        return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
-      }).join('')+'</select>';
+  // Тонка кнопка без рамки — інтерфейс не засмічується
+  var slim = function(icon, title, fn, extra){
+    return '<button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:12px;color:'+(extra||'var(--muted)')+'" title="'+title+'"'+ik+' onclick="'+fn+'(this.dataset.i,this.dataset.k)">'+icon+'</button>';
+  };
+  var noteLine = '';
+  if (cell.note) {
+    noteLine = '<div class="hint" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'+(edit?';cursor:pointer':'')+'" title="'+esc(cell.note)+'"'+
+      (edit ? ik+' onclick="trainNoteModal(this.dataset.i,this.dataset.k)"' : '')+'>'+esc(cell.note)+'</div>';
+  } else if (edit) {
+    noteLine = '<div class="hint" style="cursor:pointer;opacity:.55"'+ik+' onclick="trainNoteModal(this.dataset.i,this.dataset.k)">💬 коментар</div>';
   }
-  return '<td><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">'+typeBtn+ctl+noteBtn+'</div>'+stLine+'</td>';
+  var val;
+  if (cell.t === 'time') {
+    val = '<b class="mono" id="tc_'+i+'_'+key+'" style="font-size:13px;color:'+trainStColor(ds)+'">'+
+      trainFmtTime(trainEffSec(cell))+(goal ? ' / '+trainFmtTime(goal) : '')+'</b>'+
+      (edit
+        ? (cell.run ? slim('⏸','Пауза','trainTimePause') : slim('▶','В процесі (пуск часу)','trainTimeStart'))
+        : (cell.run ? ' <span style="color:var(--blue)">▶</span>' : ''));
+  } else if (cell.t === 'grade') {
+    val = edit
+      ? '<input type="number" min="0" max="10" value="'+(cell.score === null ? '' : cell.score)+'"'+
+          ' style="width:44px;min-width:0;padding:3px 5px;font:700 12px var(--font-data)"'+ik+' onchange="trainScoreSet(this.dataset.i,this.dataset.k,this.value)">'+
+        '<span class="hint">/10</span>'+
+        slim('✕','Не пройдено (остаточно, вручну)','trainFailSet', cell.st === 'Не пройдено' ? 'var(--red)' : 'var(--muted)')
+      : (cell.score !== null ? '<b class="mono" style="font-size:13px;color:'+trainStColor(ds)+'">'+cell.score+' / 10</b>' : '');
+  } else {
+    val = edit
+      ? '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.i,this.dataset.k,this.value)">'+
+          TRAIN_STATUSES.map(function(s){
+            return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
+          }).join('')+'</select>'
+      : '';
+  }
+  var typeGlyph = edit
+    ? slim(cell.t === 'time' ? '⏱' : cell.t === 'grade' ? '🔟' : '☰',
+        'Тип: '+(TRAIN_TYPES.find(function(t){ return t[0] === cell.t; }) || TRAIN_TYPES[1])[1]+' · клік — змінити (Час → Статус → Оцінка)',
+        'trainTypeCycle', 'var(--dim)')
+    : '';
+  return '<td>'+
+    '<div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap">'+typeGlyph+(val || '')+'</div>'+
+    '<div style="margin-top:3px">'+trainStChip(ds)+'</div>'+
+    noteLine+
+  '</td>';
 }
 function trainStudentsHtml(instr) {
   var cur = trainMonday();
@@ -5173,8 +5208,8 @@ function trainStudentsHtml(instr) {
       ? '<div style="overflow-x:auto"><table class="crew-table">'+header+rows+'</table></div>'
       : '<div class="empty">Групи на цей тиждень ще немає'+(canMark ? ' — додай студентів з потоку кнопкою у шапці' : '')+'</div>')+
   '</div>';
-  // План днів у бічній панелі редагує тільки адмін курсу
-  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(isAdminUser())+'</div></div>';
+  // План днів і тижні в бічній панелі редагує тільки адмін курсу в режимі оцінювання
+  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(isAdminUser() && trainMode === 'edit')+'</div></div>';
 }
 /* ── Дії клітинок ── */
 function trainCellSave() { trainSaveStudents(trainWeekRowRef()); }
