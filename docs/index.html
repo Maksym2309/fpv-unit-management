@@ -913,12 +913,15 @@ var DEMO_DATA = {
         1:['Теорія'], 3:['Вступний залік','Симулятор'], 4:['Зліт/посадка','Маневрування'], 5:['Екзамен'] } } },
       { id:'TRN-1', instructor:'OP-004', week:m, students:[
         { n:'Петро', c:{ sim:{t:'time',sec:9840,run:0,st:'Пауза',note:'перерва на обід'},
+                         intro:{t:'grade',score:9},
                          tol:{t:'status',st:'Пройдено'}, exam:{t:'grade',score:8} } },
         { n:'Андрій', c:{ sim:{t:'time',sec:4520,run:0,st:'Пауза'},
+                          intro:{t:'grade',st:'В процесі'},
                           tol:{t:'status',st:'Повтор',note:'вітер, друга спроба'},
                           exam:{t:'grade',score:5} } } ] },
       { id:'TRN-2', instructor:'OP-001', week:m, students:[
-        { n:'Марія', c:{ sim:{t:'time',sec:10800,run:0}, tol:{t:'status',st:'Пройдено'},
+        { n:'Марія', c:{ sim:{t:'time',sec:10800,run:0}, intro:{t:'grade',score:10},
+                         tol:{t:'status',st:'Пройдено'},
                          route:{t:'status',st:'В процесі'}, exam:{t:'grade',score:9} } } ] }
     ] };
   },
@@ -4762,7 +4765,9 @@ var trainTab = 'group';          // flow | group | exam
 var trainState = { data: null, loading: false, err: null };
 var trainInstrSel = '';          // адмін може дивитися групу будь-якого інструктора
 var trainWeekSel = '';           // обраний тиждень (дата понеділка)
-var TRAIN_CHECK = [['sim','Симулятор'],['tol','Зліт / посадка'],['route','Політ по маршруту'],['exam','Іспит']];
+var TRAIN_CHECK = [['sim','Симулятор'],['intro','Вступний залік'],['tol','Зліт / посадка'],['route','Маневрування'],['exam','Екзамен']];
+// Активність плану → дисципліна чекліста («Теорія» — без колонки)
+var TRAIN_ACT2KEY = { 'Симулятор':'sim', 'Вступний залік':'intro', 'Зліт/посадка':'tol', 'Маневрування':'route', 'Екзамен':'exam' };
 var TRAIN_MIN = 20;
 
 function trainMonday() {
@@ -5080,8 +5085,40 @@ function trainDayDelAct(d, i) {
 var trainMode = 'edit';                    // view («Перегляд») | edit («Оцінювання»)
 var TRAIN_TIME_GOAL = { sim: 3 * 3600 };   // авто-«Пройдено»: симулятор 3 год
 var TRAIN_STATUSES = ['—','В процесі','Пауза','Повтор','Пройдено','Не пройдено'];
-var TRAIN_TYPE_DEF = { sim: 'time', tol: 'status', route: 'status', exam: 'grade' };
+// До виставлення бала в клітинці-оцінці доступні лише проміжні статуси;
+// «Здав»/«Не здав» зʼявляються тільки після оцінювання
+var TRAIN_GRADE_PRE = ['—','В процесі','Повтор'];
+var TRAIN_TYPE_DEF = { sim: 'time', intro: 'grade', tol: 'status', route: 'status', exam: 'grade' };
 var TRAIN_TYPES = [['time','⏱ Час'],['status','☰ Статус'],['grade','🔟 Оцінка']];
+// Порядок колонок групи — за розкладом адміна (перша поява активності в
+// плані робочого тижня); дисципліни поза планом ідуть у кінці
+function trainColOrder() {
+  var plan = trainFlowRow(trainWeekSel && /^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel) ? trainWeekSel : trainMonday()).students;
+  var seen = {}, out = [];
+  for (var d = 1; d <= 7; d++) {
+    (((plan && plan.days) || {})[d] || ((plan && plan.days) || {})[String(d)] || []).forEach(function(a){
+      var k = TRAIN_ACT2KEY[a];
+      if (k && !seen[k]) { seen[k] = 1; out.push(TRAIN_CHECK.find(function(c){ return c[0] === k; })); }
+    });
+  }
+  TRAIN_CHECK.forEach(function(c){ if (!seen[c[0]]) out.push(c); });
+  return out;
+}
+// Тип колонки: у першого студента групи (усі клітинки колонки тримаються
+// одного типу — тип перемикається в шапці й застосовується до всіх)
+function trainColType(wk, key) {
+  return wk.students && wk.students[0] ? trainCellOf(wk.students[0], key).t : (TRAIN_TYPE_DEF[key] || 'status');
+}
+function trainColTypeCycle(key) {
+  var wk = trainWeekRowRef();
+  var order = ['time', 'status', 'grade'];
+  var next = order[(order.indexOf(trainColType(wk, key)) + 1) % order.length];
+  wk.students.forEach(function(st, i){
+    var cell = trainCellRef(i, key);
+    if (cell) cell.t = next;
+  });
+  trainCellSave(); renderView();
+}
 
 // Нормалізація клітинки; старі рядкові оцінки читаються як статуси
 function trainCellOf(st, key) {
@@ -5114,7 +5151,7 @@ function trainCellStatus(cell, key) {
     return cell.st || '—';
   }
   if (cell.t === 'grade') {
-    if (cell.st === 'Не пройдено') return 'Не пройдено';
+    if (cell.st === 'Не здав' || cell.st === 'Не пройдено') return 'Не здав';
     if (cell.score === null) return cell.st || '—';
     return cell.score >= 7 ? 'Здав' : 'Повтор';
   }
@@ -5133,26 +5170,28 @@ function trainStChip(st) {
   var c = trainStColor(st);
   return '<span style="display:inline-block;border:1px solid '+c+';color:'+c+';padding:1px 6px;font:700 9px var(--font-data);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">'+esc(st)+'</span>';
 }
-// Одна клітинка таблиці групи: значення зверху, чип статусу під ним,
-// коментар — сірим рядком (клік у режимі оцінювання відкриває редагування)
+// Одна клітинка таблиці групи. Рядки фіксованої висоти — статуси всіх
+// колонок стоять на одній лінії. Статус НЕ дублюється: якщо його показує
+// контрол (селект), чип не малюється.
 function trainCellHtml(i, key, st, canMark) {
   var cell = trainCellOf(st, key);
   var ds = trainCellStatus(cell, key);
   var goal = TRAIN_TIME_GOAL[key];
   var edit = trainMode === 'edit' && canMark;
   var ik = ' data-i="'+i+'" data-k="'+key+'"';
-  // Тонка кнопка без рамки — інтерфейс не засмічується
   var slim = function(icon, title, fn, extra){
     return '<button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:12px;color:'+(extra||'var(--muted)')+'" title="'+title+'"'+ik+' onclick="'+fn+'(this.dataset.i,this.dataset.k)">'+icon+'</button>';
   };
-  var noteLine = '';
+  var noteLine;
   if (cell.note) {
     noteLine = '<div class="hint" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'+(edit?';cursor:pointer':'')+'" title="'+esc(cell.note)+'"'+
-      (edit ? ik+' onclick="trainNoteModal(this.dataset.i,this.dataset.k)"' : '')+'>'+esc(cell.note)+'</div>';
+      (edit ? ik+' onclick="trainNoteModal(this.dataset.i,this.dataset.k)"' : '')+'>💬 '+esc(cell.note)+'</div>';
   } else if (edit) {
     noteLine = '<div class="hint" style="cursor:pointer;opacity:.55"'+ik+' onclick="trainNoteModal(this.dataset.i,this.dataset.k)">💬 коментар</div>';
+  } else {
+    noteLine = '<div class="hint" style="opacity:.4">немає коментаря</div>';
   }
-  var val;
+  var val = '', chip = trainStChip(ds);
   if (cell.t === 'time') {
     val = '<b class="mono" id="tc_'+i+'_'+key+'" style="font-size:13px;color:'+trainStColor(ds)+'">'+
       trainFmtTime(trainEffSec(cell))+(goal ? ' / '+trainFmtTime(goal) : '')+'</b>'+
@@ -5160,28 +5199,35 @@ function trainCellHtml(i, key, st, canMark) {
         ? (cell.run ? slim('⏸','Пауза','trainTimePause') : slim('▶','В процесі (пуск часу)','trainTimeStart'))
         : (cell.run ? ' <span style="color:var(--blue)">▶</span>' : ''));
   } else if (cell.t === 'grade') {
-    val = edit
-      ? '<input type="number" min="0" max="10" value="'+(cell.score === null ? '' : cell.score)+'"'+
+    if (edit) {
+      // До бала — лише проміжні статуси (В процесі/Повтор); «Здав»/«Не здав»
+      // зʼявляються тільки після оцінювання (чип + кнопка ✕)
+      val = '<input type="number" min="0" max="10" value="'+(cell.score === null ? '' : cell.score)+'"'+
           ' style="width:44px;min-width:0;padding:3px 5px;font:700 12px var(--font-data)"'+ik+' onchange="trainScoreSet(this.dataset.i,this.dataset.k,this.value)">'+
         '<span class="hint">/10</span>'+
-        slim('✕','Не пройдено (остаточно, вручну)','trainFailSet', cell.st === 'Не пройдено' ? 'var(--red)' : 'var(--muted)')
-      : (cell.score !== null ? '<b class="mono" style="font-size:13px;color:'+trainStColor(ds)+'">'+cell.score+' / 10</b>' : '');
+        (cell.score === null
+          ? '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.i,this.dataset.k,this.value)">'+
+              TRAIN_GRADE_PRE.map(function(s){
+                return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
+              }).join('')+'</select>'
+          : slim('✕','Не здав (остаточно, вручну)','trainFailSet', (cell.st === 'Не здав' || cell.st === 'Не пройдено') ? 'var(--red)' : 'var(--muted)'));
+      // Селект сам показує проміжний статус — чип без бала не дублюємо
+      if (cell.score === null) chip = '';
+    } else {
+      val = cell.score !== null ? '<b class="mono" style="font-size:13px;color:'+trainStColor(ds)+'">'+cell.score+' / 10</b>' : '';
+    }
   } else {
-    val = edit
-      ? '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.i,this.dataset.k,this.value)">'+
-          TRAIN_STATUSES.map(function(s){
-            return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
-          }).join('')+'</select>'
-      : '';
+    if (edit) {
+      val = '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.i,this.dataset.k,this.value)">'+
+        TRAIN_STATUSES.map(function(s){
+          return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
+        }).join('')+'</select>';
+      chip = ''; // селект і є статус — не дублюємо
+    }
   }
-  var typeGlyph = edit
-    ? slim(cell.t === 'time' ? '⏱' : cell.t === 'grade' ? '🔟' : '☰',
-        'Тип: '+(TRAIN_TYPES.find(function(t){ return t[0] === cell.t; }) || TRAIN_TYPES[1])[1]+' · клік — змінити (Час → Статус → Оцінка)',
-        'trainTypeCycle', 'var(--dim)')
-    : '';
-  return '<td>'+
-    '<div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap">'+typeGlyph+(val || '')+'</div>'+
-    '<div style="margin-top:3px">'+trainStChip(ds)+'</div>'+
+  return '<td style="vertical-align:top">'+
+    '<div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;min-height:26px">'+val+'</div>'+
+    '<div style="min-height:18px;margin-top:2px">'+chip+'</div>'+
     noteLine+
   '</td>';
 }
@@ -5201,10 +5247,22 @@ function trainStudentsHtml(instr) {
         '<button class="inv-mode-btn'+(trainMode === 'edit' ? ' active' : '')+'" onclick="trainMode=\'edit\';renderView()">Оцінювання</button>'+
       '</div>'
     : '';
-  var header = '<tr><th>Студент</th>'+TRAIN_CHECK.map(function(ch){ return '<th>'+ch[1]+'</th>'; }).join('')+
+  // Колонки — в порядку розкладу адміна; тип оцінювання перемикається в шапці
+  var cols = trainColOrder();
+  var header = '<tr><th>Студент</th>'+cols.map(function(ch){
+    var glyph = '';
+    if (canMark && trainMode === 'edit') {
+      var t = trainColType(wk, ch[0]);
+      glyph = ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--dim)" '+
+        'title="Тип колонки: '+(TRAIN_TYPES.find(function(x){ return x[0] === t; }) || TRAIN_TYPES[1])[1]+
+        ' · клік — змінити для всіх (Час → Статус → Оцінка)" data-k="'+ch[0]+'" onclick="trainColTypeCycle(this.dataset.k)">'+
+        (t === 'time' ? '⏱' : t === 'grade' ? '🔟' : '☰')+'</button>';
+    }
+    return '<th style="white-space:nowrap">'+ch[1]+glyph+'</th>';
+  }).join('')+
     (canMark && trainMode === 'edit' ? '<th></th>' : '')+'</tr>';
   var rows = (wk.students || []).map(function(st, i){
-    var cells = TRAIN_CHECK.map(function(ch){ return trainCellHtml(i, ch[0], st, canMark); }).join('');
+    var cells = cols.map(function(ch){ return trainCellHtml(i, ch[0], st, canMark); }).join('');
     return '<tr><td style="font-weight:700">'+esc(st.n)+'</td>'+cells+
       (canMark && trainMode === 'edit'
         ? '<td style="text-align:right"><button class="inv-act inv-act--del" title="Прибрати студента з групи" data-i="'+i+'" onclick="trainRemoveStudent(this.dataset.i)">'+svgIcon('x')+'</button></td>'
@@ -5223,13 +5281,6 @@ function trainStudentsHtml(instr) {
 }
 /* ── Дії клітинок ── */
 function trainCellSave() { trainSaveStudents(trainWeekRowRef()); }
-function trainTypeCycle(i, key) {
-  var cell = trainCellRef(i, key);
-  if (!cell) return;
-  var order = ['time', 'status', 'grade'];
-  cell.t = order[(order.indexOf(cell.t) + 1) % order.length];
-  trainCellSave(); renderView();
-}
 function trainTimeStart(i, key) {
   var cell = trainCellRef(i, key);
   if (!cell) return;
@@ -5256,13 +5307,13 @@ function trainScoreSet(i, key, v) {
   if (!cell) return;
   v = String(v).trim();
   cell.score = v === '' ? null : Math.max(0, Math.min(10, Math.round(+v) || 0));
-  if (cell.st === 'Не пройдено') cell.st = ''; // новий бал знімає ручне «не пройдено»
+  if (cell.st === 'Не здав' || cell.st === 'Не пройдено') cell.st = ''; // новий бал знімає ручне «не здав»
   trainCellSave(); renderView();
 }
 function trainFailSet(i, key) {
   var cell = trainCellRef(i, key);
   if (!cell) return;
-  cell.st = cell.st === 'Не пройдено' ? '' : 'Не пройдено';
+  cell.st = (cell.st === 'Не здав' || cell.st === 'Не пройдено') ? '' : 'Не здав';
   trainCellSave(); renderView();
 }
 function trainNoteModal(i, key) {
