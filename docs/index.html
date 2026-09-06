@@ -3053,6 +3053,19 @@ function doStartFlight() {
       trackerOk:(c && c.trackerOk) || '', start:(res && res.start) || '', end:'', status:'Активний',
       note:'', creatorEmail:S.me, system:fltSystem, freq:fltFreq, reserves:'', equip:'',
       training:isTrain, student:student });
+    // Студент летить — а не сидить за симулятором: якщо його секундомір
+    // «Симулятор» іде, ставимо паузу з позначкою про виліт
+    if (isTrain && student && trainState.data) {
+      try {
+        (trainWeekRowRef().students || []).forEach(function(st, i){
+          if (st.n !== student) return;
+          var cell = trainCellOf(st, 'sim');
+          if (cell.t === 'time' && cell.run) {
+            trainTimePause(i, 'sim', '✈ виліт ' + ((res && res.id) || ''));
+          }
+        });
+      } catch(e) {}
+    }
     renderView();
     updateTopStats();
     loadAll();
@@ -4733,7 +4746,6 @@ var trainState = { data: null, loading: false, err: null };
 var trainInstrSel = '';          // адмін може дивитися групу будь-якого інструктора
 var trainWeekSel = '';           // обраний тиждень (дата понеділка)
 var TRAIN_CHECK = [['sim','Симулятор'],['tol','Зліт / посадка'],['route','Політ по маршруту'],['exam','Іспит']];
-var TRAIN_MARKS = ['—','Добре','Задовільно','Здав','Не здав'];
 var TRAIN_MIN = 20;
 
 function trainMonday() {
@@ -4805,6 +4817,7 @@ function renderTrain(c) {
     '<div class="hint" style="margin-top:8px">Логіку екзамену уточнимо окремо; поки результат іспиту ставиться у чеклісті групи.</div></div></div>';
   else body = trainStudentsHtml(instr);
   c.innerHTML = top + body;
+  trainTimeTickStart();
 }
 
 /* ── «Загальний потік»: пул студентів + бокова панель тижнів із планом днів ──
@@ -4877,7 +4890,12 @@ function trainFlowHtml() {
       : '<div class="empty">Потік порожній'+(canEd?' — додай студентів або імпортуй список із файлу':'')+'</div>')+
   '</div>';
 
-  // ── Бокова колонка: тижні + план обраного тижня по днях ──
+  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(canEd)+'</div></div>';
+}
+
+// ── Спільна бокова колонка (потік і особиста група): тижні + план днів ──
+function trainSideHtml(canEd) {
+  var cur = trainMonday();
   var weekKeys = [cur];
   var next = (function(){ var d = new Date(cur); d.setDate(d.getDate() + 7);
     return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); })();
@@ -4927,8 +4945,7 @@ function trainFlowHtml() {
         '<div class="hint" style="margin-top:6px">Розкидай активності по днях: теорія, залік, симулятор, зліт/посадка, маневрування, екзамен.</div>'+
       '</div>'+
     '</div>';
-
-  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+side+'</div></div>';
+  return side;
 }
 function trainWeekPick(k) { trainWeekSel = k; renderView(); }
 function trainPoolAddModal() {
@@ -5001,55 +5018,232 @@ function trainDayDelAct(d, i) {
   renderView();
 }
 
-/* ── Вкладка «Студенти»: чеклісти тижня ── */
+/* ── «Особиста група»: оцінювання Час / Статус / Оцінка ──────────────
+   Кожна клітинка «студент × дисципліна» ведеться одним із трьох способів
+   (перемикається в самій клітинці, дефолти: Симулятор→Час, Іспит→Оцінка,
+   решта→Статус):
+   · Час — секундомір з паузами; симулятор має поріг 3 год, після якого
+     статус сам стає зеленим «Пройдено»;
+   · Статус — вручну (В процесі / Пауза / Повтор / Пройдено / Не пройдено);
+   · Оцінка — бал /10: ≥7 → «Здав», <7 → «Повтор» (не остаточно);
+     остаточне «Не пройдено» ставиться тільки вручну кнопкою ✕.
+   Коментар (💬) можна додати до будь-якої клітинки будь-коли. */
+var trainMode = 'edit';                    // view («Перегляд») | edit («Оцінювання»)
+var TRAIN_TIME_GOAL = { sim: 3 * 3600 };   // авто-«Пройдено»: симулятор 3 год
+var TRAIN_STATUSES = ['—','В процесі','Пауза','Повтор','Пройдено','Не пройдено'];
+var TRAIN_TYPE_DEF = { sim: 'time', tol: 'status', route: 'status', exam: 'grade' };
+var TRAIN_TYPES = [['time','⏱ Час'],['status','☰ Статус'],['grade','🔟 Оцінка']];
+
+// Нормалізація клітинки; старі рядкові оцінки читаються як статуси
+function trainCellOf(st, key) {
+  var c = st.c && st.c[key];
+  if (!c) return { t: TRAIN_TYPE_DEF[key] || 'status', st: '', note: '', sec: 0, run: 0, score: null };
+  if (typeof c === 'string') {
+    var map = { 'Здав': 'Пройдено', 'Не здав': 'Не пройдено', 'Добре': 'Пройдено', 'Задовільно': 'Пройдено', '—': '' };
+    return { t: 'status', st: map[c] !== undefined ? map[c] : c, note: '', sec: 0, run: 0, score: null };
+  }
+  return { t: c.t || TRAIN_TYPE_DEF[key] || 'status', st: c.st || '', note: c.note || '',
+           sec: +c.sec || 0, run: +c.run || 0, score: (c.score === 0 || c.score) ? +c.score : null };
+}
+function trainCellRef(i, key) {
+  var wk = trainWeekRowRef(), st = wk.students[+i];
+  if (!st) return null;
+  st.c = st.c || {};
+  st.c[key] = trainCellOf(st, key);
+  return st.c[key];
+}
+function trainEffSec(cell) { return cell.sec + (cell.run ? Math.max(0, (Date.now() - cell.run) / 1000) : 0); }
+function trainFmtTime(sec) {
+  var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
+  return h + ':' + ('0' + m).slice(-2);
+}
+// Похідний статус: поріг часу і бал перекривають ручний (крім ручного «Не пройдено»)
+function trainCellStatus(cell, key) {
+  if (cell.t === 'time') {
+    var goal = TRAIN_TIME_GOAL[key];
+    if (goal && trainEffSec(cell) >= goal) return 'Пройдено';
+    return cell.st || '—';
+  }
+  if (cell.t === 'grade') {
+    if (cell.st === 'Не пройдено') return 'Не пройдено';
+    if (cell.score === null) return cell.st || '—';
+    return cell.score >= 7 ? 'Здав' : 'Повтор';
+  }
+  return cell.st || '—';
+}
+function trainStColor(st) {
+  return st === 'Пройдено' || st === 'Здав' ? 'var(--green)'
+    : st === 'Повтор' ? 'var(--yellow)'
+    : st === 'Не пройдено' || st === 'Не здав' ? 'var(--red)'
+    : st === 'В процесі' ? 'var(--blue)'
+    : 'var(--dim)';
+}
+// Одна клітинка таблиці групи
+function trainCellHtml(i, key, st, canMark) {
+  var cell = trainCellOf(st, key);
+  var ds = trainCellStatus(cell, key);
+  var goal = TRAIN_TIME_GOAL[key];
+  var stLine = '<div class="hint" style="color:'+trainStColor(ds)+'">'+esc(ds)+
+    (cell.note ? ' <span title="'+esc(cell.note)+'">💬</span>' : '')+'</div>';
+  // Перегляд або без прав: компактний підсумок
+  if (trainMode !== 'edit' || !canMark) {
+    var top = cell.t === 'time'
+      ? '<b class="mono">'+trainFmtTime(trainEffSec(cell))+(goal ? ' / '+trainFmtTime(goal) : '')+'</b>'+(cell.run ? ' ▶' : '')
+      : cell.t === 'grade' && cell.score !== null
+        ? '<b class="mono">'+cell.score+'/10</b>'
+        : '';
+    return '<td>'+ (top ? top : '') + stLine + '</td>';
+  }
+  // Оцінювання: тип перемикається кнопкою-циклом, контроли за типом
+  var ik = ' data-i="'+i+'" data-k="'+key+'"';
+  var typeBtn = '<button class="inv-act" style="color:var(--dim)" title="Тип: '+
+    (TRAIN_TYPES.find(function(t){ return t[0] === cell.t; }) || TRAIN_TYPES[1])[1]+
+    ' · клік — змінити (Час → Статус → Оцінка)"'+ik+' onclick="trainTypeCycle(this.dataset.i,this.dataset.k)">'+
+    (cell.t === 'time' ? '⏱' : cell.t === 'grade' ? '🔟' : '☰')+'</button>';
+  var noteBtn = '<button class="inv-act" title="'+(cell.note ? esc(cell.note) : 'Коментар')+'"'+
+    (cell.note ? ' style="color:var(--accent);border-color:var(--accent)"' : '')+ik+
+    ' onclick="trainNoteModal(this.dataset.i,this.dataset.k)">💬</button>';
+  var ctl;
+  if (cell.t === 'time') {
+    ctl = '<b class="mono" id="tc_'+i+'_'+key+'" style="color:'+trainStColor(ds)+'">'+
+        trainFmtTime(trainEffSec(cell))+(goal ? ' / '+trainFmtTime(goal) : '')+'</b>'+
+      (cell.run
+        ? '<button class="inv-act" title="Пауза"'+ik+' onclick="trainTimePause(this.dataset.i,this.dataset.k)">⏸</button>'
+        : '<button class="inv-act" title="В процесі (пуск часу)"'+ik+' onclick="trainTimeStart(this.dataset.i,this.dataset.k)">▶</button>');
+  } else if (cell.t === 'grade') {
+    ctl = '<input type="number" min="0" max="10" value="'+(cell.score === null ? '' : cell.score)+'"'+
+        ' style="width:52px;min-width:0;padding:4px 6px"'+ik+' onchange="trainScoreSet(this.dataset.i,this.dataset.k,this.value)">'+
+      '<span class="hint">/10</span>'+
+      '<button class="inv-act'+(cell.st === 'Не пройдено' ? ' inv-act--del' : '')+'" title="Не пройдено (остаточно, вручну)"'+ik+
+        ' onclick="trainFailSet(this.dataset.i,this.dataset.k)">✕</button>';
+  } else {
+    ctl = '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.i,this.dataset.k,this.value)">'+
+      TRAIN_STATUSES.map(function(s){
+        return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
+      }).join('')+'</select>';
+  }
+  return '<td><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">'+typeBtn+ctl+noteBtn+'</div>'+stLine+'</td>';
+}
 function trainStudentsHtml(instr) {
   var cur = trainMonday();
+  if (!trainWeekSel || !/^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel)) trainWeekSel = cur;
   var weeks = (trainState.data.weeks || []).filter(function(w){ return w.instructor === instr; });
-  if (!trainWeekSel) trainWeekSel = cur;
-  var weekKeys = [cur];
-  // Робочий тиждень, обраний у календарі потоку, доступний і тут —
-  // групу можна набирати наперед
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel) && weekKeys.indexOf(trainWeekSel) === -1) weekKeys.push(trainWeekSel);
-  weeks.forEach(function(w){ if (weekKeys.indexOf(w.week) === -1) weekKeys.push(w.week); });
-  weekKeys.sort().reverse();
-  if (weekKeys.indexOf(trainWeekSel) === -1) trainWeekSel = cur;
   var wk = weeks.find(function(w){ return w.week === trainWeekSel; }) || { instructor: instr, week: trainWeekSel, students: [] };
   var canMark = isAdminUser() || (S.auth && S.auth.id === instr);
-  var weekSel = '<span style="display:flex;align-items:center;gap:8px"><label class="hint">Тиждень:</label>'+
-    '<select style="width:auto;min-width:0" onchange="trainWeekSel=this.value;renderView()">'+
-    weekKeys.map(function(k){
-      var lbl = k === cur ? 'Поточний · з '+k.slice(8,10)+'.'+k.slice(5,7) : 'з '+k.slice(8,10)+'.'+k.slice(5,7)+'.'+k.slice(0,4);
-      return '<option value="'+esc(k)+'"'+(k===trainWeekSel?' selected':'')+'>'+lbl+'</option>';
-    }).join('')+'</select></span>';
-
+  var modeToggle = canMark
+    ? '<div class="inv-mode">'+
+        '<button class="inv-mode-btn'+(trainMode !== 'edit' ? ' active' : '')+'" onclick="trainMode=\'view\';renderView()">Перегляд</button>'+
+        '<button class="inv-mode-btn'+(trainMode === 'edit' ? ' active' : '')+'" onclick="trainMode=\'edit\';renderView()">Оцінювання</button>'+
+      '</div>'
+    : '';
   var header = '<tr><th>Студент</th>'+TRAIN_CHECK.map(function(ch){ return '<th>'+ch[1]+'</th>'; }).join('')+
-    (isAdminUser() ? '<th></th>' : '')+'</tr>';
+    (canMark && trainMode === 'edit' ? '<th></th>' : '')+'</tr>';
   var rows = (wk.students || []).map(function(st, i){
-    var cells = TRAIN_CHECK.map(function(ch){
-      var v = (st.c && st.c[ch[0]]) || '—';
-      if (!canMark) return '<td>'+esc(v)+'</td>';
-      return '<td><select class="inv-status-sel" data-i="'+i+'" data-k="'+ch[0]+'" onchange="trainMark(this.dataset.i,this.dataset.k,this.value)">'+
-        TRAIN_MARKS.map(function(m2){
-          return '<option value="'+esc(m2)+'"'+(m2===v?' selected':'')+'>'+esc(m2)+'</option>';
-        }).join('')+'</select></td>';
-    }).join('');
+    var cells = TRAIN_CHECK.map(function(ch){ return trainCellHtml(i, ch[0], st, canMark); }).join('');
     return '<tr><td style="font-weight:700">'+esc(st.n)+'</td>'+cells+
-      (isAdminUser()
-        ? '<td><button class="inv-act inv-act--del" title="Прибрати студента" data-i="'+i+'" onclick="trainRemoveStudent(this.dataset.i)">'+svgIcon('x')+'</button></td>'
+      (canMark && trainMode === 'edit'
+        ? '<td style="text-align:right"><button class="inv-act inv-act--del" title="Прибрати студента з групи" data-i="'+i+'" onclick="trainRemoveStudent(this.dataset.i)">'+svgIcon('x')+'</button></td>'
         : '')+'</tr>';
   }).join('');
-  // Нові студенти створюються в «Загальному потоці»; сюди — добір із пулу
-  var addRow = canMark
+  var addRow = canMark && trainMode === 'edit'
     ? '<div style="margin-top:10px"><button class="btn btn-mini btn-green" onclick="trainGroupAddModal()">＋ Додати з потоку</button></div>'
-    : '<div class="hint" style="margin-top:8px">Групу формує інструктор або адміністратор.</div>';
-
-  return '<div class="filter-row" style="margin-top:12px">'+weekSel+'</div>'+
-    '<div class="matrix-panel">'+
-      '<div class="matrix-panel-head"><span class="cap">🎓 Студенти тижня</span><span class="count-pill">'+(wk.students||[]).length+'</span></div>'+
-      ((wk.students||[]).length
-        ? '<div style="overflow-x:auto"><table class="crew-table">'+header+rows+'</table></div>'
-        : '<div class="empty">Студентів ще немає'+(isAdminUser()?' — додай нижче':'')+'</div>')+
-    '</div>' + addRow;
+    : '';
+  var main = '<div class="matrix-panel">'+
+    '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 Група · '+esc(trainWeekLbl(trainWeekSel))+'</span>'+
+      '<span class="count-pill">'+(wk.students || []).length+'</span>'+modeToggle+'</div>'+
+    ((wk.students || []).length
+      ? '<div style="overflow-x:auto"><table class="crew-table">'+header+rows+'</table></div>'
+      : '<div class="empty">Групи на цей тиждень ще немає'+(canMark ? ' — додай студентів з потоку' : '')+'</div>')+
+  '</div>' + addRow;
+  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(canMark)+'</div></div>';
+}
+/* ── Дії клітинок ── */
+function trainCellSave() { trainSaveStudents(trainWeekRowRef()); }
+function trainTypeCycle(i, key) {
+  var cell = trainCellRef(i, key);
+  if (!cell) return;
+  var order = ['time', 'status', 'grade'];
+  cell.t = order[(order.indexOf(cell.t) + 1) % order.length];
+  trainCellSave(); renderView();
+}
+function trainTimeStart(i, key) {
+  var cell = trainCellRef(i, key);
+  if (!cell) return;
+  cell.run = Date.now();
+  cell.st = 'В процесі';
+  trainCellSave(); renderView();
+}
+function trainTimePause(i, key, autoNote) {
+  var cell = trainCellRef(i, key);
+  if (!cell) return;
+  if (cell.run) { cell.sec = Math.round(trainEffSec(cell)); cell.run = 0; }
+  cell.st = 'Пауза';
+  if (autoNote) cell.note = (cell.note ? cell.note + '\n' : '') + autoNote;
+  trainCellSave(); renderView();
+}
+function trainStatusSet(i, key, v) {
+  var cell = trainCellRef(i, key);
+  if (!cell) return;
+  cell.st = v === '—' ? '' : v;
+  trainCellSave(); renderView();
+}
+function trainScoreSet(i, key, v) {
+  var cell = trainCellRef(i, key);
+  if (!cell) return;
+  v = String(v).trim();
+  cell.score = v === '' ? null : Math.max(0, Math.min(10, Math.round(+v) || 0));
+  if (cell.st === 'Не пройдено') cell.st = ''; // новий бал знімає ручне «не пройдено»
+  trainCellSave(); renderView();
+}
+function trainFailSet(i, key) {
+  var cell = trainCellRef(i, key);
+  if (!cell) return;
+  cell.st = cell.st === 'Не пройдено' ? '' : 'Не пройдено';
+  trainCellSave(); renderView();
+}
+function trainNoteModal(i, key) {
+  var cell = trainCellRef(i, key);
+  if (!cell) return;
+  var ch = TRAIN_CHECK.find(function(x){ return x[0] === key; });
+  openModal('💬 Коментар · '+esc(ch ? ch[1] : key),
+    '<div class="f"><textarea id="tnText" rows="4" placeholder="Коментар інструктора…">'+esc(cell.note || '')+'</textarea></div>'+
+    '<button class="btn btn-green" data-i="'+i+'" data-k="'+key+'" onclick="trainNoteSave(this.dataset.i,this.dataset.k)">💾 Зберегти</button>');
+  setTimeout(function(){ var t = $('tnText'); if (t) t.focus(); }, 60);
+}
+function trainNoteSave(i, key) {
+  var cell = trainCellRef(i, key);
+  if (!cell) return;
+  cell.note = ($('tnText') ? $('tnText').value : '').trim();
+  trainCellSave(); closeModal(); renderView();
+}
+// Секундний тік: оновлює лічильники «В процесі» без повного перерендеру;
+// перетин порога (симулятор 3 год) — одна перемальовка з зеленим «Пройдено»
+var _trainTimeTick = null;
+function trainTimeTickStart() {
+  if (_trainTimeTick) { clearInterval(_trainTimeTick); _trainTimeTick = null; }
+  if (S.view !== 'train' || trainTab !== 'group' || !trainState.data) return;
+  var wk = trainWeekRowRef();
+  var anyRun = (wk.students || []).some(function(st){
+    return TRAIN_CHECK.some(function(ch){ var c = trainCellOf(st, ch[0]); return c.t === 'time' && c.run; });
+  });
+  if (!anyRun) return;
+  _trainTimeTick = setInterval(function(){
+    if (S.view !== 'train' || trainTab !== 'group') { clearInterval(_trainTimeTick); _trainTimeTick = null; return; }
+    var wk2 = trainWeekRowRef(), cross = false;
+    (wk2.students || []).forEach(function(st, i){
+      TRAIN_CHECK.forEach(function(ch){
+        var c = trainCellOf(st, ch[0]);
+        if (c.t !== 'time' || !c.run) return;
+        var el = $('tc_' + i + '_' + ch[0]);
+        var goal = TRAIN_TIME_GOAL[ch[0]];
+        if (el) {
+          el.textContent = trainFmtTime(trainEffSec(c)) + (goal ? ' / ' + trainFmtTime(goal) : '');
+          if (goal && trainEffSec(c) >= goal && el.dataset.done !== '1') { el.dataset.done = '1'; cross = true; }
+        }
+      });
+    });
+    if (cross) renderView();
+  }, 1000);
 }
 function trainWeekRowRef() {
   var instr = trainInstructorId(), week = trainWeekSel || trainMonday();
@@ -5065,13 +5259,6 @@ function trainSaveStudents(wk) {
     rpc('trainingSaveStudents', [wk.instructor, wk.week, wk.students], function(){},
       function(e){ toast('❌ Не збережено: '+((e && e.message) || e), true); });
   }, 400);
-}
-function trainMark(i, key, val) {
-  var wk = trainWeekRowRef(), st = wk.students[+i];
-  if (!st) return;
-  st.c = st.c || {};
-  st.c[key] = val;
-  trainSaveStudents(wk);
 }
 // Добір у групу — тільки з пулу «Загального потоку». Зайняті іншою групою
 // цього тижня показуються замкненими.
