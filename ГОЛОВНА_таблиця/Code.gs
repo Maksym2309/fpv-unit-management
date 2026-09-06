@@ -5868,7 +5868,7 @@ function assertCrewSector_(crewSector, mainId, membersStr) {
 // Службові рядки потоку мають Інструктор='FLOW':
 //   FLOW × 'POOL'      — загальний пул студентів: [{n:'Імʼя'}]
 //   FLOW × <понеділок> — план тижня по днях: {days:{1:['Теорія'],…,7:[]}}
-// FLOW-рядки може правити будь-який інструктор (гуард той самий).
+// FLOW-рядки править ТІЛЬКИ адміністратор курсу (інструктори — перегляд).
 // Спорядження й частоти НЕ бронюються окремо — вони живуть в екіпажі
 // інструктора, як усе інше в застосунку.
 // Навчальний виліт — звичайний рядок «Журналу польоту» з міткою «НАВЧ»
@@ -5942,6 +5942,9 @@ function trainingSaveStudents(instructorId, week, students) {
     throw new Error('Некоректний тиждень: ' + week);
   }
   const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
+  if (isFlow && !isAdmin(apiUserEmail_() || '')) {
+    throw new Error('Пул студентів і план потоку редагує тільки адміністратор курсу');
+  }
   if (!isFlow && !isAdmin(apiUserEmail_() || '') && (!me || me.id !== instructorId)) {
     throw new Error('Інструктор редагує лише своїх студентів');
   }

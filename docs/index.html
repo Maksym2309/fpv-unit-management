@@ -901,9 +901,26 @@ var DEMO_DATA = {
     });
   },
   getTraining: function(){
-    var weeks = [];
-    try { weeks = JSON.parse(localStorage.getItem('wh_training') || '[]') || []; } catch(e) {}
-    return { week: trainMonday(), weeks: weeks };
+    var weeks = null;
+    try { weeks = JSON.parse(localStorage.getItem('wh_training') || 'null'); } catch(e) {}
+    if (Array.isArray(weeks)) return { week: trainMonday(), weeks: weeks };
+    // Тестові дані для обкатки логіки: пул, план тижня, групи двох інструкторів
+    var m = trainMonday();
+    return { week: m, weeks: [
+      { id:'TRN-P', instructor:'FLOW', week:'POOL', students:[
+        {n:'Петро'},{n:'Андрій'},{n:'Марія'},{n:'Олег'},{n:'Ігор'},{n:'Соломія'}] },
+      { id:'TRN-PL', instructor:'FLOW', week:m, students:{ days:{
+        1:['Теорія'], 3:['Вступний залік','Симулятор'], 4:['Зліт/посадка','Маневрування'], 5:['Екзамен'] } } },
+      { id:'TRN-1', instructor:'OP-004', week:m, students:[
+        { n:'Петро', c:{ sim:{t:'time',sec:9840,run:0,st:'Пауза',note:'перерва на обід'},
+                         tol:{t:'status',st:'Пройдено'}, exam:{t:'grade',score:8} } },
+        { n:'Андрій', c:{ sim:{t:'time',sec:4520,run:0,st:'Пауза'},
+                          tol:{t:'status',st:'Повтор',note:'вітер, друга спроба'},
+                          exam:{t:'grade',score:5} } } ] },
+      { id:'TRN-2', instructor:'OP-001', week:m, students:[
+        { n:'Марія', c:{ sim:{t:'time',sec:10800,run:0}, tol:{t:'status',st:'Пройдено'},
+                         route:{t:'status',st:'В процесі'}, exam:{t:'grade',score:9} } } ] }
+    ] };
   },
   trainingSaveStudents: function(instr, week, students){
     var weeks = DEMO_DATA.getTraining().weeks;
@@ -4858,8 +4875,11 @@ function trainOwners(week) {
 function trainWeekLbl(k) {
   return 'з ' + k.slice(8,10) + '.' + k.slice(5,7);
 }
+// Режим потоку: редагування пулу і плану — ЛИШЕ адміністратор курсу
+var trainFlowMode = 'view';
 function trainFlowHtml() {
-  var canEd = canInstructor();
+  var isCourseAdmin = isAdminUser();
+  var canEd = isCourseAdmin && trainFlowMode === 'edit';
   var cur = trainMonday();
   if (!trainWeekSel || trainWeekSel === 'POOL') trainWeekSel = cur;
   var pool = trainFlowRow('POOL').students;
@@ -4875,15 +4895,21 @@ function trainFlowHtml() {
       (canEd ? '<td style="text-align:right"><button class="inv-act inv-act--del" title="Прибрати з потоку" data-i="'+i+'" onclick="trainPoolRemove(this.dataset.i)">'+svgIcon('x')+'</button></td>' : '')+
     '</tr>';
   }).join('');
-  var acts = canEd
-    ? '<div class="info-acts">'+
-        '<button class="icon-btn" title="Додати студента в потік" style="background:var(--accent);color:var(--on-accent)" onclick="trainPoolAddModal()">'+svgIcon('personAdd')+'</button>'+
-        '<button class="icon-btn" title="Імпорт списку з файлу (.txt/.csv — один студент на рядок)" onclick="$(\'trainImpFile\').click()">'+svgIcon('upload')+'</button>'+
-      '</div>'+
-      '<input type="file" id="trainImpFile" accept=".txt,.csv,text/plain" style="display:none" onchange="trainPoolImport(this)">'
+  // Перемикач режиму бачить тільки адмін курсу; редагування — лише в «Редагування»
+  var flowToggle = isCourseAdmin
+    ? '<div class="inv-mode" style="margin-left:0">'+
+        '<button class="inv-mode-btn'+(trainFlowMode !== 'edit' ? ' active' : '')+'" onclick="trainFlowMode=\'view\';renderView()">Перегляд</button>'+
+        '<button class="inv-mode-btn'+(trainFlowMode === 'edit' ? ' active' : '')+'" onclick="trainFlowMode=\'edit\';renderView()">Редагування</button>'+
+      '</div>'
     : '';
+  var acts = '<div class="info-acts" style="align-items:center;gap:8px">'+
+    (canEd
+      ? '<button class="icon-btn" title="Додати студента в потік" style="background:var(--accent);color:var(--on-accent)" onclick="trainPoolAddModal()">'+svgIcon('personAdd')+'</button>'+
+        '<button class="icon-btn" title="Імпорт списку з файлу (.txt/.csv — один студент на рядок)" onclick="$(\'trainImpFile\').click()">'+svgIcon('upload')+'</button>'
+      : '')+flowToggle+'</div>'+
+    (canEd ? '<input type="file" id="trainImpFile" accept=".txt,.csv,text/plain" style="display:none" onchange="trainPoolImport(this)">' : '');
   var main = '<div class="matrix-panel">'+
-    '<div class="matrix-panel-head" style="gap:8px"><span class="cap">🎓 Загал студентів</span>'+
+    '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 Загал студентів</span>'+
       '<span class="count-pill">'+pool.length+'</span>'+acts+'</div>'+
     (rows
       ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th>Студент</th><th>Група · '+esc(trainWeekLbl(trainWeekSel))+'</th>'+(canEd?'<th></th>':'')+'</tr>'+rows+'</table></div>'
@@ -5130,8 +5156,12 @@ function trainStudentsHtml(instr) {
   var weeks = (trainState.data.weeks || []).filter(function(w){ return w.instructor === instr; });
   var wk = weeks.find(function(w){ return w.week === trainWeekSel; }) || { instructor: instr, week: trainWeekSel, students: [] };
   var canMark = isAdminUser() || (S.auth && S.auth.id === instr);
+  // Кнопка добору з потоку — компактно в шапці панелі, поруч із перемикачем
+  var addBtn = canMark && trainMode === 'edit'
+    ? '<button class="icon-btn" title="Додати студента з потоку" style="background:var(--accent);color:var(--on-accent)" onclick="trainGroupAddModal()">'+svgIcon('personAdd')+'</button>'
+    : '';
   var modeToggle = canMark
-    ? '<div class="inv-mode">'+
+    ? '<div class="inv-mode" style="margin-left:0">'+
         '<button class="inv-mode-btn'+(trainMode !== 'edit' ? ' active' : '')+'" onclick="trainMode=\'view\';renderView()">Перегляд</button>'+
         '<button class="inv-mode-btn'+(trainMode === 'edit' ? ' active' : '')+'" onclick="trainMode=\'edit\';renderView()">Оцінювання</button>'+
       '</div>'
@@ -5145,17 +5175,16 @@ function trainStudentsHtml(instr) {
         ? '<td style="text-align:right"><button class="inv-act inv-act--del" title="Прибрати студента з групи" data-i="'+i+'" onclick="trainRemoveStudent(this.dataset.i)">'+svgIcon('x')+'</button></td>'
         : '')+'</tr>';
   }).join('');
-  var addRow = canMark && trainMode === 'edit'
-    ? '<div style="margin-top:10px"><button class="btn btn-mini btn-green" onclick="trainGroupAddModal()">＋ Додати з потоку</button></div>'
-    : '';
   var main = '<div class="matrix-panel">'+
     '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 Група · '+esc(trainWeekLbl(trainWeekSel))+'</span>'+
-      '<span class="count-pill">'+(wk.students || []).length+'</span>'+modeToggle+'</div>'+
+      '<span class="count-pill">'+(wk.students || []).length+'</span>'+
+      '<div class="info-acts" style="align-items:center;gap:8px">'+addBtn+modeToggle+'</div></div>'+
     ((wk.students || []).length
       ? '<div style="overflow-x:auto"><table class="crew-table">'+header+rows+'</table></div>'
-      : '<div class="empty">Групи на цей тиждень ще немає'+(canMark ? ' — додай студентів з потоку' : '')+'</div>')+
-  '</div>' + addRow;
-  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(canMark)+'</div></div>';
+      : '<div class="empty">Групи на цей тиждень ще немає'+(canMark ? ' — додай студентів з потоку кнопкою у шапці' : '')+'</div>')+
+  '</div>';
+  // План днів у бічній панелі редагує тільки адмін курсу
+  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(isAdminUser())+'</div></div>';
 }
 /* ── Дії клітинок ── */
 function trainCellSave() { trainSaveStudents(trainWeekRowRef()); }
