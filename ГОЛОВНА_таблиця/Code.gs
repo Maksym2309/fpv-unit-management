@@ -5964,13 +5964,28 @@ function trainingSaveStudents(instructorId, week, students) {
     });
     json = JSON.stringify({ days: clean });
   } else {
-    if (!Array.isArray(students) || students.length > 200) throw new Error('Некоректний список студентів');
-    const clean = students.map(s => {
+    // Група: масив студентів АБО {list:[...], prog:{дата: кількість
+    // завершених активностей дня}} — прогрес групи по графіку
+    let list = students, prog = null;
+    if (students && !Array.isArray(students) && typeof students === 'object' && Array.isArray(students.list)) {
+      list = students.list;
+      prog = (students.prog && typeof students.prog === 'object') ? students.prog : {};
+    }
+    if (!Array.isArray(list) || list.length > 200) throw new Error('Некоректний список студентів');
+    const clean = list.map(s => {
       const o = { n: String((s && s.n) || '').trim().slice(0, 80) };
       if (s && typeof s.c === 'object' && s.c && Object.keys(s.c).length) o.c = s.c;
       return o;
     }).filter(s => s.n);
-    json = JSON.stringify(clean);
+    if (prog) {
+      const cp = {};
+      Object.keys(prog).forEach(k => {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(k)) cp[k] = Math.max(0, Math.min(20, parseInt(prog[k], 10) || 0));
+      });
+      json = JSON.stringify({ list: clean, prog: cp });
+    } else {
+      json = JSON.stringify(clean);
+    }
   }
   if (json.length > 30000) throw new Error('Список завеликий');
   return withScriptLock(function() {
