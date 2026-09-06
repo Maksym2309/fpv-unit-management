@@ -4995,39 +4995,81 @@ function trainCalShift(m) {
   trainCalMonth = d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);
   renderView();
 }
+// Розгорнутий місячний календар показується за кнопкою — постійно він
+// не потрібен; повсякденна навігація — компактний список тижнів
+var trainCalOpen = false;
+function trainCalToggle() { trainCalOpen = !trainCalOpen; renderView(); }
+function trainWeekRangeLbl(k) {
+  var d = new Date(k + 'T00:00:00');
+  d.setDate(d.getDate() + 6);
+  return k.slice(8,10) + '.' + k.slice(5,7) + ' – ' + ('0'+d.getDate()).slice(-2) + '.' + ('0'+(d.getMonth()+1)).slice(-2);
+}
 function trainSideHtml(canEd) {
   var todayStr = trainFmtDate(new Date());
-  if (!trainCalMonth) trainCalMonth = (/^\d{4}-\d{2}/.test(trainWeekSel || '') ? trainWeekSel : todayStr).slice(0,7);
+  var cur = trainMonday();
   var busy = trainBusyDays();
-  var p = trainCalMonth.split('-');
-  var first = new Date(+p[0], +p[1]-1, 1);
-  var start = new Date(first);
-  start.setDate(1 - ((first.getDay() + 6) % 7)); // понеділок першого рядка сітки
-  var MONTHS = ['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'];
-  var head = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'+
-    '<button class="inv-act" title="Попередній місяць" onclick="trainCalShift(-1)">‹</button>'+
-    '<b style="flex:1;text-align:center;font:700 11px var(--font-data);text-transform:uppercase;letter-spacing:.06em">'+MONTHS[+p[1]-1]+' '+p[0]+'</b>'+
-    '<button class="inv-act" title="Наступний місяць" onclick="trainCalShift(1)">›</button></div>';
-  var grid = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">'+
-    TRAIN_DAYS.map(function(dn){ return '<div class="hint" style="font-size:9px">'+dn+'</div>'; }).join('');
-  var d = new Date(start);
-  for (var i = 0; i < 42; i++) {
-    var ds = trainFmtDate(d);
-    var inMonth = (d.getMonth() + 1) === +p[1];
-    var isBusy = !!busy[ds];
-    var inFrame = trainMondayOf(ds) === trainWeekSel;
-    var style = 'padding:3px 0 1px;cursor:pointer;font:700 11px var(--font-data);border:1px solid transparent;'+
-      (inMonth ? '' : 'opacity:.3;')+
-      (inFrame ? 'background:var(--panel-3);' : '')+
-      (isBusy ? 'color:var(--accent);' : '')+
-      (ds === todayStr ? 'border-color:var(--accent);' : '');
-    grid += '<div style="'+style+'" title="'+esc(trainDayLbl(ds))+(isBusy ? ': '+esc(busy[ds].join(', ')) : '')+'" data-d="'+ds+'" onclick="trainDayClick(this.dataset.d)">'+
-      d.getDate()+'<div style="font-size:7px;line-height:5px;height:5px;color:var(--accent)">'+(isBusy ? '●' : '')+'</div></div>';
-    d.setDate(d.getDate() + 1);
-  }
-  grid += '</div>';
 
-  // Графік робочої рамки: конкретні дати з активностями
+  // ── Компактний список тижнів: діапазон дат + бейджі + олівець ──
+  var weekKeys = [cur];
+  var nx = new Date(cur + 'T00:00:00'); nx.setDate(nx.getDate() + 7);
+  weekKeys.push(trainFmtDate(nx));
+  (trainState.data.weeks || []).forEach(function(w){
+    if (/^\d{4}-\d{2}-\d{2}$/.test(w.week) && weekKeys.indexOf(w.week) === -1) weekKeys.push(w.week);
+  });
+  Object.keys(busy).forEach(function(dt){
+    var m = trainMondayOf(dt);
+    if (weekKeys.indexOf(m) === -1) weekKeys.push(m);
+  });
+  weekKeys.sort().reverse();
+  var weekRows = weekKeys.map(function(k){
+    var sel = k === trainWeekSel;
+    return '<div class="member-row" style="margin-bottom:4px;padding:6px 8px;cursor:pointer'+(sel?';border-color:var(--accent)':'')+'" onclick="trainWeekPick(\''+esc(k)+'\')">'+
+      '<div style="flex:1;min-width:0"><b>з '+esc(trainWeekRangeLbl(k))+'</b>'+
+        (k === cur ? ' <span class="badge-main">поточний</span>' : '')+
+        (sel ? ' <span class="badge-main" style="background:var(--accent);color:var(--on-accent)">робочий</span>' : '')+'</div>'+
+      '<button class="inv-act" title="Зробити тиждень робочим" data-w="'+esc(k)+'" onclick="event.stopPropagation();trainWeekPick(this.dataset.w)">'+svgIcon('edit')+'</button>'+
+    '</div>';
+  }).join('');
+
+  // ── Розгорнутий перегляд: місячний календар (за кнопкою 🗓) ──
+  var calHtml = '';
+  if (trainCalOpen) {
+    if (!trainCalMonth) trainCalMonth = (/^\d{4}-\d{2}/.test(trainWeekSel || '') ? trainWeekSel : todayStr).slice(0,7);
+    var p = trainCalMonth.split('-');
+    var first = new Date(+p[0], +p[1]-1, 1);
+    var start = new Date(first);
+    start.setDate(1 - ((first.getDay() + 6) % 7));
+    var MONTHS = ['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'];
+    calHtml = '<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">'+
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'+
+        '<button class="inv-act" title="Попередній місяць" onclick="trainCalShift(-1)">‹</button>'+
+        '<b style="flex:1;text-align:center;font:700 11px var(--font-data);text-transform:uppercase;letter-spacing:.06em">'+MONTHS[+p[1]-1]+' '+p[0]+'</b>'+
+        '<button class="inv-act" title="Наступний місяць" onclick="trainCalShift(1)">›</button></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">'+
+      TRAIN_DAYS.map(function(dn){ return '<div class="hint" style="font-size:9px">'+dn+'</div>'; }).join('');
+    var d = new Date(start);
+    for (var i = 0; i < 42; i++) {
+      var ds = trainFmtDate(d);
+      var inMonth = (d.getMonth() + 1) === +p[1];
+      var isBusy = !!busy[ds];
+      var inFrame = trainMondayOf(ds) === trainWeekSel;
+      var style = 'padding:3px 0 1px;cursor:pointer;font:700 11px var(--font-data);border:1px solid transparent;'+
+        (inMonth ? '' : 'opacity:.3;')+
+        (inFrame ? 'background:var(--panel-3);' : '')+
+        (isBusy ? 'color:var(--accent);' : '')+
+        (ds === todayStr ? 'border-color:var(--accent);' : '');
+      calHtml += '<div style="'+style+'" title="'+esc(trainDayLbl(ds))+(isBusy ? ': '+esc(busy[ds].join(', ')) : '')+'" data-d="'+ds+'" onclick="trainDayClick(this.dataset.d)">'+
+        d.getDate()+'<div style="font-size:7px;line-height:5px;height:5px;color:var(--accent)">'+(isBusy ? '●' : '')+'</div></div>';
+      d.setDate(d.getDate() + 1);
+    }
+    calHtml += '</div>'+
+      '<div class="hint" style="margin-top:6px">'+(canEd
+        ? 'Клік по дню — додати/прибрати активності: тиждень може бути несуцільним, хоч підряд, хоч окремі дні.'
+        : '● — день із заняттями. Клік по дню — вибрати робочий тиждень.')+'</div>'+
+    '</div>';
+  }
+
+  // ── Графік робочої рамки: конкретні дати з активностями ──
   var days = trainPlanDays(trainWeekSel);
   var keys = Object.keys(days).sort();
   var dayRows = keys.map(function(dt){
@@ -5040,16 +5082,14 @@ function trainSideHtml(canEd) {
       '<span style="width:58px;flex:0 0 auto;font:700 10px var(--font-data);color:var(--dim);cursor:pointer" title="Відкрити день" data-d="'+esc(dt)+'" onclick="trainDayClick(this.dataset.d)">'+trainDayLbl(dt)+'</span>'+
       '<div style="flex:1;display:flex;flex-wrap:wrap;gap:4px;min-width:0">'+chips+'</div>'+
     '</div>';
-  }).join('') || '<div class="empty" style="padding:8px 0">Днів із заняттями ще немає'+(canEd ? ' — клікни день у календарі' : '')+'</div>';
+  }).join('') || '<div class="empty" style="padding:8px 0">Днів із заняттями ще немає'+(canEd ? ' — відкрий календар 🗓 і клікни день' : '')+'</div>';
 
   return '<div class="side-panel">'+
-      '<div class="side-head"><span class="cap">📅 Календар</span>'+
-        '<span class="hint">робочий: '+esc(trainWeekLbl(trainWeekSel))+'</span></div>'+
-      '<div class="side-body" style="padding:8px">'+head+grid+
-        '<div class="hint" style="margin-top:6px">'+(canEd
-          ? 'Клік по дню — активності дня: тиждень може бути несуцільним, хоч підряд, хоч окремі дні. Клік також робить тиждень дня робочим.'
-          : '● — день із заняттями. Клік по дню — вибрати робочий тиждень.')+'</div>'+
+      '<div class="side-head"><span class="cap">📅 Тижні</span>'+
+        '<button class="icon-btn'+(trainCalOpen?'':'')+'" title="'+(trainCalOpen?'Згорнути календар':'Розгорнутий перегляд — календар місяця')+'"'+
+          (trainCalOpen?' style="background:var(--accent);color:var(--on-accent)"':'')+' onclick="trainCalToggle()">🗓</button>'+
       '</div>'+
+      '<div class="side-body" style="padding:8px">'+weekRows+calHtml+'</div>'+
     '</div>'+
     '<div class="side-panel">'+
       '<div class="side-head"><span class="cap">🗓 Графік · '+esc(trainWeekLbl(trainWeekSel))+'</span></div>'+
