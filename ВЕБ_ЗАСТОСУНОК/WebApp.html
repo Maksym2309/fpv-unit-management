@@ -4936,11 +4936,10 @@ function trainOwners(week) {
 function trainWeekLbl(k) {
   return 'з ' + k.slice(8,10) + '.' + k.slice(5,7);
 }
-// Режим потоку: редагування пулу і плану — ЛИШЕ адміністратор курсу
-var trainFlowMode = 'view';
+// Пул студентів редагує адміністратор курсу (без окремого перемикача);
+// розклад (дні, графік) — тільки олівцем біля тижня
 function trainFlowHtml() {
-  var isCourseAdmin = isAdminUser();
-  var canEd = isCourseAdmin && trainFlowMode === 'edit';
+  var canEd = isAdminUser();
   var cur = trainMonday();
   if (!trainWeekSel || trainWeekSel === 'POOL') trainWeekSel = cur;
   var pool = trainFlowRow('POOL').students;
@@ -4956,18 +4955,11 @@ function trainFlowHtml() {
       (canEd ? '<td style="text-align:right"><button class="inv-act inv-act--del" title="Прибрати з потоку" data-i="'+i+'" onclick="trainPoolRemove(this.dataset.i)">'+svgIcon('x')+'</button></td>' : '')+
     '</tr>';
   }).join('');
-  // Перемикач режиму бачить тільки адмін курсу; редагування — лише в «Редагування»
-  var flowToggle = isCourseAdmin
-    ? '<div class="inv-mode" style="margin-left:0">'+
-        '<button class="inv-mode-btn'+(trainFlowMode !== 'edit' ? ' active' : '')+'" onclick="trainFlowMode=\'view\';renderView()">Перегляд</button>'+
-        '<button class="inv-mode-btn'+(trainFlowMode === 'edit' ? ' active' : '')+'" onclick="trainFlowMode=\'edit\';renderView()">Редагування</button>'+
-      '</div>'
-    : '';
   var acts = '<div class="info-acts" style="align-items:center;gap:8px">'+
     (canEd
       ? '<button class="icon-btn" title="Додати студента в потік" style="background:var(--accent);color:var(--on-accent)" onclick="trainPoolAddModal()">'+svgIcon('personAdd')+'</button>'+
         '<button class="icon-btn" title="Імпорт списку з файлу (.txt/.csv — один студент на рядок)" onclick="$(\'trainImpFile\').click()">'+svgIcon('upload')+'</button>'
-      : '')+flowToggle+'</div>'+
+      : '')+'</div>'+
     (canEd ? '<input type="file" id="trainImpFile" accept=".txt,.csv,text/plain" style="display:none" onchange="trainPoolImport(this)">' : '');
   var main = '<div class="matrix-panel">'+
     '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 Загал студентів</span>'+
@@ -5508,7 +5500,9 @@ function trainStudentsHtml(instr) {
     var dates = colDates[ch[0]]
       ? '<div class="hint" style="font-weight:400;letter-spacing:0;text-transform:none">'+colDates[ch[0]].join(' · ')+'</div>'
       : '';
-    return '<th style="white-space:nowrap;vertical-align:top">'+ch[1]+glyph+colPlay+dates+'</th>';
+    // Обмежена ширина: довгі назви дисциплін переносяться на другий рядок,
+    // а не розтягують колонку
+    return '<th style="vertical-align:top;width:118px;max-width:130px;white-space:normal">'+ch[1]+glyph+colPlay+dates+'</th>';
   }).join('')+
     (canMark && trainMode === 'edit' ? '<th></th>' : '')+'</tr>';
   var rows = (wk.students || []).map(function(st, i){
