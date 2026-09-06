@@ -5393,8 +5393,8 @@ function trainCellHtml(i, key, st, canMark, locked) {
         : (cell.run ? ' <span style="color:var(--blue)">▶</span>' : ''));
   } else if (cell.t === 'grade') {
     if (edit) {
-      // До бала — лише проміжні статуси (В процесі/Повтор); «Здав»/«Не здав»
-      // зʼявляються тільки після оцінювання (чип + кнопка ✕)
+      // До бала — лише проміжні статуси (В процесі/Повтор). ✕ стирає бал
+      // (порятунок від міскліку); «Здав/Не здав» — з бала або кліком по чипу
       val = '<input type="number" min="0" max="10" value="'+(cell.score === null ? '' : cell.score)+'"'+
           ' style="width:44px;min-width:0;padding:3px 5px;font:700 12px var(--font-data)"'+ik+' onchange="trainScoreSet(this.dataset.i,this.dataset.k,this.value)">'+
         '<span class="hint">/10</span>'+
@@ -5403,9 +5403,12 @@ function trainCellHtml(i, key, st, canMark, locked) {
               TRAIN_GRADE_PRE.map(function(s){
                 return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
               }).join('')+'</select>'
-          : slim('✕','Не здав (остаточно, вручну)','trainFailSet', (cell.st === 'Не здав' || cell.st === 'Не пройдено') ? 'var(--red)' : 'var(--muted)'));
-      // Селект сам показує проміжний статус — чип без бала не дублюємо
+          : slim('✕','Прибрати бал (якщо місклік)','trainScoreClear'));
+      // Селект сам показує проміжний статус — чип без бала не дублюємо;
+      // з балом чип клікабельний: перемикає Здав ↔ Не здав
       if (cell.score === null) chip = '';
+      else chip = '<span style="cursor:pointer" title="Клік — перемкнути Здав / Не здав"'+ik+
+        ' onclick="trainFailSet(this.dataset.i,this.dataset.k)">'+chip+'</span>';
     } else {
       val = cell.score !== null ? '<b class="mono" style="font-size:13px;color:'+trainStColor(ds)+'">'+cell.score+' / 10</b>' : '';
     }
@@ -5419,9 +5422,9 @@ function trainCellHtml(i, key, st, canMark, locked) {
     }
   }
   // Лічильник повторень: практика буває не раз — «×N» накручується
-  // навчальними вильотами, ± дає коригувати вручну
+  // навчальними вильотами, ± дає коригувати вручну. Балів не стосується
   var cntHtml = '';
-  if (cell.cnt || edit) {
+  if (cell.t !== 'grade' && (cell.cnt || edit)) {
     cntHtml = (cell.cnt ? ' <span class="mono" title="Пройдених повторень" style="font-size:10px;color:var(--muted)">×'+cell.cnt+'</span>' : '');
     if (edit) {
       cntHtml += ' <button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="+1 повторення"'+ik+' onclick="trainCntInc(this.dataset.i,this.dataset.k,1)">＋</button>'+
@@ -5622,6 +5625,14 @@ function trainFailSet(i, key) {
   var cell = trainCellRef(i, key);
   if (!cell) return;
   cell.st = (cell.st === 'Не здав' || cell.st === 'Не пройдено') ? '' : 'Не здав';
+  trainCellSave(); renderView();
+}
+// ✕ біля бала: стерти оцінку (порятунок від міскліку) разом з overrides
+function trainScoreClear(i, key) {
+  var cell = trainCellRef(i, key);
+  if (!cell) return;
+  cell.score = null;
+  cell.st = '';
   trainCellSave(); renderView();
 }
 function trainNoteModal(i, key) {
