@@ -4965,28 +4965,44 @@ function trainFlowHtml() {
     g.students.forEach(function(st){ if (!studentRow[st.n]) studentRow[st.n] = st; });
   });
 
-  // Зріз по СЬОГОДНІШНІХ навчальних станціях (активностях графіка):
-  // компактні чипи «Станція · Статус» замість анонімних крапок
-  var todayD = trainFmtDate(new Date());
-  var todayActs = trainPlanDays(trainMondayOf(todayD))[todayD] || [];
-  var SHORT = { 'Симулятор':'Сим', 'Вступний залік':'Залік', 'Зліт/посадка':'Зліт',
-    'Маневрування':'Маневр', 'Виявлення/супровід цілі':'Ціль', 'Робота в екіпажі':'Екіпаж',
-    'Теорія':'Теорія', 'Екзамен':'Екз' };
+  // Компактний зріз по ВСІХ навчальних станціях: коротка назва + позначка
+  // стану (✓ пройдено, ↻ повтор, ▶ в процесі, ⏸ пауза, ✕ не здав, · пусто)
+  // + значення (бал/час/повторення), усе кольором статусу
+  var SHORT_K = { sim:'Сим', intro:'Залік', tol:'Зліт', route:'Маневр', target:'Ціль', crew:'Екіпаж' };
   function mini(st) {
-    if (!st || !todayActs.length) return '<span class="hint">—</span>';
-    var chips = todayActs.map(function(a){
-      var k = TRAIN_ACT2KEY[a];
-      if (!k) return '';
-      var cell = trainCellOf(st, k);
-      var ds = trainCellStatus(cell, k);
-      var extra = cell.t === 'grade' && cell.score !== null ? ' '+cell.score+'/10'
+    if (!st) return '<span class="hint">—</span>';
+    return '<div style="display:flex;flex-wrap:wrap;gap:3px">'+cols.map(function(ch){
+      var cell = trainCellOf(st, ch[0]);
+      var ds = trainCellStatus(cell, ch[0]);
+      var c = trainStColor(ds);
+      var mark = (ds === 'Пройдено' || ds === 'Здав') ? '✓'
+        : ds === 'Повтор' ? '↻' : ds === 'В процесі' ? '▶' : ds === 'Пауза' ? '⏸'
+        : (ds === 'Не пройдено' || ds === 'Не здав') ? '✕' : '·';
+      var val = cell.t === 'grade' ? (cell.score !== null ? ' '+cell.score : '')
         : cell.t === 'time' ? ' '+trainFmtTime(trainEffSec(cell))
         : cell.cnt ? ' ×'+cell.cnt : '';
-      var c = trainStColor(ds);
-      return '<span title="'+esc(a+': '+ds+extra)+'" style="display:inline-block;border:1px solid '+c+';color:'+c+';padding:0 5px;font:700 9px var(--font-data);text-transform:uppercase;white-space:nowrap">'+
-        esc(SHORT[a] || a)+' · '+esc(ds)+esc(extra)+'</span>';
-    }).filter(Boolean).join(' ');
-    return chips || '<span class="hint">—</span>';
+      return '<span title="'+esc(ch[1]+': '+ds)+'" style="display:inline-block;border:1px solid '+c+';color:'+c+';padding:0 4px;font:700 8.5px var(--font-data);text-transform:uppercase;white-space:nowrap">'+
+        esc(SHORT_K[ch[0]] || ch[1])+' '+mark+esc(val)+'</span>';
+    }).join('')+'</div>';
+  }
+  // Авто-допуск: усі станції пройдено → «Допущено», ні — «Не допущено».
+  // Результат і сертифікація підтягуються зі вкладки «Екзамен» (st.ex пулу)
+  function allPassed(st) {
+    if (!st) return false;
+    return TRAIN_CHECK.every(function(ch){
+      var ds = trainCellStatus(trainCellOf(st, ch[0]), ch[0]);
+      return ds === 'Пройдено' || ds === 'Здав';
+    });
+  }
+  function examChip(poolSt, groupSt) {
+    var mk = function(txt, c){
+      return '<span style="display:inline-block;border:1px solid '+c+';color:'+c+';padding:1px 6px;font:700 9px var(--font-data);text-transform:uppercase;white-space:nowrap">'+txt+'</span>';
+    };
+    var ex = poolSt.ex || {};
+    if (ex.cert) return mk('🏅 Сертифіковано', 'var(--accent)');
+    if (ex.res === 'Склав') return mk('Склав', 'var(--green)');
+    if (ex.res === 'Не склав') return mk('Не склав', 'var(--red)');
+    return allPassed(groupSt) ? mk('Допущено', 'var(--green)') : mk('Не допущено', 'var(--dim)');
   }
 
   // ── Загал студентів: № (група → алфавіт), група, короткі статуси ──
@@ -5006,6 +5022,7 @@ function trainFlowHtml() {
         ? '<span class="badge-main">'+(groupNo[owner[st.n]] ? 'гр.'+groupNo[owner[st.n]]+' · ' : '')+'🎓 '+esc(owner[st.n])+'</span>'
         : '<span class="hint">не розподілений</span>')+'</td>'+
       '<td>'+mini(studentRow[st.n])+'</td>'+
+      '<td>'+examChip(st, studentRow[st.n])+'</td>'+
       (canEd
         ? '<td style="text-align:right;white-space:nowrap">'+
             '<button class="inv-act" title="Редагувати імʼя (помилка при внесенні)" data-i="'+e.idx+'" onclick="trainPoolRenameModal(this.dataset.i)">'+svgIcon('edit')+'</button> '+
@@ -5030,7 +5047,7 @@ function trainFlowHtml() {
     '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 Загал студентів</span>'+
       '<span class="count-pill">'+pool.length+'</span>'+acts+'</div>'+
     (rows
-      ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th style="width:34px">№</th><th>Студент</th><th>Група · '+esc(range)+'</th><th>Сьогодні'+(todayActs.length ? ' · '+esc(trainDayLbl(todayD)) : '')+'</th>'+(canEd?'<th></th>':'')+'</tr>'+rows+'</table></div>'
+      ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th style="width:34px">№</th><th>Студент</th><th>Група · '+esc(range)+'</th><th>Станції</th><th>Екзамен</th>'+(canEd?'<th></th>':'')+'</tr>'+rows+'</table></div>'
       : '<div class="empty">Потік порожній'+(canEd?' — додай студентів або імпортуй список із файлу':'')+'</div>')+
   '</div>';
 
