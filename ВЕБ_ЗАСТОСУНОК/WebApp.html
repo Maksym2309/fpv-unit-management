@@ -5019,26 +5019,24 @@ function trainFlowHtml() {
       : '<div class="empty">Потік порожній'+(canEd?' — додай студентів або імпортуй список із файлу':'')+'</div>')+
   '</div>';
 
-  // ── Навчальні групи тижня: №, інструктор, період з-по, склад ──
+  // ── Навчальні групи тижня — бокова панель у стилі «Екіпажів у секторі»:
+  // компактно, без складу — №, інструктор, кількість ──
   var gRows = groups.map(function(g, gi){
     var p = S.personnel.find(function(x){ return x.id === g.instructor; });
-    return '<tr'+(gi % 2 ? ' style="background:var(--panel-2)"' : '')+'>'+
-      '<td class="mono" style="width:44px">гр.'+(gi+1)+'</td>'+
-      '<td style="font-weight:700">🎓 '+esc(p ? p.callsign : g.instructor)+'</td>'+
-      '<td class="mono" style="white-space:nowrap">'+esc(range)+'</td>'+
-      '<td>'+g.students.map(function(s){ return esc(s.n); }).join(', ')+'</td>'+
-      '<td class="mono" style="text-align:right">'+g.students.length+'</td>'+
-    '</tr>';
+    return '<tr><td class="mono" style="width:44px">гр.'+(gi+1)+'</td>'+
+      '<td>🎓 '+esc(p ? p.callsign : g.instructor)+'</td>'+
+      '<td class="mono" style="text-align:right">'+g.students.length+'</td></tr>';
   }).join('');
-  var groupsPanel = '<div class="matrix-panel" style="margin-top:14px">'+
-    '<div class="matrix-panel-head"><span class="cap">👥 Навчальні групи</span>'+
+  var groupsPanel = '<div class="side-panel">'+
+    '<div class="side-head"><span class="cap">👥 Навчальні групи</span>'+
       '<span class="count-pill">'+groups.length+'</span></div>'+
+    '<div class="side-body" style="padding:0">'+
     (gRows
-      ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th>№</th><th>Інструктор</th><th>Період</th><th>Склад</th><th style="text-align:right">Осіб</th></tr>'+gRows+'</table></div>'
-      : '<div class="empty">Груп на цей тиждень ще немає — інструктори добирають студентів у «Особистій групі»</div>')+
-  '</div>';
+      ? '<table class="crew-table"><tr><th>№</th><th>Інструктор</th><th style="text-align:right">Осіб</th></tr>'+gRows+'</table>'
+      : '<div class="empty">Груп ще немає</div>')+
+    '</div></div>';
 
-  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+groupsPanel+'</div><div>'+trainSideHtml(canEd)+'</div></div>';
+  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+groupsPanel+trainSideHtml(canEd)+'</div></div>';
 }
 
 // ── Спільна бокова колонка: календар із забитими днями + графік дат ──
