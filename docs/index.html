@@ -3120,8 +3120,11 @@ function doStartFlight() {
           st.c = st.c || {};
           if (curKey) {
             st.c[curKey] = trainCellOf(st, curKey);
-            st.c[curKey].cnt = (st.c[curKey].cnt || 0) + 1;
-            credited.push(st.n);
+            // 🏁 завершена станція закрита для нарахування спроб
+            if (!st.c[curKey].fin) {
+              st.c[curKey].cnt = (st.c[curKey].cnt || 0) + 1;
+              credited.push(st.n);
+            }
           }
           // авто-пауза симулятора
           st.c.sim = trainCellOf(st, 'sim');
@@ -5538,7 +5541,7 @@ function trainCellOf(st, key) {
   }
   return { t: c.t || TRAIN_TYPE_DEF[key] || 'status', st: c.st || '', note: c.note || '',
            sec: +c.sec || 0, run: +c.run || 0, score: (c.score === 0 || c.score) ? +c.score : null,
-           cnt: +c.cnt || 0 };
+           cnt: +c.cnt || 0, fin: c.fin ? 1 : 0 };
 }
 function trainCellRef(i, key) {
   var wk = trainWeekRowRef(), st = wk.students[+i];
@@ -5554,6 +5557,8 @@ function trainFmtTime(sec) {
 }
 // Похідний статус: поріг часу і бал перекривають ручний (крім ручного «Не пройдено»)
 function trainCellStatus(cell, key) {
+  // 🏁 Станцію завершено вручну — прогрес закритий, статус «Пройдено»
+  if (cell.fin && cell.t !== 'grade') return 'Пройдено';
   if (cell.t === 'time') {
     var goal = TRAIN_TIME_GOAL[key];
     if (goal && trainEffSec(cell) >= goal) return 'Пройдено';
@@ -5611,8 +5616,9 @@ function trainCellHtml(i, key, st, canMark, locked) {
   if (cell.t === 'time') {
     val = '<b class="mono" id="tc_'+i+'_'+key+'" style="font-size:13px;color:'+trainStColor(ds)+'">'+
       trainFmtTime(trainEffSec(cell))+(goal ? ' / '+trainFmtTime(goal) : '')+'</b>'+
-      (edit
-        ? (cell.run ? slim('⏸','Пауза','trainTimePause') : slim('▶','В процесі (пуск часу)','trainTimeStart'))
+      (edit && !cell.fin
+        ? (cell.run ? slim('⏸','Пауза','trainTimePause') : slim('▶','В процесі (пуск часу)','trainTimeStart'))+
+          slim('🏁','Завершити станцію — закрити час і нарахування спроб','trainFinSet')
         : (cell.run ? ' <span style="color:var(--blue)">▶</span>' : ''));
   } else if (cell.t === 'grade') {
     if (edit) {
@@ -5638,13 +5644,20 @@ function trainCellHtml(i, key, st, canMark, locked) {
       val = cell.score !== null ? '<b class="mono" style="font-size:13px;color:'+trainStColor(ds)+'">'+cell.score+' / 10</b>' : '';
     }
   } else {
-    if (edit) {
+    if (edit && !cell.fin) {
       val = '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.i,this.dataset.k,this.value)">'+
         TRAIN_STATUSES.map(function(s){
           return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
-        }).join('')+'</select>';
+        }).join('')+'</select>'+
+        slim('🏁','Завершити станцію — закрити нарахування спроб','trainFinSet');
       chip = ''; // селект і є статус — не дублюємо
     }
+  }
+  // 🏁 Завершена станція: замість контролів — чип; клік знову відкриває
+  // (порятунок від міскліку чи бажання продовжити станцію)
+  if (cell.fin && cell.t !== 'grade' && edit) {
+    chip = '<span style="cursor:pointer" title="🏁 Станцію завершено — клік, щоб знову відкрити (час і спроби рахуються далі)"'+ik+
+      ' onclick="trainFinClear(this.dataset.i,this.dataset.k)">'+chip+' <span style="font-size:9px">🏁</span></span>';
   }
   // Лічильник повторень: практика буває не раз — «×N» накручується
   // навчальними вильотами, ± дає коригувати вручну. Тільки для статусних
@@ -5652,7 +5665,7 @@ function trainCellHtml(i, key, st, canMark, locked) {
   var cntHtml = '';
   if (cell.t === 'status' && (cell.cnt || edit)) {
     cntHtml = (cell.cnt ? ' <span class="mono" title="Пройдених повторень" style="font-size:10px;color:var(--muted)">×'+cell.cnt+'</span>' : '');
-    if (edit) {
+    if (edit && !cell.fin) {
       cntHtml += ' <button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="+1 повторення"'+ik+' onclick="trainCntInc(this.dataset.i,this.dataset.k,1)">＋</button>'+
         (cell.cnt ? '<button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="−1 повторення"'+ik+' onclick="trainCntInc(this.dataset.i,this.dataset.k,-1)">−</button>' : '');
     }
@@ -5710,12 +5723,19 @@ function trainStudentsHtml(instr) {
         'title="Тип колонки: '+(TRAIN_TYPES.find(function(x){ return x[0] === t; }) || TRAIN_TYPES[1])[1]+
         ' · клік — змінити для всіх (Час → Статус → Оцінка)" data-k="'+ch[0]+'" onclick="trainColTypeCycle(this.dataset.k)">'+
         (t === 'time' ? '⏱' : t === 'grade' ? '🔟' : '☰')+'</button>';
-      // Час зручно вмикати всій групі одразу — пуск/пауза з шапки колонки
-      if (t === 'time' && (wk.students || []).length) {
-        var anyRun = wk.students.some(function(st){ var c = trainCellOf(st, ch[0]); return c.t === 'time' && c.run; });
-        colPlay = anyRun
-          ? ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--blue)" title="Пауза всій групі" data-k="'+ch[0]+'" onclick="trainColTimePause(this.dataset.k)">⏸</button>'
-          : ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--green)" title="Пуск часу всій групі одразу" data-k="'+ch[0]+'" onclick="trainColTimeStart(this.dataset.k)">▶</button>';
+      // Час зручно вмикати всій групі одразу — пуск/пауза з шапки колонки;
+      // 🏁 завершує станцію всій групі (закриває час і лічбу спроб), ↺ — відкриває назад
+      if ((t === 'time' || t === 'status') && (wk.students || []).length) {
+        var allFin = wk.students.every(function(st){ return trainCellOf(st, ch[0]).fin; });
+        if (t === 'time' && !allFin) {
+          var anyRun = wk.students.some(function(st){ var c = trainCellOf(st, ch[0]); return c.t === 'time' && c.run; });
+          colPlay = anyRun
+            ? ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--blue)" title="Пауза всій групі" data-k="'+ch[0]+'" onclick="trainColTimePause(this.dataset.k)">⏸</button>'
+            : ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--green)" title="Пуск часу всій групі одразу" data-k="'+ch[0]+'" onclick="trainColTimeStart(this.dataset.k)">▶</button>';
+        }
+        colPlay += allFin
+          ? ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--green)" title="Станцію завершено всій групі — клік, щоб знову відкрити" data-k="'+ch[0]+'" onclick="trainColFinClear(this.dataset.k)">↺</button>'
+          : ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px" title="Завершити станцію всій групі — закрити час і нарахування спроб" data-k="'+ch[0]+'" onclick="trainColFin(this.dataset.k)">🏁</button>';
       }
     }
     var dates = colDates[ch[0]]
@@ -5806,7 +5826,7 @@ function trainColTimeStart(key) {
   var wk = trainWeekRowRef();
   wk.students.forEach(function(st, i){
     var c = trainCellRef(i, key);
-    if (c && c.t === 'time' && !c.run) { c.run = Date.now(); c.st = 'В процесі'; }
+    if (c && c.t === 'time' && !c.run && !c.fin) { c.run = Date.now(); c.st = 'В процесі'; }
   });
   trainCellSave(); renderView();
   toast('▶ Час пішов усій групі');
@@ -5819,6 +5839,43 @@ function trainColTimePause(key) {
   });
   trainCellSave(); renderView();
   toast('⏸ Пауза всій групі');
+}
+/* 🏁 Завершити станцію: закриває час і нарахування спроб (вильотами й
+   ручками). Клік по чипу «Пройдено 🏁» знову відкриває — на випадок
+   міскліку чи бажання продовжити. Стосується часу і статусів, балів — ні. */
+function trainFinSet(i, key) {
+  var cell = trainCellRef(i, key);
+  if (!cell || cell.t === 'grade') return;
+  if (cell.run) { cell.sec = Math.round(trainEffSec(cell)); cell.run = 0; cell.st = 'Пауза'; }
+  cell.fin = 1;
+  trainCellSave(); renderView();
+}
+function trainFinClear(i, key) {
+  var cell = trainCellRef(i, key);
+  if (!cell) return;
+  cell.fin = 0;
+  trainCellSave(); renderView();
+}
+// Те саме одразу всій групі — кнопка 🏁/↺ у шапці колонки
+function trainColFin(key) {
+  var wk = trainWeekRowRef();
+  wk.students.forEach(function(st, i){
+    var c = trainCellRef(i, key);
+    if (!c || c.t === 'grade') return;
+    if (c.run) { c.sec = Math.round(trainEffSec(c)); c.run = 0; c.st = 'Пауза'; }
+    c.fin = 1;
+  });
+  trainCellSave(); renderView();
+  toast('🏁 Станцію завершено всій групі — спроби більше не рахуються');
+}
+function trainColFinClear(key) {
+  var wk = trainWeekRowRef();
+  wk.students.forEach(function(st, i){
+    var c = trainCellRef(i, key);
+    if (c) c.fin = 0;
+  });
+  trainCellSave(); renderView();
+  toast('↺ Станцію знову відкрито всій групі');
 }
 function trainTimeStart(i, key) {
   var cell = trainCellRef(i, key);
