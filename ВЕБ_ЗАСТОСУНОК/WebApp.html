@@ -5603,19 +5603,20 @@ function trainCellHtml(i, key, st, canMark, locked) {
     noteLine = '<div class="hint" style="opacity:.4">немає коментаря</div>';
   }
   var val = '', chip = trainStChip(ds);
-  // ⚑ «Завершити» — просто горить або ні: жовтий = станція відкрита,
-  // зелений = завершено (час і спроби закриті). Клік перемикає.
+  // Плашка «ЗАВЕРШИТИ» у стилі чипів статусів — під часом/селектом:
+  // жовта = станція відкрита, зелена = активовано (час і спроби закриті).
+  // Клік перемикає в обидва боки.
+  var finC = cell.fin ? 'var(--green)' : 'var(--accent)';
   var finBtn = edit && cell.t !== 'grade'
-    ? slim('⚑', cell.fin ? 'Станцію завершено — клік, щоб знову відкрити (час і спроби рахуються далі)'
-                         : 'Завершити станцію — закрити час і нарахування спроб',
-        cell.fin ? 'trainFinClear' : 'trainFinSet',
-        cell.fin ? 'var(--green)' : 'var(--accent)')
+    ? '<span style="display:inline-block;cursor:pointer;border:1px solid '+finC+';color:'+finC+';padding:1px 6px;font:700 9px var(--font-data);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap"'+
+      ' title="'+(cell.fin ? 'Станцію завершено — клік, щоб знову відкрити (час і спроби рахуються далі)' : 'Завершити станцію — закрити час і нарахування спроб')+'"'+ik+
+      ' onclick="'+(cell.fin ? 'trainFinClear' : 'trainFinSet')+'(this.dataset.i,this.dataset.k)">Завершити</span>'
     : '';
   if (cell.t === 'time') {
     val = '<b class="mono" id="tc_'+i+'_'+key+'" style="font-size:13px;color:'+trainStColor(ds)+'">'+
       trainFmtTime(trainEffSec(cell))+(goal ? ' / '+trainFmtTime(goal) : '')+'</b>'+
       (edit
-        ? (cell.fin ? '' : (cell.run ? slim('⏸','Пауза','trainTimePause') : slim('▶','В процесі (пуск часу)','trainTimeStart')))+finBtn
+        ? (cell.fin ? '' : (cell.run ? slim('⏸','Пауза','trainTimePause') : slim('▶','В процесі (пуск часу)','trainTimeStart')))
         : (cell.run ? ' <span style="color:var(--blue)">▶</span>' : ''));
   } else if (cell.t === 'grade') {
     if (edit) {
@@ -5645,10 +5646,8 @@ function trainCellHtml(i, key, st, canMark, locked) {
       val = '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.i,this.dataset.k,this.value)">'+
         TRAIN_STATUSES.map(function(s){
           return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
-        }).join('')+'</select>'+finBtn;
+        }).join('')+'</select>';
       chip = ''; // селект і є статус — не дублюємо
-    } else if (edit) {
-      val = finBtn; // завершено: зелений прапорець, чип «Пройдено» нижче
     }
   }
   // Лічильник повторень: практика буває не раз — «×N» накручується
@@ -5666,7 +5665,7 @@ function trainCellHtml(i, key, st, canMark, locked) {
   return '<td style="vertical-align:top'+(lockWrap ? ';opacity:.4' : '')+'"'+
       (lockWrap ? ' title="Не за графіком сьогодні — редагує адміністратор курсу"' : '')+'>'+
     '<div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;min-height:26px">'+val+'</div>'+
-    '<div style="min-height:18px;margin-top:2px">'+chip+cntHtml+'</div>'+
+    '<div style="min-height:18px;margin-top:2px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">'+chip+finBtn+'<span>'+cntHtml+'</span></div>'+
     noteLine+
   '</td>';
 }
