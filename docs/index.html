@@ -5053,9 +5053,9 @@ function trainFlowHtml() {
   var acts = '<div class="info-acts" style="align-items:center;gap:8px">'+
     (canEd
       ? '<button class="icon-btn" title="Додати студента в потік" style="background:var(--accent);color:var(--on-accent)" onclick="trainPoolAddModal()">'+svgIcon('personAdd')+'</button>'+
-        '<button class="icon-btn" title="Імпорт списку з файлу (.txt/.csv — один студент на рядок)" onclick="$(\'trainImpFile\').click()">'+svgIcon('upload')+'</button>'
+        '<button class="icon-btn" title="Імпорт списку з файлу (.txt/.csv — рядок = студент; .xlsx — розпізнаю ПІБ автоматично)" onclick="$(\'trainImpFile\').click()">'+svgIcon('upload')+'</button>'
       : '')+flowToggle+'</div>'+
-    (canEd ? '<input type="file" id="trainImpFile" accept=".txt,.csv,text/plain" style="display:none" onchange="trainPoolImport(this)">' : '');
+    (canEd ? '<input type="file" id="trainImpFile" accept=".txt,.csv,.xlsx,text/plain" style="display:none" onchange="trainPoolImport(this)">' : '');
   var main = '<div class="matrix-panel">'+
     '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 Загал студентів</span>'+
       '<span class="count-pill">'+pool.length+'</span>'+acts+'</div>'+
@@ -5418,32 +5418,154 @@ function trainPoolRenameDo(i) {
   closeModal();
   renderView();
 }
-// Імпорт списку студентів із .txt/.csv: один рядок — один студент
-// (у csv береться перша колонка). Дублі проти пулу відкидаються.
+// Імпорт списку студентів із .txt/.csv (рядок = студент, у csv перша
+// колонка) або .xlsx (розпізнавання ПІБ). Дублі проти пулу відкидаються.
 function trainPoolImport(inp) {
   var file = inp.files && inp.files[0];
   inp.value = '';
   if (!file) return;
+  if (/\.xlsx$/i.test(file.name)) {
+    var rdx = new FileReader();
+    rdx.onload = function(){
+      trainXlsxNames(rdx.result).then(function(names){
+        if (!names.length) { toast('⚠ ПІБ у файлі не розпізнано — збережи список як .csv (одне імʼя на рядок)', true); return; }
+        trainImpPreview(names);
+      }).catch(function(e){
+        toast('❌ Не вдалося прочитати .xlsx ('+((e && e.message) || e)+') — збережи список як .csv', true);
+      });
+    };
+    rdx.readAsArrayBuffer(file);
+    return;
+  }
   var rd = new FileReader();
   rd.onload = function(){
     var names = String(rd.result || '').split(/\r?\n/)
       .map(function(l){ return l.split(/[;,]/)[0].trim(); })
       .filter(Boolean).slice(0, 200);
-    var wk = trainFlowRow('POOL');
-    var have = {};
-    wk.students.forEach(function(s){ have[s.n.toLowerCase()] = 1; });
-    var fresh = [];
-    names.forEach(function(n){
-      if (!have[n.toLowerCase()]) { have[n.toLowerCase()] = 1; fresh.push(n); }
-    });
-    if (!fresh.length) { toast('⚠ Нових імен у файлі немає', true); return; }
-    if (!confirm('Додати в потік '+fresh.length+' студентів?\n'+fresh.slice(0,10).join(', ')+(fresh.length>10?'…':''))) return;
-    fresh.forEach(function(n){ wk.students.push({ n: n }); });
-    trainFlowSave(wk);
-    toast('⬆ Імпортовано: '+fresh.length);
-    renderView();
+    if (!names.length) { toast('⚠ Файл порожній', true); return; }
+    trainImpPreview(names);
   };
   rd.readAsText(file);
+}
+/* ── Читання .xlsx без бібліотек ──
+   xlsx — це zip: знаходимо central directory, дістаємо sharedStrings і
+   аркуші (deflate-raw розпаковує DecompressionStream), далі по рядках.
+   ПРИХОВАНІ рядки пропускаються — у таких списках це старі набори.
+   Маркери наборів («МО», «А 7034», «Острів»…) і заголовки відпадають
+   самі: ПІБ = три слова кирилицею з великої літери. */
+function trainZipEntries_(buf) {
+  var dv = new DataView(buf), u8 = new Uint8Array(buf);
+  var i = buf.byteLength - 22;
+  while (i >= 0 && dv.getUint32(i, true) !== 0x06054b50) i--;
+  if (i < 0) throw new Error('не zip-архів');
+  var cnt = dv.getUint16(i + 10, true), off = dv.getUint32(i + 16, true), out = {};
+  var td = new TextDecoder();
+  for (var k = 0; k < cnt; k++) {
+    if (dv.getUint32(off, true) !== 0x02014b50) break;
+    var nlen = dv.getUint16(off + 28, true), elen = dv.getUint16(off + 30, true), clen = dv.getUint16(off + 32, true);
+    out[td.decode(u8.subarray(off + 46, off + 46 + nlen))] = {
+      method: dv.getUint16(off + 10, true), csize: dv.getUint32(off + 20, true), lho: dv.getUint32(off + 42, true) };
+    off += 46 + nlen + elen + clen;
+  }
+  return out;
+}
+function trainZipText_(buf, e) {
+  var dv = new DataView(buf), u8 = new Uint8Array(buf);
+  var o = e.lho, nlen = dv.getUint16(o + 26, true), elen = dv.getUint16(o + 28, true);
+  var data = u8.subarray(o + 30 + nlen + elen, o + 30 + nlen + elen + e.csize);
+  if (e.method === 0) return Promise.resolve(new TextDecoder().decode(data));
+  if (typeof DecompressionStream === 'undefined') return Promise.reject(new Error('старий браузер'));
+  return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+}
+function trainXlsxNames(buf) {
+  var entries = trainZipEntries_(buf);
+  var sheets = Object.keys(entries).filter(function(n){ return /^xl\/worksheets\/sheet\d+\.xml$/.test(n); }).sort();
+  if (!sheets.length) throw new Error('аркушів не знайдено');
+  var jobs = [entries['xl/sharedStrings.xml'] ? trainZipText_(buf, entries['xl/sharedStrings.xml']) : Promise.resolve('')];
+  sheets.forEach(function(n){ jobs.push(trainZipText_(buf, entries[n])); });
+  return Promise.all(jobs).then(function(xmls){
+    var sst = [];
+    (xmls[0].match(/<si[ >][\s\S]*?<\/si>/g) || []).forEach(function(si){
+      sst.push((si.match(/<t[^>]*>([\s\S]*?)<\/t>/g) || []).map(function(t){
+        return t.replace(/<[^>]+>/g, '');
+      }).join(''));
+    });
+    var unesc = function(s){
+      return s.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;|&#39;/g,"'");
+    };
+    // ПІБ: Прізвище Імʼя По-батькові — кирилиця з великої, апострофи й
+    // дефіси всередині; хвости типу «(сапер)» відкидаються
+    var W = "[А-ЯІЇЄҐ][а-яіїєґ'’ʼ]+(?:-[А-ЯІЇЄҐа-яіїєґ][а-яіїєґ'’ʼ]*)*";
+    var reFull = new RegExp('^(' + W + ')\\s+(' + W + ')\\s+(' + W + ')');
+    var reTwo = new RegExp('^(' + W + ')\\s+(' + W + ')\\s*$');
+    var full = [], two = [], seen = {};
+    xmls.slice(1).forEach(function(xml){
+      (xml.match(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g) || []).forEach(function(row){
+        var attrs = row.match(/^<row\b[^>]*?>/) ? row.slice(0, row.indexOf('>') + 1) : row;
+        if (/\bhidden="(1|true)"/.test(attrs)) return; // приховане = старі набори
+        var cm;
+        var reCell = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+        while ((cm = reCell.exec(row))) {
+          var a = cm[1] || '', body = cm[2] || '', txt = '';
+          if (/\bt="s"/.test(a)) {
+            var vi = body.match(/<v>(\d+)<\/v>/);
+            txt = vi ? (sst[+vi[1]] || '') : '';
+          } else if (/\bt="inlineStr"/.test(a)) {
+            txt = (body.match(/<t[^>]*>([\s\S]*?)<\/t>/g) || []).map(function(t){ return t.replace(/<[^>]+>/g,''); }).join('');
+          } else if (/\bt="str"/.test(a)) {
+            var vs = body.match(/<v>([\s\S]*?)<\/v>/);
+            txt = vs ? vs[1] : '';
+          }
+          if (!txt) continue;
+          txt = unesc(txt).trim();
+          var m = txt.match(reFull);
+          if (m) {
+            var name = m[1] + ' ' + m[2] + ' ' + m[3];
+            if (!seen[name.toLowerCase()]) { seen[name.toLowerCase()] = 1; full.push(name); }
+          } else if ((m = txt.match(reTwo))) {
+            if (!seen[txt.toLowerCase()]) { seen[txt.toLowerCase()] = 1; two.push(txt); }
+          }
+        }
+      });
+    });
+    // Повних ПІБ нема — беремо двослівні (Прізвище Імʼя), інакше вони зайві
+    return (full.length ? full : two).slice(0, 200);
+  });
+}
+// Прев'ю імпорту: чекбокси, зайвих (інструктор, «(контроль)»…) знімаєш
+function trainImpPreview(names) {
+  var have = {};
+  trainFlowRow('POOL').students.forEach(function(s){ have[s.n.toLowerCase()] = 1; });
+  var rows = names.map(function(n, i){
+    var dup = !!have[n.toLowerCase()];
+    return '<label style="display:flex;align-items:center;gap:8px;padding:4px 2px;border-bottom:1px solid var(--line);cursor:pointer'+(dup?';opacity:.45':'')+'">'+
+      '<input type="checkbox" class="trainImpCb" value="'+esc(n)+'"'+(dup ? ' disabled' : ' checked')+'>'+
+      '<span style="flex:1">'+esc(n)+'</span>'+(dup ? '<span class="hint">вже в потоці</span>' : '')+
+    '</label>';
+  }).join('');
+  openModal('⬆ Імпорт студентів · розпізнано '+names.length,
+    '<div style="max-height:300px;overflow-y:auto;margin-bottom:10px">'+rows+'</div>'+
+    '<div class="btn-row">'+
+      '<button class="btn btn-green" onclick="trainImpApply()">➕ Додати вибраних</button>'+
+      '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
+    '</div>');
+}
+function trainImpApply() {
+  var picked = Array.from(document.querySelectorAll('.trainImpCb'))
+    .filter(function(cb){ return cb.checked && !cb.disabled; })
+    .map(function(cb){ return cb.value; });
+  if (!picked.length) { toast('⚠ Нікого не вибрано', true); return; }
+  var wk = trainFlowRow('POOL');
+  var have = {};
+  wk.students.forEach(function(s){ have[s.n.toLowerCase()] = 1; });
+  var added = 0;
+  picked.forEach(function(n){
+    if (!have[n.toLowerCase()]) { have[n.toLowerCase()] = 1; wk.students.push({ n: n }); added++; }
+  });
+  if (!added) { toast('⚠ Нових імен немає', true); return; }
+  trainFlowSave(wk);
+  toast('⬆ Імпортовано: '+added);
+  closeModal(); renderView();
 }
 // Активності дня живуть у рамці СВОГО календарного тижня — тому окремі
 // розкидані дні зберігаються коректно, кожен у своєму FLOW-рядку
