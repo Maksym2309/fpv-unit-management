@@ -5611,7 +5611,9 @@ var TRAIN_TYPE_DEF = { sim: 'time', intro: 'grade', tol: 'status', route: 'statu
 var TRAIN_TYPES = [['time','⏱ Час'],['status','☰ Статус'],['grade','🔟 Оцінка']];
 // Порядок колонок групи — за графіком адміна (перша поява активності
 // серед дат робочої рамки); дисципліни поза графіком ідуть у кінці
-function trainColOrder() {
+// planOnly: лише станції з графіка рамки (для таблиці групи); без нього
+// незаплановані дочіплюються в кінець (потік показує весь прогрес курсу)
+function trainColOrder(planOnly) {
   var frame = /^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel || '') ? trainWeekSel : trainMonday();
   var days = trainPlanDays(frame);
   var seen = {}, out = [];
@@ -5621,7 +5623,7 @@ function trainColOrder() {
       if (k && !seen[k]) { seen[k] = 1; out.push(TRAIN_CHECK.find(function(c){ return c[0] === k; })); }
     });
   });
-  TRAIN_CHECK.forEach(function(c){ if (!seen[c[0]]) out.push(c); });
+  if (!planOnly) TRAIN_CHECK.forEach(function(c){ if (!seen[c[0]]) out.push(c); });
   return out;
 }
 // Дати днів робочої рамки, де запланована дисципліна — для шапок колонок
@@ -5834,9 +5836,26 @@ function trainStudentsHtml(instr) {
       tActs.forEach(function(a){ var k = TRAIN_ACT2KEY[a]; if (k) lockSet[k] = 1; });
     }
   }
-  // Колонки — в порядку графіка адміна; тип оцінювання перемикається в
-  // шапці; під назвою — конкретні дати занять з активностями цієї дисципліни
-  var cols = trainColOrder();
+  // Колонки — ЛИШЕ станції з графіка рамки (нема в графіку — нема колонки),
+  // плюс ті, де в когось із групи вже є відмітки, аби виставлене не зникло.
+  // Порожній графік — показуємо всі. Тип оцінювання перемикається в шапці;
+  // під назвою — конкретні дати занять з активностями цієї дисципліни
+  var cols = trainColOrder(true);
+  if (!cols.length) {
+    cols = trainColOrder();
+  } else {
+    var planned = {};
+    cols.forEach(function(c){ planned[c[0]] = 1; });
+    TRAIN_CHECK.forEach(function(c){
+      if (planned[c[0]]) return;
+      var used = (wk.students || []).some(function(st){
+        if (!st.c || !st.c[c[0]]) return false;
+        var cell = trainCellOf(st, c[0]);
+        return !!(cell.st || cell.note || cell.sec || cell.run || cell.cnt || cell.fin || cell.score !== null);
+      });
+      if (used) cols.push(c);
+    });
+  }
   var colDates = trainColDates();
   var header = '<tr><th>Студент</th>'+cols.map(function(ch){
     var glyph = '', colPlay = '';
