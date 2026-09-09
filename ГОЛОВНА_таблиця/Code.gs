@@ -5942,12 +5942,14 @@ function trainingSaveStudents(instructorId, week, students) {
     throw new Error('Некоректний тиждень: ' + week);
   }
   const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
-  if (isFlow && !isAdmin(apiUserEmail_() || '')) {
+  const isAdm = isAdmin(apiUserEmail_() || '');
+  const isOwner = !!(me && me.id === instructorId);
+  if (isFlow && !isAdm) {
     throw new Error('Пул студентів і план потоку редагує тільки адміністратор курсу');
   }
-  if (!isFlow && !isAdmin(apiUserEmail_() || '') && (!me || me.id !== instructorId)) {
-    throw new Error('Інструктор редагує лише своїх студентів');
-  }
+  // Не власник і не адмін — можливо, співвласник спільної групи:
+  // право перевіряється нижче, по share вже збереженого рядка
+  let needShareCheck = !isFlow && !isAdm && !isOwner;
   let json;
   if (isFlow && week !== 'POOL') {
     // Графік рамки: {days:{'yyyy-mm-dd': ['Теорія', …]}} — конкретні дати
@@ -5965,11 +5967,12 @@ function trainingSaveStudents(instructorId, week, students) {
     json = JSON.stringify({ days: clean });
   } else {
     // Група: масив студентів АБО {list:[...], prog:{дата: кількість
-    // завершених активностей дня}} — прогрес групи по графіку
-    let list = students, prog = null;
+    // завершених активностей дня}, share:{t,ids}} — прогрес і спільність
+    let list = students, prog = null, share = null;
     if (students && !Array.isArray(students) && typeof students === 'object' && Array.isArray(students.list)) {
       list = students.list;
       prog = (students.prog && typeof students.prog === 'object') ? students.prog : {};
+      share = trainingCleanShare_(students.share);
     }
     if (!Array.isArray(list) || list.length > 200) throw new Error('Некоректний список студентів');
     const clean = list.map(s => {
@@ -5979,17 +5982,13 @@ function trainingSaveStudents(instructorId, week, students) {
       if (s && typeof s.ex === 'object' && s.ex && Object.keys(s.ex).length) o.ex = s.ex;
       return o;
     }).filter(s => s.n);
-    if (prog) {
-      const cp = {};
-      Object.keys(prog).forEach(k => {
-        if (/^\d{4}-\d{2}-\d{2}$/.test(k)) cp[k] = Math.max(0, Math.min(20, parseInt(prog[k], 10) || 0));
-      });
-      json = JSON.stringify({ list: clean, prog: cp });
-    } else {
-      json = JSON.stringify(clean);
-    }
+    const cp = {};
+    Object.keys(prog || {}).forEach(k => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k)) cp[k] = Math.max(0, Math.min(20, parseInt(prog[k], 10) || 0));
+    });
+    // json збирається всередині лока: share може взятись зі старого рядка
+    json = { list: clean, prog: cp, share: share };
   }
-  if (json.length > 30000) throw new Error('Список завеликий');
   return withScriptLock(function() {
     const sheet = ensureTrainingSheet();
     const lastRow = sheet.getLastRow();
@@ -6001,14 +6000,48 @@ function trainingSaveStudents(instructorId, week, students) {
         if (String(r[1]).trim() === instructorId && String(r[2]).trim() === week) rowNum = i + 3;
       });
     }
+    let out;
+    if (typeof json === 'string') {
+      out = json; // FLOW: план/пул — уже зібраний рядок
+      if (needShareCheck) throw new Error('Інструктор редагує лише свої або спільні групи');
+    } else {
+      // Спільність групи: не-власник пише лише у відкриту йому групу
+      // й НЕ може змінити share; власник/адмін без share зберігає наявний
+      let oldShare = null;
+      if (rowNum) {
+        try {
+          const old = JSON.parse(String(sheet.getRange(rowNum, 4).getValue() || '[]'));
+          if (old && !Array.isArray(old)) oldShare = trainingCleanShare_(old.share);
+        } catch (e) {}
+      }
+      if (needShareCheck) {
+        const ok = oldShare && (oldShare.t === 'c' || (me && oldShare.ids.indexOf(me.id) !== -1));
+        if (!ok) throw new Error('Інструктор редагує лише свої або спільні групи');
+        json.share = oldShare; // співвласник не змінює спільність
+      } else {
+        json.share = json.share || oldShare;
+      }
+      if (!json.share || json.share.t === 'p') delete json.share;
+      out = JSON.stringify(json);
+    }
+    if (out.length > 30000) throw new Error('Список завеликий');
     if (rowNum) {
-      sheet.getRange(rowNum, 4, 1, 2).setValues([[json, nowTS()]]);
+      sheet.getRange(rowNum, 4, 1, 2).setValues([[out, nowTS()]]);
       return { id: String(sheet.getRange(rowNum, 1).getValue()) };
     }
     const id = 'TRN-' + String(maxN + 1).padStart(3, '0');
-    sheet.appendRow([id, instructorId, week, json, nowTS()]);
+    sheet.appendRow([id, instructorId, week, out, nowTS()]);
     return { id: id };
   });
+}
+// Нормалізація спільності групи: p — приватна, s — обрані інструктори,
+// c — загальна (редагують усі інструктори)
+function trainingCleanShare_(sh) {
+  if (!sh || typeof sh !== 'object') return null;
+  const t = sh.t === 's' || sh.t === 'c' ? sh.t : 'p';
+  const ids = Array.isArray(sh.ids)
+    ? sh.ids.map(x => String(x).trim()).filter(Boolean).slice(0, 12) : [];
+  return { t: t, ids: t === 's' ? ids : [] };
 }
 
 // «Лінивий» сторож: активні навчальні вильоти старші за TRAINING_FLIGHT_MIN
@@ -6074,6 +6107,316 @@ function trainingIncident(flightId, note, droneId, droneStatus) {
     updateItemStatusById({ id: String(droneId), status: String(droneStatus) });
   }
   return { id: flightId };
+}
+
+// ============================================================
+// РОЗКЛАД НАВЧАННЯ — окремий аркуш, рядок = активність дня.
+// Читабельний прямо в таблиці й надійніший за JSON у «Навчання».
+// ============================================================
+function ensureScheduleSheet(ss) {
+  const s = ss || SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = getSheet(s, 'Розклад');
+  if (!sheet) {
+    sheet = s.insertSheet('Розклад');
+    sheet.getRange('A1:H1').merge().setValue('🗓 РОЗКЛАД НАВЧАННЯ — АКТИВНОСТІ ПО ДНЯХ')
+      .setBackground('#1a3a5c').setFontColor('#fff').setFontSize(13).setFontWeight('bold')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sheet.setRowHeight(1, 38);
+    sheet.getRange(2, 1, 1, 8)
+      .setValues([['ID','Дата','Активність','Початок','Кінець','Основний інструктор','Допоміжні','_TS']])
+      .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.setFrozenRows(2);
+    [70, 95, 220, 70, 70, 150, 220, 10].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+    // Дати й час — текстом, щоб Sheets не перетворював їх на Date-об'єкти
+    sheet.getRange('B3:E1000').setNumberFormat('@');
+  }
+  return sheet;
+}
+
+function scheduleFmtDate_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return String(v || '').trim();
+}
+function scheduleFmtTime_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'HH:mm');
+  return String(v || '').trim();
+}
+
+// Розклад читають усі інструктори. Перший виклик забирає старі плани
+// з JSON-рядків «Навчання» (FLOW×тиждень) — одноразова міграція.
+function getSchedule() {
+  trainingGuard_();
+  const sheet = ensureScheduleSheet();
+  if (sheet.getLastRow() < 3) scheduleMigrate_(sheet);
+  let list = [];
+  if (sheet.getLastRow() >= 3) {
+    list = sheet.getRange(3, 1, sheet.getLastRow() - 2, 7).getValues()
+      .filter(r => String(r[0]).trim() !== '')
+      .map(r => ({
+        id: String(r[0]), date: scheduleFmtDate_(r[1]), act: String(r[2] || '').trim(),
+        start: scheduleFmtTime_(r[3]), end: scheduleFmtTime_(r[4]),
+        main: String(r[5] || '').trim(),
+        helpers: String(r[6] || '').split(',').map(x => x.trim()).filter(Boolean),
+      }))
+      .filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.act);
+  }
+  return { list: list };
+}
+
+function scheduleMigrate_(sheet) {
+  return withScriptLock(function() {
+    if (sheet.getLastRow() >= 3) return;
+    const tr = ensureTrainingSheet();
+    if (tr.getLastRow() < 3) return;
+    const rows = [];
+    let n = 0;
+    tr.getRange(3, 1, tr.getLastRow() - 2, 4).getValues().forEach(r => {
+      if (String(r[1]).trim() !== 'FLOW') return;
+      const week = String(r[2]).trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) return;
+      let obj = null;
+      try { obj = JSON.parse(String(r[3] || '')); } catch (e) {}
+      const days = (obj && !Array.isArray(obj) && obj.days) || {};
+      Object.keys(days).forEach(k => {
+        let date = k;
+        if (/^[1-7]$/.test(String(k))) {
+          const d = new Date(week + 'T00:00:00');
+          d.setDate(d.getDate() + (+k - 1));
+          date = Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Array.isArray(days[k])) return;
+        days[k].forEach(a => {
+          n++;
+          rows.push(['SCH-' + String(n).padStart(3, '0'), date, String(a).slice(0, 40), '', '', '', '', nowTS()]);
+        });
+      });
+    });
+    if (rows.length) sheet.getRange(3, 1, rows.length, 8).setValues(rows);
+  });
+}
+
+// Зберегти ВСІ активності одного дня (заміна цілком) — адмін курсу.
+// acts: [{act, start:'HH:mm', end:'HH:mm', main:'позивний', helpers:[...]}]
+function saveScheduleDay(date, acts) {
+  trainingGuard_();
+  if (!isAdmin(apiUserEmail_() || '')) {
+    throw new Error('Розклад редагує тільки адміністратор курсу');
+  }
+  date = String(date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Некоректна дата: ' + date);
+  if (!Array.isArray(acts) || acts.length > 12) throw new Error('Некоректний список активностей');
+  const tRe = /^\d{1,2}:\d{2}$/;
+  const clean = acts.map(a => ({
+    act: String((a && a.act) || '').trim().slice(0, 40),
+    start: tRe.test(String((a && a.start) || '').trim()) ? String(a.start).trim() : '',
+    end: tRe.test(String((a && a.end) || '').trim()) ? String(a.end).trim() : '',
+    main: String((a && a.main) || '').trim().slice(0, 40),
+    helpers: (Array.isArray(a && a.helpers) ? a.helpers : []).map(h => String(h).trim().slice(0, 40)).filter(Boolean).slice(0, 6),
+  })).filter(a => a.act);
+  return withScriptLock(function() {
+    const sheet = ensureScheduleSheet();
+    let keep = [], maxN = 0;
+    if (sheet.getLastRow() >= 3) {
+      keep = sheet.getRange(3, 1, sheet.getLastRow() - 2, 8).getValues()
+        .filter(r => String(r[0]).trim() !== '')
+        .map(r => { r[1] = scheduleFmtDate_(r[1]); r[3] = scheduleFmtTime_(r[3]); r[4] = scheduleFmtTime_(r[4]); return r; });
+      keep.forEach(r => {
+        const m = String(r[0]).match(/SCH-(\d+)/);
+        if (m) maxN = Math.max(maxN, +m[1]);
+      });
+      keep = keep.filter(r => r[1] !== date);
+    }
+    clean.forEach(a => {
+      maxN++;
+      keep.push(['SCH-' + String(maxN).padStart(3, '0'), date, a.act, a.start, a.end, a.main, a.helpers.join(', '), nowTS()]);
+    });
+    keep.sort((a, b) => (a[1] + (a[3] || '99:99')).localeCompare(b[1] + (b[3] || '99:99')));
+    if (sheet.getLastRow() >= 3) sheet.getRange(3, 1, sheet.getLastRow() - 2, 8).clearContent();
+    if (keep.length) sheet.getRange(3, 1, keep.length, 8).setValues(keep);
+    return { ok: true, count: clean.length };
+  });
+}
+
+// ── Спільність групи: власник/адмін змінює тип і співвласників ──
+function trainingShareGroup(instructorId, week, share) {
+  trainingGuard_();
+  instructorId = String(instructorId || '').trim();
+  week = String(week || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
+  const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
+  if (!isAdmin(apiUserEmail_() || '') && (!me || me.id !== instructorId)) {
+    throw new Error('Спільність групи змінює її власник або адмін');
+  }
+  const sh = trainingCleanShare_(share) || { t: 'p', ids: [] };
+  return withScriptLock(function() {
+    const sheet = ensureTrainingSheet();
+    if (sheet.getLastRow() < 3) throw new Error('Групу не знайдено');
+    let rowNum = 0;
+    sheet.getRange(3, 1, sheet.getLastRow() - 2, 3).getValues().forEach((r, i) => {
+      if (String(r[1]).trim() === instructorId && String(r[2]).trim() === week) rowNum = i + 3;
+    });
+    if (!rowNum) throw new Error('Групу не знайдено');
+    let obj = null;
+    try { obj = JSON.parse(String(sheet.getRange(rowNum, 4).getValue() || '[]')); } catch (e) {}
+    if (Array.isArray(obj)) obj = { list: obj, prog: {} };
+    if (!obj || typeof obj !== 'object') obj = { list: [], prog: {} };
+    if (sh.t === 'p') delete obj.share; else obj.share = sh;
+    sheet.getRange(rowNum, 4, 1, 2).setValues([[JSON.stringify(obj), nowTS()]]);
+    return { ok: true };
+  });
+}
+
+// ── Передати групу іншому інструктору (зміна власника рядка) ──
+function trainingTransferGroup(instructorId, week, newOwner) {
+  trainingGuard_();
+  instructorId = String(instructorId || '').trim();
+  week = String(week || '').trim();
+  newOwner = String(newOwner || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
+  if (!newOwner || newOwner === 'FLOW') throw new Error('Вкажи нового власника');
+  const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
+  if (!isAdmin(apiUserEmail_() || '') && (!me || me.id !== instructorId)) {
+    throw new Error('Передати групу може її власник або адмін');
+  }
+  return withScriptLock(function() {
+    const sheet = ensureTrainingSheet();
+    if (sheet.getLastRow() < 3) throw new Error('Групу не знайдено');
+    let rowNum = 0, clash = 0;
+    sheet.getRange(3, 1, sheet.getLastRow() - 2, 3).getValues().forEach((r, i) => {
+      const ins = String(r[1]).trim(), wk = String(r[2]).trim();
+      if (ins === instructorId && wk === week) rowNum = i + 3;
+      if (ins === newOwner && wk === week) clash = i + 3;
+    });
+    if (!rowNum) throw new Error('Групу не знайдено');
+    if (clash) throw new Error('У нового власника вже є група на цей тиждень');
+    sheet.getRange(rowNum, 2).setValue(newOwner);
+    sheet.getRange(rowNum, 5).setValue(nowTS());
+    return { ok: true };
+  });
+}
+
+// ============================================================
+// ЕКСПОРТ КУРСУ В ОКРЕМУ GOOGLE-ТАБЛИЦЮ
+// Одна таблиця на всі курси: пара аркушів «Розклад …»/«Журнал …» на
+// рамку. Повторний експорт переписує лише свою пару — попередні
+// тижні лишаються в таблиці як бекап.
+// ============================================================
+const TRAIN_EXPORT_PROP = 'TRAIN_EXPORT_SSID';
+const TRAIN_EXPORT_CHECK = [['sim','Симулятор'],['intro','Вступний залік'],['tol','Зліт / посадка'],
+  ['route','Маневрування'],['target','Виявлення / супровід цілі'],['crew','Робота в складі екіпажу']];
+
+function trainingExportCell_(c, key) {
+  if (!c) return '';
+  if (typeof c === 'string') return c;
+  const st = String(c.st || '');
+  if (c.t === 'time' || (!c.t && key === 'sim')) {
+    const sec = Math.max(0, Math.round(+c.sec || 0));
+    const t = Math.floor(sec / 3600) + ':' + ('0' + Math.floor(sec % 3600 / 60)).slice(-2);
+    return t + (c.fin ? ' ✔' : (st ? ' · ' + st : ''));
+  }
+  if (c.t === 'grade') {
+    const sc = (c.score === 0 || c.score) ? c.score + '/10' : '';
+    const ds = st || (sc ? (+c.score >= 7 ? 'Здав' : 'Повтор') : '');
+    return [sc, ds].filter(Boolean).join(' · ');
+  }
+  const cnt = +c.cnt ? ' ×' + (+c.cnt) : '';
+  return (c.fin ? 'Пройдено ✔' : st) + cnt;
+}
+
+function trainingExportSheet(week) {
+  trainingGuard_();
+  if (!isAdmin(apiUserEmail_() || '')) throw new Error('Експорт робить адміністратор курсу');
+  week = String(week || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
+  const tz = Session.getScriptTimeZone();
+  const d0 = new Date(week + 'T00:00:00');
+  const d6 = new Date(d0); d6.setDate(d6.getDate() + 6);
+  const fmt = d => Utilities.formatDate(d, tz, 'dd.MM');
+  const lbl = fmt(d0) + '–' + fmt(d6) + '.' + Utilities.formatDate(d6, tz, 'yy');
+
+  // Цільова таблиця: одна на всі курси, створюється при першому експорті
+  const props = PropertiesService.getScriptProperties();
+  let ss = null;
+  const ssid = props.getProperty(TRAIN_EXPORT_PROP);
+  if (ssid) { try { ss = SpreadsheetApp.openById(ssid); } catch (e) { ss = null; } }
+  if (!ss) {
+    ss = SpreadsheetApp.create('🎓 Навчання — курси');
+    props.setProperty(TRAIN_EXPORT_PROP, ss.getId());
+    const root = infoRoot_();
+    if (root) {
+      try { DriveApp.getFileById(ss.getId()).moveTo(DriveApp.getFolderById(root)); } catch (e) {}
+    }
+  }
+
+  // ── Аркуш «Розклад lbl» ──
+  const days = ['Пн','Вт','Ср','Чт','Пт','Сб','Нд'];
+  const sched = getSchedule().list.filter(r => r.date >= week && r.date <= Utilities.formatDate(d6, tz, 'yyyy-MM-dd'));
+  const byDate = {};
+  sched.forEach(r => { (byDate[r.date] = byDate[r.date] || []).push(r); });
+  const shName = 'Розклад ' + lbl;
+  let sh = ss.getSheetByName(shName);
+  if (sh) ss.deleteSheet(sh);
+  sh = ss.insertSheet(shName, 0);
+  const rows = [['назва процесу','початок','кінець','Основний інструктор','Допоміжні інструктори']];
+  const secRows = [];
+  Object.keys(byDate).sort().forEach((dt, di) => {
+    const dd = new Date(dt + 'T00:00:00');
+    secRows.push(rows.length + 1);
+    rows.push(['День ' + (di + 1) + ' · ' + days[(dd.getDay() + 6) % 7] + ' ' + Utilities.formatDate(dd, tz, 'dd.MM'), '', '', '', '']);
+    byDate[dt].forEach(a => rows.push([a.act, a.start, a.end, a.main, a.helpers.join(', ')]));
+  });
+  sh.getRange(1, 1, rows.length, 5).setValues(rows);
+  sh.getRange(1, 1, 1, 5).setBackground('#1a3a5c').setFontColor('#fff').setFontWeight('bold');
+  secRows.forEach(r => sh.getRange(r, 1, 1, 5).merge().setBackground('#d9e5f1').setFontWeight('bold'));
+  [230, 80, 80, 160, 220].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  sh.setFrozenRows(1);
+
+  // ── Аркуш «Журнал lbl»: групи тижня з поточними оцінками ──
+  const trs = ensureTrainingSheet();
+  const groups = [];
+  let poolEx = {};
+  if (trs.getLastRow() >= 3) {
+    trs.getRange(3, 1, trs.getLastRow() - 2, 4).getValues().forEach(r => {
+      const ins = String(r[1]).trim(), wk = String(r[2]).trim();
+      let obj = null;
+      try { obj = JSON.parse(String(r[3] || '')); } catch (e) {}
+      if (ins === 'FLOW' && wk === 'POOL' && Array.isArray(obj)) {
+        obj.forEach(s => { if (s && s.n && s.ex) poolEx[s.n] = s.ex; });
+        return;
+      }
+      if (ins === 'FLOW' || wk !== week) return;
+      const list = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.list) ? obj.list : []);
+      if (list.length) groups.push({ instructor: ins, list: list });
+    });
+  }
+  const people = {};
+  getPersonnelList().forEach(p => { people[p.id] = p.callsign; });
+  const jName = 'Журнал ' + lbl;
+  let js = ss.getSheetByName(jName);
+  if (js) ss.deleteSheet(js);
+  js = ss.insertSheet(jName, 1);
+  const head = ['№','Студент','Інструктор'].concat(TRAIN_EXPORT_CHECK.map(c => c[1])).concat(['Екзамен']);
+  const jRows = [head];
+  let n = 0;
+  groups.forEach(g => {
+    const cs = people[g.instructor] || g.instructor;
+    g.list.forEach(st => {
+      n++;
+      const ex = poolEx[st.n] || {};
+      const exTxt = ex.cert ? '🏅 Сертифіковано' : (ex.res || ex.adm || '');
+      jRows.push([n, st.n, cs].concat(TRAIN_EXPORT_CHECK.map(c => trainingExportCell_((st.c || {})[c[0]], c[0]))).concat([exTxt]));
+    });
+  });
+  if (jRows.length === 1) jRows.push(['', 'Груп на цей тиждень немає', '', '', '', '', '', '', '', '']);
+  js.getRange(1, 1, jRows.length, head.length).setValues(jRows.map(r => r.length === head.length ? r : r.concat(Array(head.length - r.length).fill(''))));
+  js.getRange(1, 1, 1, head.length).setBackground('#1a3a5c').setFontColor('#fff').setFontWeight('bold');
+  [40, 220, 110].concat(TRAIN_EXPORT_CHECK.map(() => 130)).concat([130]).forEach((w, i) => js.setColumnWidth(i + 1, w));
+  js.setFrozenRows(1);
+
+  // Дефолтний порожній «Аркуш1» більше не потрібен
+  const def = ss.getSheetByName('Аркуш1') || ss.getSheetByName('Sheet1');
+  if (def && ss.getSheets().length > 1) { try { ss.deleteSheet(def); } catch (e) {} }
+  return { url: ss.getUrl(), name: ss.getName(), frame: lbl };
 }
 
 function getAllData(needCaps) {

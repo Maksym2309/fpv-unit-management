@@ -913,7 +913,7 @@ var DEMO_DATA = {
         {n:'Петро'},{n:'Андрій'},{n:'Марія'},{n:'Олег'},{n:'Ігор'},{n:'Соломія'}] },
       { id:'TRN-PL', instructor:'FLOW', week:m, students: plan1 },
       { id:'TRN-PL2', instructor:'FLOW', week:dd(7), students: plan2 },
-      { id:'TRN-1', instructor:'OP-004', week:m, students:[
+      { id:'TRN-1', instructor:'OP-004', week:m, students:{ share:{t:'s', ids:['OP-001']}, prog:{}, list:[
         { n:'Петро', c:{ sim:{t:'time',sec:9840,run:0,st:'Пауза',note:'перерва на обід'},
                          intro:{t:'grade',score:9},
                          tol:{t:'status',st:'Пройдено'},
@@ -922,7 +922,7 @@ var DEMO_DATA = {
         { n:'Андрій', c:{ sim:{t:'time',sec:4520,run:0,st:'Пауза'},
                           intro:{t:'grade',st:'В процесі'},
                           tol:{t:'status',st:'Повтор',note:'вітер, друга спроба'},
-                          target:{t:'status',st:'В процесі'} } } ] },
+                          target:{t:'status',st:'В процесі'} } } ] } },
       { id:'TRN-2', instructor:'OP-001', week:m, students:[
         { n:'Марія', c:{ sim:{t:'time',sec:10800,run:0}, intro:{t:'grade',score:10},
                          tol:{t:'status',st:'Пройдено'},
@@ -937,6 +937,70 @@ var DEMO_DATA = {
     wk.students = students;
     try { localStorage.setItem('wh_training', JSON.stringify(weeks)); } catch(e) {}
     return { id: wk.id };
+  },
+  // Розклад у демо: wh_sched; перший вхід — сід з часами та інструкторами
+  getSchedule: function(){
+    var list = null;
+    try { list = JSON.parse(localStorage.getItem('wh_sched') || 'null'); } catch(e) {}
+    if (Array.isArray(list)) return { list: list };
+    var m = trainMonday();
+    var dd = function(off){
+      var d = new Date(m + 'T00:00:00'); d.setDate(d.getDate() + off);
+      return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+    };
+    var n = 0;
+    var mk = function(off, act, s, e, main, helpers){
+      return { id: 'SCH-'+(++n), date: dd(off), act: act, start: s, end: e, main: main, helpers: helpers || [] };
+    };
+    return { list: [
+      mk(0, 'Теорія', '11:00', '13:00', 'Грім', ['Яструб']),
+      mk(2, 'Вступний залік', '11:00', '12:00', 'Грім'),
+      mk(2, 'Симулятор', '12:00', '18:00', 'Яструб'),
+      mk(3, 'Зліт/посадка', '11:00', '14:00', 'Грім', ['Яструб']),
+      mk(3, 'Маневрування', '14:00', '18:00', 'Грім'),
+      mk(4, 'Виявлення/супровід цілі', '11:00', '14:00', 'Яструб'),
+      mk(4, 'Робота в екіпажі', '14:00', '17:00', 'Грім'),
+      mk(8, 'Екзамен', '10:00', '16:00', 'Грім', ['Яструб'])
+    ] };
+  },
+  saveScheduleDay: function(date, acts){
+    var n = 0;
+    var list = DEMO_DATA.getSchedule().list.filter(function(r){
+      var mnum = String(r.id).match(/(\d+)$/);
+      if (mnum) n = Math.max(n, +mnum[1]);
+      return r.date !== date;
+    });
+    (acts || []).forEach(function(a){
+      if (!a.act) return;
+      list.push({ id: 'SCH-'+(++n), date: date, act: a.act, start: a.start || '', end: a.end || '', main: a.main || '', helpers: a.helpers || [] });
+    });
+    list.sort(function(a, b){ return (a.date + (a.start || '99:99')).localeCompare(b.date + (b.start || '99:99')); });
+    try { localStorage.setItem('wh_sched', JSON.stringify(list)); } catch(e) {}
+    return { ok: true, count: (acts || []).length };
+  },
+  trainingShareGroup: function(instr, week, share){
+    var weeks = DEMO_DATA.getTraining().weeks;
+    var wk = weeks.find(function(w){ return w.instructor === instr && w.week === week; });
+    if (!wk) throw new Error('Групу не знайдено');
+    var obj = Array.isArray(wk.students) ? { list: wk.students, prog: {} } : (wk.students || { list: [], prog: {} });
+    if (share && share.t !== 'p') obj.share = share; else delete obj.share;
+    wk.students = obj;
+    try { localStorage.setItem('wh_training', JSON.stringify(weeks)); } catch(e) {}
+    return { ok: true };
+  },
+  trainingTransferGroup: function(instr, week, newOwner){
+    var weeks = DEMO_DATA.getTraining().weeks;
+    var wk = weeks.find(function(w){ return w.instructor === instr && w.week === week; });
+    if (!wk) throw new Error('Групу не знайдено');
+    if (weeks.some(function(w){ return w.instructor === newOwner && w.week === week; })) {
+      throw new Error('У нового власника вже є група на цей тиждень');
+    }
+    wk.instructor = newOwner;
+    try { localStorage.setItem('wh_training', JSON.stringify(weeks)); } catch(e) {}
+    return { ok: true };
+  },
+  trainingExportSheet: function(){
+    throw new Error('В демо-режимі експорт недоступний — підключи базу');
   },
   // Звичайний старт вильоту (з підтримкою навчального і студента)
   startFlight: function(data){
@@ -3100,33 +3164,40 @@ function doStartFlight() {
       try {
         var names = student.split('|').map(function(s){ return s.trim(); }).filter(Boolean);
         var todayD = trainFmtDate(new Date());
-        var wkT = trainWeekRowRef(trainMondayOf(todayD));
-        var actsT = trainPlanDays(trainMondayOf(todayD))[todayD] || [];
-        var curAct = actsT[(wkT.prog && wkT.prog[todayD]) || 0];
-        var curKey = curAct ? TRAIN_ACT2KEY[curAct] : '';
-        var credited = [];
-        (wkT.students || []).forEach(function(st){
-          if (names.indexOf(st.n) === -1) return;
-          st.c = st.c || {};
-          if (curKey) {
-            st.c[curKey] = trainCellOf(st, curKey);
-            // 🏁 завершена станція закрита для нарахування спроб
-            if (!st.c[curKey].fin) {
-              st.c[curKey].cnt = (st.c[curKey].cnt || 0) + 1;
-              credited.push(st.n);
+        var wkKeyT = trainMondayOf(todayD);
+        var actsT = trainPlanDays(wkKeyT)[todayD] || [];
+        var credited = [], creditAct = '';
+        // Студент може бути в будь-якій доступній групі (своїй, міжосібній,
+        // загальній) — шукаємо по всіх, +1 у ПОТОЧНУ активність ЇЇ групи
+        trainMyGroups(wkKeyT).forEach(function(wkT){
+          var touched = false;
+          var curAct = actsT[(wkT.prog && wkT.prog[todayD]) || 0];
+          var curKey = curAct ? TRAIN_ACT2KEY[curAct] : '';
+          (wkT.students || []).forEach(function(st){
+            if (names.indexOf(st.n) === -1) return;
+            st.c = st.c || {};
+            if (curKey) {
+              st.c[curKey] = trainCellOf(st, curKey);
+              // ⚑ завершена станція закрита для нарахування спроб
+              if (!st.c[curKey].fin) {
+                st.c[curKey].cnt = (st.c[curKey].cnt || 0) + 1;
+                credited.push(st.n);
+                creditAct = curAct;
+              }
             }
-          }
-          // авто-пауза симулятора
-          st.c.sim = trainCellOf(st, 'sim');
-          if (st.c.sim.t === 'time' && st.c.sim.run) {
-            st.c.sim.sec = Math.round(trainEffSec(st.c.sim));
-            st.c.sim.run = 0;
-            st.c.sim.st = 'Пауза';
-            st.c.sim.note = (st.c.sim.note ? st.c.sim.note + '\n' : '') + '✈ виліт ' + ((res && res.id) || '');
-          }
+            // авто-пауза симулятора
+            st.c.sim = trainCellOf(st, 'sim');
+            if (st.c.sim.t === 'time' && st.c.sim.run) {
+              st.c.sim.sec = Math.round(trainEffSec(st.c.sim));
+              st.c.sim.run = 0;
+              st.c.sim.st = 'Пауза';
+              st.c.sim.note = (st.c.sim.note ? st.c.sim.note + '\n' : '') + '✈ виліт ' + ((res && res.id) || '');
+            }
+            touched = true;
+          });
+          if (touched) trainSaveStudents(wkT);
         });
-        if (credited.length || names.length) trainSaveStudents(wkT);
-        if (credited.length) toast('🎓 +1 «'+curAct+'»: '+credited.join(', '));
+        if (credited.length) toast('🎓 +1 «'+creditAct+'»: '+credited.join(', '));
       } catch(e) {}
     }
     renderView();
@@ -4821,32 +4892,59 @@ function trainMonday() {
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
 }
-// Групи можуть приходити як {list, prog} (список + прогрес активностей по
-// датах) — нормалізуємо до wk.students (масив) + wk.prog
+// Групи можуть приходити як {list, prog, share} (список + прогрес
+// активностей по датах + спільність) — нормалізуємо до wk.students
+// (масив) + wk.prog + wk.share
+function trainShareOf(sh) {
+  if (!sh || typeof sh !== 'object') return { t: 'p', ids: [] };
+  return { t: sh.t === 's' || sh.t === 'c' ? sh.t : 'p',
+           ids: Array.isArray(sh.ids) ? sh.ids.map(String) : [] };
+}
 function trainNormWeeks(d) {
   (d.weeks || []).forEach(function(w){
     if (w.instructor === 'FLOW') return;
     if (w.students && !Array.isArray(w.students) && Array.isArray(w.students.list)) {
       w.prog = w.students.prog || {};
+      w.share = trainShareOf(w.students.share);
       w.students = w.students.list;
     }
     if (!Array.isArray(w.students)) w.students = [];
+    w.share = trainShareOf(w.share);
   });
   return d;
 }
+// Хто може працювати з групою: адмін, власник, співвласник (міжосібна)
+// або будь-який інструктор (загальна)
+function trainCanEdit(w) {
+  var myId = (S.auth && S.auth.id) || '';
+  return isAdminUser() || w.instructor === myId ||
+    (w.share && (w.share.t === 'c' || (w.share.ids || []).indexOf(myId) !== -1));
+}
+// Розклад: масив рядків {id,date,act,start,end,main,helpers[]} з аркуша
+// «Розклад»; null = ще не прийшов або старий бекенд (fallback на FLOW-плани)
+var trainSched = null;
 function trainLoad() {
   if (trainState.loading) return;
   trainState.loading = true;
+  var got = 0, dat = null, fail = null;
+  function fin() {
+    if (++got < 2) return;
+    trainState.loading = false;
+    if (fail && !dat) { trainState.err = fail; }
+    else {
+      trainState.data = trainNormWeeks(dat);
+      if (!trainWeekSel) trainWeekSel = trainState.data.week;
+    }
+    if (S.view === 'train') renderView();
+  }
   rpc('getTraining', [], function(d){
-    trainState.loading = false;
-    trainState.data = trainNormWeeks(d && d.weeks ? d : { week: trainMonday(), weeks: [] });
-    if (!trainWeekSel) trainWeekSel = trainState.data.week;
-    if (S.view === 'train') renderView();
-  }, function(e){
-    trainState.loading = false;
-    trainState.err = (e && e.message) || String(e);
-    if (S.view === 'train') renderView();
-  });
+    dat = d && d.weeks ? d : { week: trainMonday(), weeks: [] };
+    fin();
+  }, function(e){ fail = (e && e.message) || String(e); fin(); });
+  rpc('getSchedule', [], function(d){
+    trainSched = (d && Array.isArray(d.list)) ? d.list : [];
+    fin();
+  }, function(e){ trainSched = null; fin(); }); // старий деплой — легасі-плани
 }
 function trainInstructorId() {
   if (isAdminUser() && trainInstrSel) return trainInstrSel;
@@ -4872,29 +4970,17 @@ function renderTrain(c) {
     return;
   }
 
-  var instr = trainInstructorId();
-  // Адмін: перемикач інструктора (усі з правом «Інструктор» + адміни)
-  var instrSel = '';
-  if (isAdminUser()) {
-    var instrs = S.personnel.filter(function(p){ return p.rightInstr || p.admin; });
-    if (!instrs.some(function(p){ return p.id === instr; }) && instrs.length) instr = instrs[0].id;
-    instrSel = '<span style="display:flex;align-items:center;gap:8px"><label class="hint">Інструктор:</label>'+
-      '<select style="min-width:0;width:auto" onchange="trainInstrSel=this.value;renderView()">'+
-      instrs.map(function(p){
-        return '<option value="'+esc(p.id)+'"'+(p.id===instr?' selected':'')+'>'+esc(p.callsign)+'</option>';
-      }).join('')+'</select></span>';
-  }
   var tabs = '<div class="inv-tabs">'+
     '<button class="inv-tab'+(trainTab==='flow'?' active':'')+'" onclick="trainTab=\'flow\';renderView()">Загальний потік</button>'+
-    '<button class="inv-tab'+(trainTab==='group'?' active':'')+'" onclick="trainTab=\'group\';renderView()">Особиста група</button>'+
+    '<button class="inv-tab'+(trainTab==='group'?' active':'')+'" onclick="trainTab=\'group\';renderView()">Групи</button>'+
     '<button class="inv-tab'+(trainTab==='exam'?' active':'')+'" onclick="trainTab=\'exam\';renderView()">Екзамен</button>'+
   '</div>';
-  var top = '<div class="sec-head" style="margin-bottom:12px">'+ '<div>'+head+'</div>'+ (trainTab==='group' ? instrSel : '') +'</div>' + tabs;
+  var top = '<div class="sec-head" style="margin-bottom:12px">'+ '<div>'+head+'</div>' +'</div>' + tabs;
 
   var body;
   if (trainTab === 'flow') body = trainFlowHtml();
   else if (trainTab === 'exam') body = trainExamHtml();
-  else body = trainStudentsHtml(instr);
+  else body = trainStudentsHtml();
   c.innerHTML = top + body;
   trainTimeTickStart();
 }
@@ -4961,10 +5047,16 @@ function trainFlowHtml() {
     return String(pa ? pa.callsign : a.instructor).localeCompare(String(pb ? pb.callsign : b.instructor), 'uk');
   });
   var groupNo = {};    // позивний інструктора → № групи
+  var ownId = {};      // позивний інструктора → його id (для модалки спільності)
+  var shareMk = {};    // позивний інструктора → маркер спільності групи
   var studentRow = {}; // імʼя студента → його запис із клітинками
   groups.forEach(function(g, gi){
     var p = S.personnel.find(function(x){ return x.id === g.instructor; });
-    groupNo[p ? p.callsign : g.instructor] = gi + 1;
+    var cs = p ? p.callsign : g.instructor;
+    groupNo[cs] = gi + 1;
+    ownId[cs] = g.instructor;
+    shareMk[cs] = g.share && g.share.t === 'c' ? ' · заг.'
+      : g.share && g.share.t === 's' && (g.share.ids || []).length ? ' +' + g.share.ids.length : '';
     g.students.forEach(function(st){ if (!studentRow[st.n]) studentRow[st.n] = st; });
   });
 
@@ -5022,7 +5114,15 @@ function trainFlowHtml() {
       '<td class="mono" style="color:var(--dim);width:34px">'+(i+1)+'</td>'+
       '<td style="font-weight:700">'+esc(st.n)+'</td>'+
       '<td>'+(owner[st.n]
-        ? '<span class="badge-main">'+(groupNo[owner[st.n]] ? 'гр.'+groupNo[owner[st.n]]+' · ' : '')+'🎓 '+esc(owner[st.n])+'</span>'
+        ? (function(){
+            // Клік по бейджу групи — модалка спільності: додати інструкторів
+            // або передати групу (власник цієї групи або адмін)
+            var cs = owner[st.n], oid = ownId[cs] || '';
+            var canShare = oid && (isAdminUser() || oid === ((S.auth && S.auth.id) || ''));
+            return '<span class="badge-main"'+(canShare
+              ? ' style="cursor:pointer" title="Спільність групи: інструктори, передача" data-o="'+esc(oid)+'" onclick="trainShareModal(this.dataset.o)"'
+              : '')+'>'+(groupNo[cs] ? 'гр.'+groupNo[cs]+' · ' : '')+'🎓 '+esc(cs)+esc(shareMk[cs] || '')+'</span>';
+          })()
         : '<span class="hint">не розподілений</span>')+'</td>'+
       '<td>'+mini(studentRow[st.n])+'</td>'+
       '<td>'+examChip(st, studentRow[st.n])+'</td>'+
@@ -5166,8 +5266,30 @@ function trainDayLbl(dateStr) {
   var d = new Date(dateStr + 'T00:00:00');
   return TRAIN_DAYS[(d.getDay() + 6) % 7] + ' ' + dateStr.slice(8,10) + '.' + dateStr.slice(5,7);
 }
-// План рамки у форматі дат (старі ключі 1..7 конвертуються від понеділка)
+// Активності одного дня з розкладу — повні рядки, за часом початку
+function trainSchedDay(date) {
+  return (trainSched || []).filter(function(r){ return r.date === date; })
+    .sort(function(a, b){ return (a.start || '99:99').localeCompare(b.start || '99:99'); });
+}
+// План рамки у форматі дат. Джерело — аркуш «Розклад»; якщо бекенд ще
+// старий (trainSched === null) — легасі FLOW-плани (ключі 1..7 конвертуються)
 function trainPlanDays(weekKey) {
+  if (Array.isArray(trainSched)) {
+    var end = new Date(weekKey + 'T00:00:00');
+    end.setDate(end.getDate() + 6);
+    var endS = trainFmtDate(end);
+    var out0 = {};
+    trainSched.forEach(function(r){
+      if (r.date < weekKey || r.date > endS) return;
+      (out0[r.date] = out0[r.date] || []).push(r);
+    });
+    var res = {};
+    Object.keys(out0).forEach(function(dt){
+      res[dt] = out0[dt].sort(function(a, b){ return (a.start || '99:99').localeCompare(b.start || '99:99'); })
+        .map(function(r){ return r.act; });
+    });
+    return res;
+  }
   var wk = trainFlowRow(weekKey);
   var days = (wk.students && wk.students.days) || {};
   var out = {};
@@ -5185,9 +5307,13 @@ function trainPlanDays(weekKey) {
   wk.students.days = out;
   return out;
 }
-// Всі забиті дні всіх рамок: дата → активності (для позначок у календарі)
+// Всі забиті дні: дата → назви активностей (для позначок у календарі)
 function trainBusyDays() {
   var busy = {};
+  if (Array.isArray(trainSched)) {
+    trainSched.forEach(function(r){ (busy[r.date] = busy[r.date] || []).push(r.act); });
+    return busy;
+  }
   (trainState.data.weeks || []).forEach(function(w){
     if (w.instructor !== 'FLOW' || !/^\d{4}-\d{2}-\d{2}$/.test(w.week)) return;
     var days = trainPlanDays(w.week);
@@ -5286,20 +5412,34 @@ function trainSideHtml(canEd) {
     '</div>';
   }
 
-  // ── Графік робочої рамки: конкретні дати з активностями ──
+  // ── Графік робочої рамки: дати, час, активності, інструктори ──
   var days = trainPlanDays(trainWeekSel);
   var keys = Object.keys(days).sort();
   var dayRows = keys.map(function(dt){
-    var chips = days[dt].map(function(a, ai){
-      return '<span class="chip'+(canEd?' click':'')+'"'+
-        (canEd?' title="Прибрати" data-d="'+esc(dt)+'" data-i="'+ai+'" onclick="trainDayDelAct(this.dataset.d, this.dataset.i)"':'')+
-        '>'+esc(a)+(canEd?' ✕':'')+'</span>';
-    }).join('');
+    var body;
+    if (Array.isArray(trainSched)) {
+      body = trainSchedDay(dt).map(function(r){
+        var t = r.start ? '<span class="mono" style="font-size:10px;color:var(--dim)">'+esc(r.start)+(r.end ? '–'+esc(r.end) : '')+'</span> ' : '';
+        var who = r.main ? ' <span class="hint">· 🎓 '+esc(r.main)+(r.helpers.length ? ' +'+r.helpers.length : '')+'</span>' : '';
+        return '<div style="padding:1px 0">'+t+'<b style="font-size:11px">'+esc(r.act)+'</b>'+who+'</div>';
+      }).join('');
+    } else {
+      body = days[dt].map(function(a, ai){
+        return '<span class="chip'+(canEd?' click':'')+'"'+
+          (canEd?' title="Прибрати" data-d="'+esc(dt)+'" data-i="'+ai+'" onclick="trainDayDelAct(this.dataset.d, this.dataset.i)"':'')+
+          '>'+esc(a)+(canEd?' ✕':'')+'</span>';
+      }).join('');
+      body = '<div style="display:flex;flex-wrap:wrap;gap:4px">'+body+'</div>';
+    }
     return '<div style="display:flex;align-items:flex-start;gap:6px;padding:5px 0;border-bottom:1px solid var(--line)">'+
       '<span style="width:58px;flex:0 0 auto;font:700 10px var(--font-data);color:var(--dim);cursor:pointer" title="Відкрити день" data-d="'+esc(dt)+'" onclick="trainDayClick(this.dataset.d)">'+trainDayLbl(dt)+'</span>'+
-      '<div style="flex:1;display:flex;flex-wrap:wrap;gap:4px;min-width:0">'+chips+'</div>'+
+      '<div style="flex:1;min-width:0">'+body+'</div>'+
     '</div>';
   }).join('') || '<div class="empty" style="padding:8px 0">Днів із заняттями ще немає'+(canEd ? ' — відкрий календар 🗓 і клікни день' : '')+'</div>';
+  // Експорт курсу в окрему Google-таблицю (адмін): розклад + журнал рамки
+  var expBtn = isAdminUser()
+    ? '<button class="icon-btn" title="Google-таблиця курсу: розклад + журнал цієї рамки (попередні тижні лишаються в ній як бекап)" onclick="trainExportRun()">📄</button>'
+    : '';
 
   return '<div class="side-panel">'+
       '<div class="side-head"><span class="cap">📅 Тижні</span>'+
@@ -5309,9 +5449,20 @@ function trainSideHtml(canEd) {
       '<div class="side-body" style="padding:8px">'+weekRows+calHtml+'</div>'+
     '</div>'+
     '<div class="side-panel">'+
-      '<div class="side-head"><span class="cap">🗓 Графік · '+esc(trainWeekLbl(trainWeekSel))+'</span></div>'+
+      '<div class="side-head"><span class="cap">🗓 Графік · '+esc(trainWeekLbl(trainWeekSel))+'</span>'+expBtn+'</div>'+
       '<div class="side-body" style="padding:8px 10px">'+dayRows+'</div>'+
     '</div>';
+}
+// Експорт рамки: одна таблиця «Навчання — курси», пара аркушів на рамку;
+// повторний експорт переписує лише свою пару, старі тижні лишаються
+function trainExportRun() {
+  toast('⏳ Створюю таблицю курсу…');
+  rpc('trainingExportSheet', [trainWeekSel], function(r){
+    openModal('📄 Таблиця курсу · '+esc((r && r.frame) || ''),
+      '<div class="f"><label>Google-таблиця оновлена</label>'+
+        '<a href="'+esc((r && r.url) || '#')+'" target="_blank" rel="noopener" class="btn btn-green" style="text-decoration:none;display:inline-block">🔗 Відкрити «'+esc((r && r.name) || 'таблицю')+'»</a></div>'+
+      '<div class="hint">Аркуші «Розклад» і «Журнал» цієї рамки переписані свіжими даними; попередні тижні лишились у таблиці як бекап. Доступ до файлу роздаєш сам у Google Drive.</div>');
+  }, function(e){ toast('❌ '+((e && e.message) || e), true); });
 }
 function trainWeekPick(k) { trainWeekSel = k; renderView(); }
 // Режим редагування активностей (дні, графік) — вмикається ОЛІВЦЕМ біля
@@ -5330,8 +5481,79 @@ function trainDayClick(dateStr) {
   renderView();
   if (isAdminUser() && trainPlanEdit) trainDayModal(dateStr);
 }
-// Модалка активностей конкретного дня (редагування — адмін курсу)
+// Модалка дня (редагування — адмін курсу). З аркушем «Розклад» активність
+// має час початку/кінця, основного й допоміжних інструкторів — як у
+// таблиці курсу; правки збираються в чернетку і зберігаються разом.
+var trainDayDraft = null;
 function trainDayModal(dateStr) {
+  if (!Array.isArray(trainSched)) { trainDayModalLegacy_(dateStr); return; }
+  trainDayDraft = trainSchedDay(dateStr).map(function(r){
+    return { act: r.act, start: r.start, end: r.end, main: r.main, helpers: (r.helpers || []).slice() };
+  });
+  trainDayModalRender_(dateStr);
+}
+function trainDayModalRender_(dateStr) {
+  trainDayModalDate_ = dateStr;
+  var instrs = S.personnel.filter(function(p){ return p.rightInstr || p.admin; });
+  var rows = trainDayDraft.map(function(a, i){
+    var helpers = instrs.filter(function(p){ return p.callsign !== a.main; }).map(function(p){
+      var on = a.helpers.indexOf(p.callsign) !== -1;
+      return '<span class="chip click" style="'+(on ? 'border-color:var(--accent);color:var(--accent)' : 'opacity:.6')+'"'+
+        ' data-i="'+i+'" data-c="'+esc(p.callsign)+'" onclick="trainDayHelperToggle(this.dataset.i,this.dataset.c)">'+esc(p.callsign)+'</span>';
+    }).join(' ');
+    return '<div style="border:1px solid var(--line);padding:8px;margin-bottom:8px">'+
+      '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'+
+        '<input type="text" list="tdActs" value="'+esc(a.act)+'" placeholder="Активність…" style="flex:1;min-width:140px"'+
+          ' data-i="'+i+'" onchange="trainDayDraft[this.dataset.i].act=this.value.trim()">'+
+        '<input type="time" value="'+esc(a.start)+'" style="width:auto;min-width:0" title="Початок"'+
+          ' data-i="'+i+'" onchange="trainDayDraft[this.dataset.i].start=this.value">'+
+        '<span class="hint">–</span>'+
+        '<input type="time" value="'+esc(a.end)+'" style="width:auto;min-width:0" title="Кінець"'+
+          ' data-i="'+i+'" onchange="trainDayDraft[this.dataset.i].end=this.value">'+
+        '<button class="inv-act inv-act--del" title="Прибрати активність" data-i="'+i+'"'+
+          ' onclick="trainDayDraft.splice(this.dataset.i,1);trainDayModalRender_(\''+esc(dateStr)+'\')">'+svgIcon('x')+'</button>'+
+      '</div>'+
+      '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+
+        '<label class="hint" style="margin:0">Основний:</label>'+
+        '<select style="width:auto;min-width:0" data-i="'+i+'" onchange="trainDayDraft[this.dataset.i].main=this.value;trainDayModalRender_(\''+esc(dateStr)+'\')">'+
+          '<option value="">—</option>'+instrs.map(function(p){
+            return '<option value="'+esc(p.callsign)+'"'+(p.callsign === a.main ? ' selected' : '')+'>'+esc(p.callsign)+'</option>';
+          }).join('')+'</select>'+
+        '<label class="hint" style="margin:0">Допоміжні:</label>'+helpers+
+      '</div>'+
+    '</div>';
+  }).join('') || '<div class="empty" style="padding:8px 0">Активностей немає — додай першу</div>';
+  openModal('🗓 '+esc(trainDayLbl(dateStr)),
+    rows+
+    '<datalist id="tdActs">'+TRAIN_ACTS.map(function(a){ return '<option value="'+esc(a)+'">'; }).join('')+'</datalist>'+
+    '<div class="btn-row">'+
+      '<button class="btn btn-sec" onclick="trainDayDraft.push({act:\'\',start:\'\',end:\'\',main:\'\',helpers:[]});trainDayModalRender_(\''+esc(dateStr)+'\')">＋ Активність</button>'+
+      '<button class="btn btn-green" onclick="trainDaySave(\''+esc(dateStr)+'\')">💾 Зберегти день</button>'+
+      '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
+    '</div>');
+}
+function trainDayHelperToggle(i, cs) {
+  var a = trainDayDraft[+i];
+  if (!a) return;
+  var k = a.helpers.indexOf(cs);
+  if (k === -1) a.helpers.push(cs); else a.helpers.splice(k, 1);
+  trainDayModalRender_(trainDayModalDate_);
+}
+var trainDayModalDate_ = '';
+function trainDaySave(dateStr) {
+  var acts = trainDayDraft.filter(function(a){ return a.act; });
+  rpc('saveScheduleDay', [dateStr, acts], function(){
+    // локальне дзеркало: рядки дня замінюються чернеткою
+    trainSched = (trainSched || []).filter(function(r){ return r.date !== dateStr; });
+    acts.forEach(function(a, i){
+      trainSched.push({ id: 'SCH-L' + i, date: dateStr, act: a.act, start: a.start, end: a.end, main: a.main, helpers: a.helpers });
+    });
+    toast('💾 День збережено: ' + acts.length + ' активн.');
+    closeModal(); renderView();
+  }, function(e){ toast('❌ Не збережено: '+((e && e.message) || e), true); });
+}
+// Легасі-модалка (старий бекенд без аркуша «Розклад»)
+function trainDayModalLegacy_(dateStr) {
   var acts = trainPlanDays(trainMondayOf(dateStr))[dateStr] || [];
   var chips = acts.map(function(a, ai){
     return '<span class="chip click" title="Прибрати" data-d="'+esc(dateStr)+'" data-i="'+ai+'" onclick="trainDayDelAct(this.dataset.d, this.dataset.i);trainDayModal(this.dataset.d)">'+esc(a)+' ✕</span>';
@@ -5634,15 +5856,15 @@ function trainColDates() {
 function trainColType(wk, key) {
   return wk.students && wk.students[0] ? trainCellOf(wk.students[0], key).t : (TRAIN_TYPE_DEF[key] || 'status');
 }
-function trainColTypeCycle(key) {
-  var wk = trainWeekRowRef();
+function trainColTypeCycle(o, key) {
+  var wk = trainRowBy(o);
   var order = ['time', 'status', 'grade'];
   var next = order[(order.indexOf(trainColType(wk, key)) + 1) % order.length];
   wk.students.forEach(function(st, i){
-    var cell = trainCellRef(i, key);
+    var cell = trainCellRef(o, i, key);
     if (cell) cell.t = next;
   });
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
 }
 
 // Нормалізація клітинки; старі рядкові оцінки читаються як статуси
@@ -5657,8 +5879,8 @@ function trainCellOf(st, key) {
            sec: +c.sec || 0, run: +c.run || 0, score: (c.score === 0 || c.score) ? +c.score : null,
            cnt: +c.cnt || 0, fin: c.fin ? 1 : 0 };
 }
-function trainCellRef(i, key) {
-  var wk = trainWeekRowRef(), st = wk.students[+i];
+function trainCellRef(o, i, key) {
+  var wk = trainRowBy(o), st = wk.students[+i];
   if (!st) return null;
   st.c = st.c || {};
   st.c[key] = trainCellOf(st, key);
@@ -5707,22 +5929,22 @@ function trainStChip(st) {
 // Одна клітинка таблиці групи. Рядки фіксованої висоти — статуси всіх
 // колонок стоять на одній лінії. Статус НЕ дублюється: якщо його показує
 // контрол (селект), чип не малюється.
-function trainCellHtml(i, key, st, canMark, locked) {
+function trainCellHtml(o, i, key, st, canMark, locked) {
   var cell = trainCellOf(st, key);
   var ds = trainCellStatus(cell, key);
   var goal = TRAIN_TIME_GOAL[key];
   // Захист по дню: не з сьогоднішнього графіка — інструктор лише дивиться
   var edit = trainMode === 'edit' && canMark && !locked;
-  var ik = ' data-i="'+i+'" data-k="'+key+'"';
+  var ik = ' data-o="'+esc(o)+'" data-i="'+i+'" data-k="'+key+'"';
   var slim = function(icon, title, fn, extra){
-    return '<button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:12px;color:'+(extra||'var(--muted)')+'" title="'+title+'"'+ik+' onclick="'+fn+'(this.dataset.i,this.dataset.k)">'+icon+'</button>';
+    return '<button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:12px;color:'+(extra||'var(--muted)')+'" title="'+title+'"'+ik+' onclick="'+fn+'(this.dataset.o,this.dataset.i,this.dataset.k)">'+icon+'</button>';
   };
   var noteLine;
   if (cell.note) {
     noteLine = '<div class="hint" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'+(edit?';cursor:pointer':'')+'" title="'+esc(cell.note)+'"'+
-      (edit ? ik+' onclick="trainNoteModal(this.dataset.i,this.dataset.k)"' : '')+'>💬 '+esc(cell.note)+'</div>';
+      (edit ? ik+' onclick="trainNoteModal(this.dataset.o,this.dataset.i,this.dataset.k)"' : '')+'>💬 '+esc(cell.note)+'</div>';
   } else if (edit) {
-    noteLine = '<div class="hint" style="cursor:pointer;opacity:.55"'+ik+' onclick="trainNoteModal(this.dataset.i,this.dataset.k)">💬 коментар</div>';
+    noteLine = '<div class="hint" style="cursor:pointer;opacity:.55"'+ik+' onclick="trainNoteModal(this.dataset.o,this.dataset.i,this.dataset.k)">💬 коментар</div>';
   } else {
     noteLine = '<div class="hint" style="opacity:.4">немає коментаря</div>';
   }
@@ -5734,10 +5956,10 @@ function trainCellHtml(i, key, st, canMark, locked) {
   var finBtn = edit && cell.t !== 'grade'
     ? '<span style="display:inline-block;cursor:pointer;border:1px solid '+finC+';color:'+finC+';padding:1px 6px;font:700 9px var(--font-data);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap"'+
       ' title="'+(cell.fin ? 'Станцію завершено — клік, щоб знову відкрити (час і спроби рахуються далі)' : 'Завершити станцію — закрити час і нарахування спроб')+'"'+ik+
-      ' onclick="'+(cell.fin ? 'trainFinClear' : 'trainFinSet')+'(this.dataset.i,this.dataset.k)">Завершити</span>'
+      ' onclick="'+(cell.fin ? 'trainFinClear' : 'trainFinSet')+'(this.dataset.o,this.dataset.i,this.dataset.k)">Завершити</span>'
     : '';
   if (cell.t === 'time') {
-    val = '<b class="mono" id="tc_'+i+'_'+key+'" style="font-size:13px;color:'+trainStColor(ds)+'">'+
+    val = '<b class="mono" id="tc_'+esc(o)+'_'+i+'_'+key+'" style="font-size:13px;color:'+trainStColor(ds)+'">'+
       trainFmtTime(trainEffSec(cell))+(goal ? ' / '+trainFmtTime(goal) : '')+'</b>'+
       (edit
         ? (cell.fin ? '' : (cell.run ? slim('⏸','Пауза','trainTimePause') : slim('▶','В процесі (пуск часу)','trainTimeStart')))
@@ -5747,10 +5969,10 @@ function trainCellHtml(i, key, st, canMark, locked) {
       // До бала — лише проміжні статуси (В процесі/Повтор). ✕ стирає бал
       // (порятунок від міскліку); «Здав/Не здав» — з бала або кліком по чипу
       val = '<input type="number" min="0" max="10" value="'+(cell.score === null ? '' : cell.score)+'"'+
-          ' style="width:44px;min-width:0;padding:3px 5px;font:700 12px var(--font-data)"'+ik+' onchange="trainScoreSet(this.dataset.i,this.dataset.k,this.value)">'+
+          ' style="width:44px;min-width:0;padding:3px 5px;font:700 12px var(--font-data)"'+ik+' onchange="trainScoreSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
         '<span class="hint">/10</span>'+
         (cell.score === null
-          ? '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.i,this.dataset.k,this.value)">'+
+          ? '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
               TRAIN_GRADE_PRE.map(function(s){
                 return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
               }).join('')+'</select>'
@@ -5761,13 +5983,13 @@ function trainCellHtml(i, key, st, canMark, locked) {
       else chip = '<span style="cursor:pointer" title="'+(cell.score >= 7
           ? 'Клік — Здав ↔ Повтор (перездача за бажанням)'
           : 'Клік — Повтор ↔ Не здав (остаточно)')+'"'+ik+
-        ' onclick="trainFailSet(this.dataset.i,this.dataset.k)">'+chip+'</span>';
+        ' onclick="trainFailSet(this.dataset.o,this.dataset.i,this.dataset.k)">'+chip+'</span>';
     } else {
       val = cell.score !== null ? '<b class="mono" style="font-size:13px;color:'+trainStColor(ds)+'">'+cell.score+' / 10</b>' : '';
     }
   } else {
     if (edit && !cell.fin) {
-      val = '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.i,this.dataset.k,this.value)">'+
+      val = '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
         TRAIN_STATUSES.map(function(s){
           return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
         }).join('')+'</select>';
@@ -5781,8 +6003,8 @@ function trainCellHtml(i, key, st, canMark, locked) {
   if (cell.t === 'status' && (cell.cnt || edit)) {
     cntHtml = (cell.cnt ? ' <span class="mono" title="Пройдених повторень" style="font-size:10px;color:var(--muted)">×'+cell.cnt+'</span>' : '');
     if (edit && !cell.fin) {
-      cntHtml += ' <button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="+1 повторення"'+ik+' onclick="trainCntInc(this.dataset.i,this.dataset.k,1)">＋</button>'+
-        (cell.cnt ? '<button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="−1 повторення"'+ik+' onclick="trainCntInc(this.dataset.i,this.dataset.k,-1)">−</button>' : '');
+      cntHtml += ' <button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="+1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,1)">＋</button>'+
+        (cell.cnt ? '<button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="−1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,-1)">−</button>' : '');
     }
   }
   var lockWrap = locked && trainMode === 'edit' && canMark;
@@ -5793,28 +6015,103 @@ function trainCellHtml(i, key, st, canMark, locked) {
     noteLine+
   '</td>';
 }
-function trainCntInc(i, key, d) {
-  var cell = trainCellRef(i, key);
+function trainCntInc(o, i, key, d) {
+  var cell = trainCellRef(o, i, key);
   if (!cell) return;
   cell.cnt = Math.max(0, (cell.cnt || 0) + (+d));
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
 }
-function trainStudentsHtml(instr) {
+/* «Особиста група» показує ВСІ групи, доступні користувачу: свою,
+   міжосібні (де він співвласник) і загальні. Оцінка, поставлена будь-ким
+   із них, живе в одному рядку — її бачать усі причетні. Фільтр чипами
+   (як в інвентарі): за замовчуванням усі, можна кілька одразу. */
+var trainGrpFilter = {};   // {'c':1} — загальні; {'OP-001':1} — групи власника
+function trainGrpFilterToggle(k) {
+  if (!k) trainGrpFilter = {};
+  else if (trainGrpFilter[k]) delete trainGrpFilter[k];
+  else trainGrpFilter[k] = 1;
+  renderView();
+}
+function trainShareLbl(w) {
+  if (!w.share || w.share.t === 'p') return '';
+  if (w.share.t === 'c') return 'загальна';
+  var names = (w.share.ids || []).map(function(id){
+    var p = S.personnel.find(function(x){ return x.id === id; });
+    return p ? p.callsign : id;
+  });
+  return 'спільна: ' + (names.join(', ') || '—');
+}
+function trainGroupTable(wk, cols, colDates, lockSet) {
+  var o = wk.instructor;
+  var canMark = trainCanEdit(wk);
+  var header = '<tr><th>Студент</th>'+cols.map(function(ch){
+    var glyph = '', colPlay = '';
+    if (canMark && trainMode === 'edit') {
+      var t = trainColType(wk, ch[0]);
+      glyph = ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--dim)" '+
+        'title="Тип колонки: '+(TRAIN_TYPES.find(function(x){ return x[0] === t; }) || TRAIN_TYPES[1])[1]+
+        ' · клік — змінити для всіх (Час → Статус → Оцінка)" data-o="'+esc(o)+'" data-k="'+ch[0]+'" onclick="trainColTypeCycle(this.dataset.o,this.dataset.k)">'+
+        (t === 'time' ? '⏱' : t === 'grade' ? '🔟' : '☰')+'</button>';
+      // Час зручно вмикати всій групі одразу — пуск/пауза з шапки колонки;
+      // ⚑ «Завершити» всій групі: жовтий = відкрито, зелений = завершено
+      if ((t === 'time' || t === 'status') && (wk.students || []).length) {
+        var allFin = wk.students.every(function(st){ return trainCellOf(st, ch[0]).fin; });
+        if (t === 'time' && !allFin) {
+          var anyRun = wk.students.some(function(st){ var c = trainCellOf(st, ch[0]); return c.t === 'time' && c.run; });
+          colPlay = anyRun
+            ? ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--blue)" title="Пауза всій групі" data-o="'+esc(o)+'" data-k="'+ch[0]+'" onclick="trainColTimePause(this.dataset.o,this.dataset.k)">⏸</button>'
+            : ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--green)" title="Пуск часу всій групі одразу" data-o="'+esc(o)+'" data-k="'+ch[0]+'" onclick="trainColTimeStart(this.dataset.o,this.dataset.k)">▶</button>';
+        }
+        colPlay += ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:12px;color:'+(allFin ? 'var(--green)' : 'var(--accent)')+'"'+
+          ' title="'+(allFin ? 'Станцію завершено всій групі — клік, щоб знову відкрити' : 'Завершити станцію всій групі — закрити час і нарахування спроб')+'"'+
+          ' data-o="'+esc(o)+'" data-k="'+ch[0]+'" onclick="'+(allFin ? 'trainColFinClear' : 'trainColFin')+'(this.dataset.o,this.dataset.k)">⚑</button>';
+      }
+    }
+    var dates = colDates[ch[0]]
+      ? '<div class="hint" style="font-weight:400;letter-spacing:0;text-transform:none">'+colDates[ch[0]].join(' · ')+'</div>'
+      : '';
+    return '<th style="vertical-align:top;width:118px;max-width:130px;white-space:normal">'+ch[1]+glyph+colPlay+dates+'</th>';
+  }).join('')+
+    (canMark && trainMode === 'edit' ? '<th></th>' : '')+'</tr>';
+  var rows = (wk.students || []).map(function(st, i){
+    var cells = cols.map(function(ch){
+      var locked = !!(lockSet && !lockSet[ch[0]]);
+      return trainCellHtml(o, i, ch[0], st, canMark, locked);
+    }).join('');
+    return '<tr><td style="font-weight:700">'+esc(st.n)+'</td>'+cells+
+      (canMark && trainMode === 'edit'
+        ? '<td style="text-align:right"><button class="inv-act inv-act--del" title="Прибрати студента з групи" data-o="'+esc(o)+'" data-i="'+i+'" onclick="trainRemoveStudent(this.dataset.o,this.dataset.i)">'+svgIcon('x')+'</button></td>'
+        : '')+'</tr>';
+  }).join('');
+  var p = S.personnel.find(function(x){ return x.id === o; });
+  var shareLbl = trainShareLbl(wk);
+  var myId = (S.auth && S.auth.id) || '';
+  var shareBadge = shareLbl
+    ? ' <span class="badge-main" style="background:rgba(46,204,113,.12);color:var(--green)">'+esc(shareLbl)+'</span>'
+    : '';
+  var shareBtn = (isAdminUser() || o === myId) && trainMode === 'edit'
+    ? '<button class="icon-btn" title="Спільність групи: додати інструкторів або передати" data-o="'+esc(o)+'" onclick="trainShareModal(this.dataset.o)">👥</button>'
+    : '';
+  var addBtn = canMark && trainMode === 'edit'
+    ? '<button class="icon-btn" title="Додати студента з потоку" style="background:var(--accent);color:var(--on-accent)" data-o="'+esc(o)+'" onclick="trainGroupAddModal(this.dataset.o)">'+svgIcon('personAdd')+'</button>'
+    : '';
+  return '<div class="matrix-panel" style="margin-bottom:14px">'+
+    '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 '+esc(p ? p.callsign : o)+' · '+esc(trainWeekLbl(trainWeekSel))+'</span>'+shareBadge+
+      '<span class="count-pill">'+(wk.students || []).length+'</span>'+
+      '<div class="info-acts" style="align-items:center;gap:8px">'+addBtn+shareBtn+'</div></div>'+
+    trainDayBarHtml(wk, canMark)+
+    ((wk.students || []).length
+      ? '<div style="overflow-x:auto"><table class="crew-table">'+header+rows+'</table></div>'
+      : '<div class="empty">Студентів ще немає'+(canMark && trainMode === 'edit' ? ' — додай із потоку кнопкою у шапці' : '')+'</div>')+
+  '</div>';
+}
+function trainStudentsHtml() {
   var cur = trainMonday();
   if (!trainWeekSel || !/^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel)) trainWeekSel = cur;
-  var weeks = (trainState.data.weeks || []).filter(function(w){ return w.instructor === instr; });
-  var wk = weeks.find(function(w){ return w.week === trainWeekSel; }) || { instructor: instr, week: trainWeekSel, students: [] };
-  var canMark = isAdminUser() || (S.auth && S.auth.id === instr);
-  // Кнопка добору з потоку — компактно в шапці панелі, поруч із перемикачем
-  var addBtn = canMark && trainMode === 'edit'
-    ? '<button class="icon-btn" title="Додати студента з потоку" style="background:var(--accent);color:var(--on-accent)" onclick="trainGroupAddModal()">'+svgIcon('personAdd')+'</button>'
-    : '';
-  var modeToggle = canMark
-    ? '<div class="inv-mode" style="margin-left:0">'+
-        '<button class="inv-mode-btn'+(trainMode !== 'edit' ? ' active' : '')+'" onclick="trainMode=\'view\';renderView()">Перегляд</button>'+
-        '<button class="inv-mode-btn'+(trainMode === 'edit' ? ' active' : '')+'" onclick="trainMode=\'edit\';renderView()">Оцінювання</button>'+
-      '</div>'
-    : '';
+  var myId = (S.auth && S.auth.id) || '';
+  // Моя група існує завжди (хоч і порожня) — щоб було куди добирати людей
+  trainRowBy(trainInstructorId());
+  var groups = trainMyGroups();
   // Захист по дню: якщо СЬОГОДНІ у графіку є активності — інструктору
   // відкриті лише їхні дисципліни; адмін курсу може правити все і завжди
   var lockSet = null;
@@ -5827,9 +6124,8 @@ function trainStudentsHtml(instr) {
     }
   }
   // Колонки — ЛИШЕ станції з графіка рамки (нема в графіку — нема колонки),
-  // плюс ті, де в когось із групи вже є відмітки, аби виставлене не зникло.
-  // Порожній графік — показуємо всі. Тип оцінювання перемикається в шапці;
-  // під назвою — конкретні дати занять з активностями цієї дисципліни
+  // плюс ті, де в когось із доступних груп уже є відмітки. Порожній графік —
+  // показуємо всі. Колонки спільні для всіх груп рамки.
   var cols = trainColOrder(true);
   if (!cols.length) {
     cols = trainColOrder();
@@ -5838,65 +6134,57 @@ function trainStudentsHtml(instr) {
     cols.forEach(function(c){ planned[c[0]] = 1; });
     TRAIN_CHECK.forEach(function(c){
       if (planned[c[0]]) return;
-      var used = (wk.students || []).some(function(st){
-        if (!st.c || !st.c[c[0]]) return false;
-        var cell = trainCellOf(st, c[0]);
-        return !!(cell.st || cell.note || cell.sec || cell.run || cell.cnt || cell.fin || cell.score !== null);
+      var used = groups.some(function(wk){
+        return (wk.students || []).some(function(st){
+          if (!st.c || !st.c[c[0]]) return false;
+          var cell = trainCellOf(st, c[0]);
+          return !!(cell.st || cell.note || cell.sec || cell.run || cell.cnt || cell.fin || cell.score !== null);
+        });
       });
       if (used) cols.push(c);
     });
   }
   var colDates = trainColDates();
-  var header = '<tr><th>Студент</th>'+cols.map(function(ch){
-    var glyph = '', colPlay = '';
-    if (canMark && trainMode === 'edit') {
-      var t = trainColType(wk, ch[0]);
-      glyph = ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--dim)" '+
-        'title="Тип колонки: '+(TRAIN_TYPES.find(function(x){ return x[0] === t; }) || TRAIN_TYPES[1])[1]+
-        ' · клік — змінити для всіх (Час → Статус → Оцінка)" data-k="'+ch[0]+'" onclick="trainColTypeCycle(this.dataset.k)">'+
-        (t === 'time' ? '⏱' : t === 'grade' ? '🔟' : '☰')+'</button>';
-      // Час зручно вмикати всій групі одразу — пуск/пауза з шапки колонки;
-      // ⚑ «Завершити» всій групі: жовтий = відкрито, зелений = завершено, клік перемикає
-      if ((t === 'time' || t === 'status') && (wk.students || []).length) {
-        var allFin = wk.students.every(function(st){ return trainCellOf(st, ch[0]).fin; });
-        if (t === 'time' && !allFin) {
-          var anyRun = wk.students.some(function(st){ var c = trainCellOf(st, ch[0]); return c.t === 'time' && c.run; });
-          colPlay = anyRun
-            ? ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--blue)" title="Пауза всій групі" data-k="'+ch[0]+'" onclick="trainColTimePause(this.dataset.k)">⏸</button>'
-            : ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:11px;color:var(--green)" title="Пуск часу всій групі одразу" data-k="'+ch[0]+'" onclick="trainColTimeStart(this.dataset.k)">▶</button>';
-        }
-        colPlay += ' <button style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:12px;color:'+(allFin ? 'var(--green)' : 'var(--accent)')+'"'+
-          ' title="'+(allFin ? 'Станцію завершено всій групі — клік, щоб знову відкрити' : 'Завершити станцію всій групі — закрити час і нарахування спроб')+'"'+
-          ' data-k="'+ch[0]+'" onclick="'+(allFin ? 'trainColFinClear' : 'trainColFin')+'(this.dataset.k)">⚑</button>';
-      }
-    }
-    var dates = colDates[ch[0]]
-      ? '<div class="hint" style="font-weight:400;letter-spacing:0;text-transform:none">'+colDates[ch[0]].join(' · ')+'</div>'
-      : '';
-    // Обмежена ширина: довгі назви дисциплін переносяться на другий рядок,
-    // а не розтягують колонку
-    return '<th style="vertical-align:top;width:118px;max-width:130px;white-space:normal">'+ch[1]+glyph+colPlay+dates+'</th>';
-  }).join('')+
-    (canMark && trainMode === 'edit' ? '<th></th>' : '')+'</tr>';
-  var rows = (wk.students || []).map(function(st, i){
-    var cells = cols.map(function(ch){
-      var locked = !!(lockSet && !lockSet[ch[0]]);
-      return trainCellHtml(i, ch[0], st, canMark, locked);
-    }).join('');
-    return '<tr><td style="font-weight:700">'+esc(st.n)+'</td>'+cells+
-      (canMark && trainMode === 'edit'
-        ? '<td style="text-align:right"><button class="inv-act inv-act--del" title="Прибрати студента з групи" data-i="'+i+'" onclick="trainRemoveStudent(this.dataset.i)">'+svgIcon('x')+'</button></td>'
-        : '')+'</tr>';
-  }).join('');
-  var main = '<div class="matrix-panel">'+
-    '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 Група · '+esc(trainWeekLbl(trainWeekSel))+'</span>'+
-      '<span class="count-pill">'+(wk.students || []).length+'</span>'+
-      '<div class="info-acts" style="align-items:center;gap:8px">'+addBtn+modeToggle+'</div></div>'+
-    trainDayBarHtml(wk, canMark)+
-    ((wk.students || []).length
-      ? '<div style="overflow-x:auto"><table class="crew-table">'+header+rows+'</table></div>'
-      : '<div class="empty">Групи на цей тиждень ще немає'+(canMark ? ' — додай студентів з потоку кнопкою у шапці' : '')+'</div>')+
+  // Фільтр чипами: Усі · Загальні · власники доступних груп
+  var owners = [];
+  groups.forEach(function(w){
+    if (owners.indexOf(w.instructor) === -1) owners.push(w.instructor);
+  });
+  var anyF = Object.keys(trainGrpFilter).length > 0;
+  var chip = function(k, lbl, on){
+    return '<button class="inv-mode-btn'+(on ? ' active' : '')+'" data-f="'+esc(k)+'" onclick="trainGrpFilterToggle(this.dataset.f)">'+lbl+'</button>';
+  };
+  var hasCommon = groups.some(function(w){ return w.share && w.share.t === 'c'; });
+  var fChips = '<div class="inv-mode" style="margin-left:0;flex-wrap:wrap">'+
+    chip('', 'Усі', !anyF)+
+    (hasCommon ? chip('c', 'Загальні', !!trainGrpFilter['c']) : '')+
+    owners.map(function(oid){
+      var p = S.personnel.find(function(x){ return x.id === oid; });
+      return chip(oid, esc(p ? p.callsign : oid), !!trainGrpFilter[oid]);
+    }).join('')+
   '</div>';
+  var modeToggle = '<div class="inv-mode" style="margin-left:0">'+
+    '<button class="inv-mode-btn'+(trainMode !== 'edit' ? ' active' : '')+'" onclick="trainMode=\'view\';renderView()">Перегляд</button>'+
+    '<button class="inv-mode-btn'+(trainMode === 'edit' ? ' active' : '')+'" onclick="trainMode=\'edit\';renderView()">Оцінювання</button>'+
+  '</div>';
+  var shown = groups.filter(function(w){
+    if (!anyF) return true;
+    if (trainGrpFilter['c'] && w.share && w.share.t === 'c') return true;
+    return !!trainGrpFilter[w.instructor];
+  });
+  // Своя група — першою, решта за позивними
+  shown.sort(function(a, b){
+    if (a.instructor === myId) return -1;
+    if (b.instructor === myId) return 1;
+    var pa = S.personnel.find(function(x){ return x.id === a.instructor; });
+    var pb = S.personnel.find(function(x){ return x.id === b.instructor; });
+    return String(pa ? pa.callsign : a.instructor).localeCompare(String(pb ? pb.callsign : b.instructor), 'uk');
+  });
+  var bar = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+fChips+
+    '<div style="flex:1"></div>'+modeToggle+'</div>';
+  var main = bar + (shown.length
+    ? shown.map(function(wk){ return trainGroupTable(wk, cols, colDates, lockSet); }).join('')
+    : '<div class="empty">Доступних груп на цей тиждень немає</div>');
   // План днів і тижні в бічній панелі редагує тільки адмін курсу в режимі оцінювання
   return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(isAdminUser() && trainMode === 'edit')+'</div></div>';
 }
@@ -5920,17 +6208,17 @@ function trainDayBarHtml(wk, canMark) {
   var btns = '';
   if (canMark && trainMode === 'edit') {
     btns = (done < acts.length
-      ? ' <button class="btn btn-mini btn-green" onclick="trainActDone()">✓ Завершити «'+esc(acts[done])+'»</button>'
+      ? ' <button class="btn btn-mini btn-green" data-o="'+esc(wk.instructor)+'" onclick="trainActDone(this.dataset.o)">✓ Завершити «'+esc(acts[done])+'»</button>'
       : ' <span class="hint">усі активності дня завершені</span>')+
       (done > 0
-        ? ' <button class="inv-act" title="Повернути попередню активність" onclick="trainActUndo()">↩</button>'
+        ? ' <button class="inv-act" title="Повернути попередню активність" data-o="'+esc(wk.instructor)+'" onclick="trainActUndo(this.dataset.o)">↩</button>'
         : '');
   }
   return '<div style="padding:8px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
     '<b class="hint" style="color:var(--muted)">Сьогодні · '+esc(trainDayLbl(today))+':</b> '+chips+btns+'</div>';
 }
-function trainActDone() {
-  var wk = trainWeekRowRef();
+function trainActDone(o) {
+  var wk = trainRowBy(o);
   var today = trainFmtDate(new Date());
   var acts = trainPlanDays(trainMondayOf(today))[today] || [];
   wk.prog = wk.prog || {};
@@ -5941,8 +6229,8 @@ function trainActDone() {
   renderView();
   toast('✓ «'+acts[d]+'» завершено'+(acts[d+1] ? ' · далі: «'+acts[d+1]+'»' : ' · день закрито'));
 }
-function trainActUndo() {
-  var wk = trainWeekRowRef();
+function trainActUndo(o) {
+  var wk = trainRowBy(o);
   var today = trainFmtDate(new Date());
   wk.prog = wk.prog || {};
   if (!wk.prog[today]) return;
@@ -5950,126 +6238,221 @@ function trainActUndo() {
   trainSaveStudents(wk);
   renderView();
 }
+/* ── Спільність групи: тип (приватна/міжосібна/загальна), співвласники,
+   передача іншому інструктору. Власник або адмін. ── */
+function trainShareModal(o) {
+  var wk = trainRowBy(o);
+  var sh = wk.share || { t: 'p', ids: [] };
+  var myId = (S.auth && S.auth.id) || '';
+  var instrs = S.personnel.filter(function(p){ return (p.rightInstr || p.admin) && p.id !== o; });
+  var typeChip = function(t, lbl, hint){
+    return '<button class="inv-mode-btn'+(sh.t === t ? ' active' : '')+'" title="'+hint+'" data-o="'+esc(o)+'" data-t="'+t+'"'+
+      ' onclick="trainShareSetType(this.dataset.o,this.dataset.t)">'+lbl+'</button>';
+  };
+  var idRows = '';
+  if (sh.t === 's') {
+    idRows = instrs.map(function(p){
+      var on = (sh.ids || []).indexOf(p.id) !== -1;
+      return '<label style="display:flex;align-items:center;gap:8px;padding:4px 2px;border-bottom:1px solid var(--line);cursor:pointer">'+
+        '<input type="checkbox"'+(on ? ' checked' : '')+' data-o="'+esc(o)+'" data-id="'+esc(p.id)+'"'+
+          ' onchange="trainShareToggleId(this.dataset.o,this.dataset.id)">'+
+        '<span style="flex:1">🎓 '+esc(p.callsign)+'</span></label>';
+    }).join('') || '<div class="hint">Інших інструкторів немає</div>';
+    idRows = '<div class="f"><label>Співвласники (працюють нарівні з власником)</label>'+
+      '<div style="max-height:200px;overflow-y:auto">'+idRows+'</div></div>';
+  }
+  var transfer = '<div class="f" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">'+
+    '<label>Передати групу (новий власник, разом з оцінками)</label>'+
+    '<div style="display:flex;gap:8px;align-items:center">'+
+      '<select id="tsTransferTo" style="flex:1">'+
+        '<option value="">— вибери інструктора —</option>'+
+        instrs.map(function(p){ return '<option value="'+esc(p.id)+'">'+esc(p.callsign)+'</option>'; }).join('')+
+      '</select>'+
+      '<button class="btn btn-sec" data-o="'+esc(o)+'" onclick="trainTransferDo(this.dataset.o)">→ Передати</button>'+
+    '</div></div>';
+  var p = S.personnel.find(function(x){ return x.id === o; });
+  openModal('👥 Група '+esc(p ? p.callsign : o)+' · '+esc(trainWeekLbl(trainWeekSel)),
+    '<div class="f"><label>Тип групи</label><div class="inv-mode" style="margin-left:0">'+
+      typeChip('p', 'Приватна', 'Бачить і редагує лише власник (і адмін)')+
+      typeChip('s', 'Міжосібна', 'Вибрані інструктори працюють разом, оцінки спільні')+
+      typeChip('c', 'Загальна', 'Редагують усі інструктори')+
+    '</div></div>'+idRows+transfer+
+    '<div class="btn-row" style="margin-top:10px">'+
+      '<button class="btn btn-green" data-o="'+esc(o)+'" onclick="trainShareSave(this.dataset.o)">💾 Зберегти</button>'+
+      '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
+    '</div>');
+}
+function trainShareSetType(o, t) {
+  var wk = trainRowBy(o);
+  wk.share = wk.share || { t: 'p', ids: [] };
+  wk.share.t = t;
+  trainShareModal(o);
+}
+function trainShareToggleId(o, id) {
+  var wk = trainRowBy(o);
+  wk.share = wk.share || { t: 's', ids: [] };
+  var k = wk.share.ids.indexOf(id);
+  if (k === -1) wk.share.ids.push(id); else wk.share.ids.splice(k, 1);
+}
+function trainShareSave(o) {
+  var wk = trainRowBy(o);
+  var sh = { t: (wk.share && wk.share.t) || 'p', ids: (wk.share && wk.share.ids) || [] };
+  rpc('trainingShareGroup', [o, wk.week, sh], function(){
+    toast('👥 Спільність збережено: ' + (sh.t === 'c' ? 'загальна' : sh.t === 's' ? 'міжосібна' : 'приватна'));
+    closeModal(); renderView();
+  }, function(e){ toast('❌ '+((e && e.message) || e), true); });
+}
+function trainTransferDo(o) {
+  var to = $('tsTransferTo') ? $('tsTransferTo').value : '';
+  if (!to) { toast('⚠ Вибери, кому передати', true); return; }
+  var p = S.personnel.find(function(x){ return x.id === to; });
+  if (!confirm('Передати групу разом з оцінками інструктору «'+(p ? p.callsign : to)+'»?')) return;
+  var wk = trainRowBy(o);
+  rpc('trainingTransferGroup', [o, wk.week, to], function(){
+    wk.instructor = to;
+    toast('→ Групу передано: ' + (p ? p.callsign : to));
+    closeModal(); renderView();
+  }, function(e){ toast('❌ '+((e && e.message) || e), true); });
+}
 
 /* ── Дії клітинок ── */
-function trainCellSave() { trainSaveStudents(trainWeekRowRef()); }
+// Рядок групи власника o на вибраний тиждень (створюється локально)
+function trainRowBy(o, week) {
+  var wkKey = week || trainWeekSel || trainMonday();
+  var wks = trainState.data.weeks;
+  var wk = wks.find(function(w){ return w.instructor === o && w.week === wkKey; });
+  if (!wk) {
+    wk = { id: '', instructor: o, week: wkKey, students: [], prog: {}, share: { t: 'p', ids: [] } };
+    wks.push(wk);
+  }
+  return wk;
+}
+function trainWeekRowRef(week) { return trainRowBy(trainInstructorId(), week); }
+function trainCellSave(o) { trainSaveStudents(trainRowBy(o)); }
 // Пуск/пауза часу ВСІЙ групі одразу (кнопка в шапці колонки типу «Час»)
-function trainColTimeStart(key) {
-  var wk = trainWeekRowRef();
+function trainColTimeStart(o, key) {
+  var wk = trainRowBy(o);
   wk.students.forEach(function(st, i){
-    var c = trainCellRef(i, key);
+    var c = trainCellRef(o, i, key);
     if (c && c.t === 'time' && !c.run && !c.fin) { c.run = Date.now(); c.st = 'В процесі'; }
   });
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
   toast('▶ Час пішов усій групі');
 }
-function trainColTimePause(key) {
-  var wk = trainWeekRowRef();
+function trainColTimePause(o, key) {
+  var wk = trainRowBy(o);
   wk.students.forEach(function(st, i){
-    var c = trainCellRef(i, key);
+    var c = trainCellRef(o, i, key);
     if (c && c.t === 'time' && c.run) { c.sec = Math.round(trainEffSec(c)); c.run = 0; c.st = 'Пауза'; }
   });
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
   toast('⏸ Пауза всій групі');
 }
 /* ⚑ Завершити станцію: закриває час і нарахування спроб (вильотами й
-   ручками). Прапорець горить зеленим, повторний клік знову відкриває —
+   ручками). Плашка горить зеленим, повторний клік знову відкриває —
    на випадок міскліку чи бажання продовжити. Час і статуси, балів — ні. */
-function trainFinSet(i, key) {
-  var cell = trainCellRef(i, key);
+function trainFinSet(o, i, key) {
+  var cell = trainCellRef(o, i, key);
   if (!cell || cell.t === 'grade') return;
   if (cell.run) { cell.sec = Math.round(trainEffSec(cell)); cell.run = 0; cell.st = 'Пауза'; }
   cell.fin = 1;
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
 }
-function trainFinClear(i, key) {
-  var cell = trainCellRef(i, key);
+function trainFinClear(o, i, key) {
+  var cell = trainCellRef(o, i, key);
   if (!cell) return;
   cell.fin = 0;
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
 }
-// Те саме одразу всій групі — кнопка 🏁/↺ у шапці колонки
-function trainColFin(key) {
-  var wk = trainWeekRowRef();
+// Те саме одразу всій групі — кнопка ⚑ у шапці колонки
+function trainColFin(o, key) {
+  var wk = trainRowBy(o);
   wk.students.forEach(function(st, i){
-    var c = trainCellRef(i, key);
+    var c = trainCellRef(o, i, key);
     if (!c || c.t === 'grade') return;
     if (c.run) { c.sec = Math.round(trainEffSec(c)); c.run = 0; c.st = 'Пауза'; }
     c.fin = 1;
   });
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
   toast('🏁 Станцію завершено всій групі — спроби більше не рахуються');
 }
-function trainColFinClear(key) {
-  var wk = trainWeekRowRef();
+function trainColFinClear(o, key) {
+  var wk = trainRowBy(o);
   wk.students.forEach(function(st, i){
-    var c = trainCellRef(i, key);
+    var c = trainCellRef(o, i, key);
     if (c) c.fin = 0;
   });
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
   toast('↺ Станцію знову відкрито всій групі');
 }
-function trainTimeStart(i, key) {
-  var cell = trainCellRef(i, key);
+function trainTimeStart(o, i, key) {
+  var cell = trainCellRef(o, i, key);
   if (!cell) return;
   cell.run = Date.now();
   cell.st = 'В процесі';
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
 }
-function trainTimePause(i, key, autoNote) {
-  var cell = trainCellRef(i, key);
+function trainTimePause(o, i, key, autoNote) {
+  var cell = trainCellRef(o, i, key);
   if (!cell) return;
   if (cell.run) { cell.sec = Math.round(trainEffSec(cell)); cell.run = 0; }
   cell.st = 'Пауза';
   if (autoNote) cell.note = (cell.note ? cell.note + '\n' : '') + autoNote;
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
 }
-function trainStatusSet(i, key, v) {
-  var cell = trainCellRef(i, key);
+function trainStatusSet(o, i, key, v) {
+  var cell = trainCellRef(o, i, key);
   if (!cell) return;
   cell.st = v === '—' ? '' : v;
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
 }
-function trainScoreSet(i, key, v) {
-  var cell = trainCellRef(i, key);
+function trainScoreSet(o, i, key, v) {
+  var cell = trainCellRef(o, i, key);
   if (!cell) return;
   v = String(v).trim();
   cell.score = v === '' ? null : Math.max(0, Math.min(10, Math.round(+v) || 0));
   cell.st = ''; // новий бал скидає ручні перекриття і проміжні статуси
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
 }
 // Клік по чипу бала: ≥7 — Здав ↔ Повтор (якщо людина хоче перездати),
 // <7 — Повтор ↔ Не здав (остаточно)
-function trainFailSet(i, key) {
-  var cell = trainCellRef(i, key);
+function trainFailSet(o, i, key) {
+  var cell = trainCellRef(o, i, key);
   if (!cell || cell.score === null) return;
   var alt = cell.score >= 7 ? 'Повтор' : 'Не здав';
   var isAlt = cell.st === alt || (alt === 'Не здав' && cell.st === 'Не пройдено');
   cell.st = isAlt ? '' : alt;
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
 }
 // ✕ біля бала: стерти оцінку (порятунок від міскліку) разом з overrides
-function trainScoreClear(i, key) {
-  var cell = trainCellRef(i, key);
+function trainScoreClear(o, i, key) {
+  var cell = trainCellRef(o, i, key);
   if (!cell) return;
   cell.score = null;
   cell.st = '';
-  trainCellSave(); renderView();
+  trainCellSave(o); renderView();
 }
-function trainNoteModal(i, key) {
-  var cell = trainCellRef(i, key);
+function trainNoteModal(o, i, key) {
+  var cell = trainCellRef(o, i, key);
   if (!cell) return;
   var ch = TRAIN_CHECK.find(function(x){ return x[0] === key; });
   openModal('💬 Коментар · '+esc(ch ? ch[1] : key),
     '<div class="f"><textarea id="tnText" rows="4" placeholder="Коментар інструктора…">'+esc(cell.note || '')+'</textarea></div>'+
-    '<button class="btn btn-green" data-i="'+i+'" data-k="'+key+'" onclick="trainNoteSave(this.dataset.i,this.dataset.k)">💾 Зберегти</button>');
+    '<button class="btn btn-green" data-o="'+esc(o)+'" data-i="'+i+'" data-k="'+key+'" onclick="trainNoteSave(this.dataset.o,this.dataset.i,this.dataset.k)">💾 Зберегти</button>');
   setTimeout(function(){ var t = $('tnText'); if (t) t.focus(); }, 60);
 }
-function trainNoteSave(i, key) {
-  var cell = trainCellRef(i, key);
+function trainNoteSave(o, i, key) {
+  var cell = trainCellRef(o, i, key);
   if (!cell) return;
   cell.note = ($('tnText') ? $('tnText').value : '').trim();
-  trainCellSave(); closeModal(); renderView();
+  trainCellSave(o); closeModal(); renderView();
+}
+// Групи вибраного тижня, доступні мені для оцінювання (свої + спільні)
+function trainMyGroups(week) {
+  var wkKey = week || trainWeekSel || trainMonday();
+  return (trainState.data.weeks || []).filter(function(w){
+    return w.instructor !== 'FLOW' && w.week === wkKey && trainCanEdit(w);
+  });
 }
 // Секундний тік: оновлює лічильники «В процесі» без повного перерендеру;
 // перетин порога (симулятор 3 год) — одна перемальовка з зеленим «Пройдено»
@@ -6077,66 +6460,66 @@ var _trainTimeTick = null;
 function trainTimeTickStart() {
   if (_trainTimeTick) { clearInterval(_trainTimeTick); _trainTimeTick = null; }
   if (S.view !== 'train' || trainTab !== 'group' || !trainState.data) return;
-  var wk = trainWeekRowRef();
-  var anyRun = (wk.students || []).some(function(st){
-    return TRAIN_CHECK.some(function(ch){ var c = trainCellOf(st, ch[0]); return c.t === 'time' && c.run; });
+  var anyRun = trainMyGroups().some(function(wk){
+    return (wk.students || []).some(function(st){
+      return TRAIN_CHECK.some(function(ch){ var c = trainCellOf(st, ch[0]); return c.t === 'time' && c.run; });
+    });
   });
   if (!anyRun) return;
   _trainTimeTick = setInterval(function(){
     if (S.view !== 'train' || trainTab !== 'group') { clearInterval(_trainTimeTick); _trainTimeTick = null; return; }
-    var wk2 = trainWeekRowRef(), cross = false;
-    (wk2.students || []).forEach(function(st, i){
-      TRAIN_CHECK.forEach(function(ch){
-        var c = trainCellOf(st, ch[0]);
-        if (c.t !== 'time' || !c.run) return;
-        var el = $('tc_' + i + '_' + ch[0]);
-        var goal = TRAIN_TIME_GOAL[ch[0]];
-        if (el) {
-          el.textContent = trainFmtTime(trainEffSec(c)) + (goal ? ' / ' + trainFmtTime(goal) : '');
-          if (goal && trainEffSec(c) >= goal && el.dataset.done !== '1') { el.dataset.done = '1'; cross = true; }
-        }
+    var cross = false;
+    trainMyGroups().forEach(function(wk){
+      (wk.students || []).forEach(function(st, i){
+        TRAIN_CHECK.forEach(function(ch){
+          var c = trainCellOf(st, ch[0]);
+          if (c.t !== 'time' || !c.run) return;
+          var el = $('tc_' + wk.instructor + '_' + i + '_' + ch[0]);
+          var goal = TRAIN_TIME_GOAL[ch[0]];
+          if (el) {
+            el.textContent = trainFmtTime(trainEffSec(c)) + (goal ? ' / ' + trainFmtTime(goal) : '');
+            if (goal && trainEffSec(c) >= goal && el.dataset.done !== '1') { el.dataset.done = '1'; cross = true; }
+          }
+        });
       });
     });
     if (cross) renderView();
   }, 1000);
 }
-function trainWeekRowRef(week) {
-  var instr = trainInstructorId(), wkKey = week || trainWeekSel || trainMonday();
-  var wks = trainState.data.weeks;
-  var wk = wks.find(function(w){ return w.instructor === instr && w.week === wkKey; });
-  if (!wk) { wk = { id: '', instructor: instr, week: wkKey, students: [], prog: {} }; wks.push(wk); }
-  return wk;
-}
-var _trainSaveT = null;
+// Дебаунс ПО РЯДКАХ: одна спільна затримка губила б збереження, коли два
+// різні рядки (моя група + спільна) правляться поспіль
+var _trainSaveT = {};
 function trainSaveStudents(wk) {
-  clearTimeout(_trainSaveT);
-  _trainSaveT = setTimeout(function(){
-    // Група їде разом із прогресом дня: {list, prog}
-    var payload = wk.instructor === 'FLOW' ? wk.students : { list: wk.students, prog: wk.prog || {} };
+  var tk = wk.instructor + '|' + wk.week;
+  clearTimeout(_trainSaveT[tk]);
+  _trainSaveT[tk] = setTimeout(function(){
+    // Група їде разом із прогресом дня і спільністю: {list, prog, share}
+    var payload = wk.instructor === 'FLOW' ? wk.students
+      : { list: wk.students, prog: wk.prog || {}, share: wk.share || { t: 'p', ids: [] } };
     rpc('trainingSaveStudents', [wk.instructor, wk.week, payload], function(){},
       function(e){ toast('❌ Не збережено: '+((e && e.message) || e), true); });
   }, 400);
 }
 // Добір у групу — тільки з пулу «Загального потоку». Зайняті іншою групою
 // цього тижня показуються замкненими.
-function trainGroupAddModal() {
+function trainGroupAddModal(o) {
   var pool = trainFlowRow('POOL').students;
   if (!pool.length) {
     toast('⚠ Потік порожній — додай студентів у «Загальний потік»', true);
     return;
   }
-  var wk = trainWeekRowRef();
+  var wk = trainRowBy(o);
   var mine = {};
   wk.students.forEach(function(s){ mine[s.n.toLowerCase()] = 1; });
   var owner = trainOwners(wk.week);
   var free = [], taken = [];
   pool.forEach(function(s){
-    if (mine[s.n.toLowerCase()]) return;           // вже в моїй групі
+    if (mine[s.n.toLowerCase()]) return;           // вже в цій групі
     if (owner[s.n]) taken.push(s); else free.push(s);
   });
-  if (!free.length && !taken.length) { toast('⚠ Всі студенти потоку вже в твоїй групі', true); return; }
+  if (!free.length && !taken.length) { toast('⚠ Всі студенти потоку вже в цій групі', true); return; }
   var rows = free.map(function(s){
-    return '<div class="member-row" style="cursor:pointer" data-n="'+esc(s.n)+'" onclick="trainGroupAdd(this.dataset.n)">'+
+    return '<div class="member-row" style="cursor:pointer" data-o="'+esc(o)+'" data-n="'+esc(s.n)+'" onclick="trainGroupAdd(this.dataset.o,this.dataset.n)">'+
       '<div style="flex:1;font-weight:700">'+esc(s.n)+'</div><span class="hint">＋</span></div>';
   }).join('') + taken.map(function(s){
     return '<div class="member-row" style="opacity:.45">'+
@@ -6145,16 +6528,16 @@ function trainGroupAddModal() {
   openModal('＋ Додати з потоку · '+esc(trainWeekLbl(wk.week)),
     '<div class="hint" style="margin-bottom:8px">Клікни студента, щоб додати в групу. 🔒 — вже в іншій групі цього тижня.</div>'+rows);
 }
-function trainGroupAdd(name) {
-  var wk = trainWeekRowRef();
+function trainGroupAdd(o, name) {
+  var wk = trainRowBy(o);
   wk.students.push({ n: name, c: {} });
   trainSaveStudents(wk);
   closeModal();
   renderView();
   toast('✓ '+name+' у групі');
 }
-function trainRemoveStudent(i) {
-  var wk = trainWeekRowRef();
+function trainRemoveStudent(o, i) {
+  var wk = trainRowBy(o);
   var st = wk.students[+i];
   if (!st || !confirm('Прибрати студента «'+st.n+'» з тижня?')) return;
   wk.students.splice(+i, 1);

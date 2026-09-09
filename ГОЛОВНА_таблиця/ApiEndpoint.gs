@@ -46,6 +46,7 @@ const API_FUNCTIONS = [
   // навчання (право «Інструктор» перевіряють самі функції; навчальний
   // виліт іде через звичайний startFlight з позначкою training)
   'getTraining', 'trainingSaveStudents', 'trainingIncident',
+  'getSchedule', 'saveScheduleDay', 'trainingShareGroup', 'trainingTransferGroup', 'trainingExportSheet',
   // інформація (документи підрозділу) — права перевіряють самі функції
   'infoListFolder', 'infoGetFile', 'infoCreateFolder', 'infoUploadFile', 'infoRenameFolder', 'infoUploadSession', 'infoTrashFolder', 'infoFileInfo', 'infoGetFileChunk', 'infoRenameFile', 'infoTrashFile', 'infoMediaTicket', 'infoUploadCheck', 'infoMove',
   // витратники
