@@ -4222,7 +4222,9 @@ function protectSinotrackSheets() {
 // Порожньо = не розподілена, може бути в екіпажах будь-якого сектора.
 // «Інструктор» (чекбокс) — доступ до розділу «Навчання»: студенти,
 // чеклісти, швидкі навчальні вильоти. Роздає адмін.
-const PERSONNEL_COLS = 13;
+// «Курс-адмін» (чекбокс) — адміністратор курсу: редагує розклад, потік,
+// будь-які групи й робить експорт; «Інструктор» без нього — лише оцінки.
+const PERSONNEL_COLS = 14;
 const PERSON_ROLES = ['Пілот','Штурман','Технік','Сапер','Оператор','Командир'];
 
 function ensurePersonnelSheet(ss) {
@@ -4235,14 +4237,14 @@ function ensurePersonnelSheet(ss) {
       .setHorizontalAlignment('center').setVerticalAlignment('middle');
     sheet.setRowHeight(1, 38);
     sheet.getRange(2, 1, 1, PERSONNEL_COLS)
-      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін','Інвентар','Екіпажі','Інформація','Сектор','Інструктор']])
+      .setValues([['ID','Позивний','Ім\'я','Роль','Статус','Пароль','_TS','Адмін','Інвентар','Екіпажі','Інформація','Сектор','Інструктор','Курс-адмін']])
       .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
     sheet.setFrozenRows(2);
-    [90, 140, 180, 110, 110, 10, 10, 70, 90, 90, 100, 110, 110].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+    [90, 140, 180, 110, 110, 10, 10, 70, 90, 90, 100, 110, 110, 110].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
     try { sheet.hideColumns(6, 2); } catch(e) {} // пароль і _TS приховані
   }
   // Міграція: чекбокс-колонки для аркушів, створених раніше
-  [[8, 'Адмін', 70], [9, 'Інвентар', 90], [10, 'Екіпажі', 90], [11, 'Інформація', 100], [13, 'Інструктор', 110]].forEach(([col, title, width]) => {
+  [[8, 'Адмін', 70], [9, 'Інвентар', 90], [10, 'Екіпажі', 90], [11, 'Інформація', 100], [13, 'Інструктор', 110], [14, 'Курс-адмін', 110]].forEach(([col, title, width]) => {
     if (String(sheet.getRange(2, col).getValue()).trim() === title) return;
     sheet.getRange(2, col).setValue(title)
       .setBackground('#2e6da4').setFontColor('#fff').setFontWeight('bold').setHorizontalAlignment('center');
@@ -4278,7 +4280,7 @@ function readPersonnel() {
       id: String(r[0]).trim(), callsign: String(r[1]).trim(), name: String(r[2]).trim(),
       role: String(r[3]).trim(), status: String(r[4]).trim(), pass: String(r[5]).trim(),
       admin: chk_(r[7]), rightInv: chk_(r[8]), rightCrew: chk_(r[9]), rightInfo: chk_(r[10]),
-      sector: String(r[11] || '').trim(), rightInstr: chk_(r[12]) }))
+      sector: String(r[11] || '').trim(), rightInstr: chk_(r[12]), rightCourse: chk_(r[13]) }))
     .filter(p => p.id && p.status !== 'Видалений');
 }
 
@@ -4312,7 +4314,8 @@ function personPublic(p) {
     rightInv: !!p.rightInv, rightCrew: !!p.rightCrew, rightInfo: !!p.rightInfo,
     canInv: !!(p.admin || p.rightInv), canCrew: !!(p.admin || p.rightCrew),
     canInfo: !!(p.admin || p.rightInfo),
-    rightInstr: !!p.rightInstr, canInstr: !!(p.admin || p.rightInstr),
+    rightInstr: !!p.rightInstr, canInstr: !!(p.admin || p.rightInstr || p.rightCourse),
+    rightCourse: !!p.rightCourse, canCourse: !!(p.admin || p.rightCourse),
     sector: p.sector || '' };
 }
 
@@ -4465,7 +4468,15 @@ function apiRight_(kind) {
   if (typeof __API_CTX === 'undefined' || !__API_CTX || !__API_CTX.person) return false;
   const p = __API_CTX.person;
   if (p.admin) return true;
-  return kind === 'inv' ? !!p.rightInv : kind === 'crew' ? !!p.rightCrew : kind === 'info' ? !!p.rightInfo : kind === 'instr' ? !!p.rightInstr : false;
+  return kind === 'inv' ? !!p.rightInv : kind === 'crew' ? !!p.rightCrew : kind === 'info' ? !!p.rightInfo
+    : kind === 'instr' ? (!!p.rightInstr || !!p.rightCourse)   // курс-адмін — теж інструктор
+    : kind === 'course' ? !!p.rightCourse : false;
+}
+
+// Адміністратор курсу: повний контроль розділу «Навчання» (розклад, потік,
+// будь-які групи, експорт). Головний адмін системи має це право автоматично.
+function courseAdmin_() {
+  return isAdmin(apiUserEmail_() || '') || apiRight_('course');
 }
 
 // ── Адміністрування персоналу ──
@@ -4488,7 +4499,7 @@ function adminListPersonnel() {
 function adminSavePerson(d) {
   adminGuard();
   const fullAdmin = isAdmin(apiUserEmail_() || '');
-  if (!fullAdmin) { delete d.admin; delete d.rightInv; delete d.rightCrew; delete d.rightInfo; delete d.rightInstr; }
+  if (!fullAdmin) { delete d.admin; delete d.rightInv; delete d.rightCrew; delete d.rightInfo; delete d.rightInstr; delete d.rightCourse; }
   return withScriptLock(function() {
     const sheet = ensurePersonnelSheet();
     const list = readPersonnel();
@@ -4511,6 +4522,7 @@ function adminSavePerson(d) {
       if (d.rightCrew !== undefined) sheet.getRange(p.row, 10).setValue(!!d.rightCrew);
       if (d.rightInfo !== undefined) sheet.getRange(p.row, 11).setValue(!!d.rightInfo);
       if (d.rightInstr !== undefined) sheet.getRange(p.row, 13).setValue(!!d.rightInstr);
+      if (d.rightCourse !== undefined) sheet.getRange(p.row, 14).setValue(!!d.rightCourse);
       if (d.newPassword) {
         const salt = makeSalt();
         sheet.getRange(p.row, 6).setValue(salt + '$' + hashPassword(d.newPassword, salt));
@@ -4533,7 +4545,7 @@ function adminSavePerson(d) {
     const salt = makeSalt();
     sheet.appendRow([newId, cs, d.name || '', d.role || '', d.status || 'Активний',
       salt + '$' + hashPassword(d.newPassword, salt), nowTS(), !!d.admin, !!d.rightInv, !!d.rightCrew, !!d.rightInfo,
-      '', !!d.rightInstr]);
+      '', !!d.rightInstr, !!d.rightCourse]);
     return { id: newId };
   });
 }
@@ -5942,7 +5954,7 @@ function trainingSaveStudents(instructorId, week, students) {
     throw new Error('Некоректний тиждень: ' + week);
   }
   const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
-  const isAdm = isAdmin(apiUserEmail_() || '');
+  const isAdm = courseAdmin_();   // адмін курсу = повні права в навчанні
   const isOwner = !!(me && me.id === instructorId);
   if (isFlow && !isAdm) {
     throw new Error('Пул студентів і план потоку редагує тільки адміністратор курсу');
@@ -6199,7 +6211,7 @@ function scheduleMigrate_(sheet) {
 // acts: [{act, start:'HH:mm', end:'HH:mm', main:'позивний', helpers:[...]}]
 function saveScheduleDay(date, acts) {
   trainingGuard_();
-  if (!isAdmin(apiUserEmail_() || '')) {
+  if (!courseAdmin_()) {
     throw new Error('Розклад редагує тільки адміністратор курсу');
   }
   date = String(date || '').trim();
@@ -6244,8 +6256,8 @@ function trainingShareGroup(instructorId, week, share) {
   week = String(week || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
   const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
-  if (!isAdmin(apiUserEmail_() || '') && (!me || me.id !== instructorId)) {
-    throw new Error('Спільність групи змінює її власник або адмін');
+  if (!courseAdmin_() && (!me || me.id !== instructorId)) {
+    throw new Error('Спільність групи змінює її власник або адмін курсу');
   }
   const sh = trainingCleanShare_(share) || { t: 'p', ids: [] };
   return withScriptLock(function() {
@@ -6275,8 +6287,8 @@ function trainingTransferGroup(instructorId, week, newOwner) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
   if (!newOwner || newOwner === 'FLOW') throw new Error('Вкажи нового власника');
   const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
-  if (!isAdmin(apiUserEmail_() || '') && (!me || me.id !== instructorId)) {
-    throw new Error('Передати групу може її власник або адмін');
+  if (!courseAdmin_() && (!me || me.id !== instructorId)) {
+    throw new Error('Передати групу може її власник або адмін курсу');
   }
   return withScriptLock(function() {
     const sheet = ensureTrainingSheet();
@@ -6325,7 +6337,7 @@ function trainingExportCell_(c, key) {
 
 function trainingExportSheet(week) {
   trainingGuard_();
-  if (!isAdmin(apiUserEmail_() || '')) throw new Error('Експорт робить адміністратор курсу');
+  if (!courseAdmin_()) throw new Error('Експорт робить адміністратор курсу');
   week = String(week || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
   const tz = Session.getScriptTimeZone();
@@ -6348,7 +6360,8 @@ function trainingExportSheet(week) {
     }
   }
 
-  // ── Аркуш «Розклад lbl» ──
+  // ── Аркуш «Розклад lbl» ── (формат курсової таблиці: дисципліни одного
+  // часового блоку діляться однією клітинкою часу — обʼєднання по вертикалі)
   const days = ['Пн','Вт','Ср','Чт','Пт','Сб','Нд'];
   const sched = getSchedule().list.filter(r => r.date >= week && r.date <= Utilities.formatDate(d6, tz, 'yyyy-MM-dd'));
   const byDate = {};
@@ -6359,19 +6372,32 @@ function trainingExportSheet(week) {
   sh = ss.insertSheet(shName, 0);
   const rows = [['назва процесу','початок','кінець','Основний інструктор','Допоміжні інструктори']];
   const secRows = [];
+  const timeMerges = [];   // [рядок, довжина] — блоки послідовних дисциплін з одним часом
   Object.keys(byDate).sort().forEach((dt, di) => {
     const dd = new Date(dt + 'T00:00:00');
     secRows.push(rows.length + 1);
     rows.push(['День ' + (di + 1) + ' · ' + days[(dd.getDay() + 6) % 7] + ' ' + Utilities.formatDate(dd, tz, 'dd.MM'), '', '', '', '']);
-    byDate[dt].forEach(a => rows.push([a.act, a.start, a.end, a.main, a.helpers.join(', ')]));
+    let bs = 0, bk = '';   // початок і ключ поточного блоку часу
+    const closeBlock = lastRow => { if (bs && lastRow > bs) timeMerges.push([bs, lastRow - bs + 1]); };
+    byDate[dt].forEach(a => {
+      const rn = rows.length + 1;
+      rows.push([a.act, a.start, a.end, a.main, a.helpers.join(', ')]);
+      const key = (a.start || '') + '|' + (a.end || '');
+      if (!(a.start && key === bk)) { closeBlock(rn - 1); bs = a.start ? rn : 0; bk = key; }
+    });
+    closeBlock(rows.length);
   });
   sh.getRange(1, 1, rows.length, 5).setValues(rows);
   sh.getRange(1, 1, 1, 5).setBackground('#1a3a5c').setFontColor('#fff').setFontWeight('bold');
   secRows.forEach(r => sh.getRange(r, 1, 1, 5).merge().setBackground('#d9e5f1').setFontWeight('bold'));
+  timeMerges.forEach(([r, n]) => {
+    sh.getRange(r, 2, n, 1).merge().setVerticalAlignment('middle');
+    sh.getRange(r, 3, n, 1).merge().setVerticalAlignment('middle');
+  });
   [230, 80, 80, 160, 220].forEach((w, i) => sh.setColumnWidth(i + 1, w));
   sh.setFrozenRows(1);
 
-  // ── Аркуш «Журнал lbl»: групи тижня з поточними оцінками ──
+  // ── Аркуш «Курсанти lbl»: групи тижня з поточними оцінками ──
   const trs = ensureTrainingSheet();
   const groups = [];
   let poolEx = {};
@@ -6391,27 +6417,81 @@ function trainingExportSheet(week) {
   }
   const people = {};
   getPersonnelList().forEach(p => { people[p.id] = p.callsign; });
-  const jName = 'Журнал ' + lbl;
-  let js = ss.getSheetByName(jName);
-  if (js) ss.deleteSheet(js);
-  js = ss.insertSheet(jName, 1);
-  const head = ['№','Студент','Інструктор'].concat(TRAIN_EXPORT_CHECK.map(c => c[1])).concat(['Екзамен']);
-  const jRows = [head];
+
+  // Колонки — дисципліни тижня З РОЗКЛАДУ в порядку днів (як у курсовій
+  // таблиці: шапка «День N · дата» обʼєднана над своїми дисциплінами).
+  // Розкладу немає — запасний фіксований набір.
+  const ACT2KEY = { 'Симулятор':'sim', 'Вступний залік':'intro', 'Зліт/посадка':'tol',
+    'Маневрування':'route', 'Виявлення/супровід цілі':'target', 'Робота в екіпажі':'crew' };
+  const dayCols = [];
+  Object.keys(byDate).sort().forEach((dt, di) => {
+    const dd = new Date(dt + 'T00:00:00');
+    const cols = [];
+    byDate[dt].forEach(a => {
+      const k = ACT2KEY[a.act];
+      if (k && !cols.some(c => c.key === k)) cols.push({ key: k, name: a.act });
+    });
+    if (cols.length) dayCols.push({ lbl: 'День ' + (di + 1) + ' · ' + Utilities.formatDate(dd, tz, 'dd.MM'), cols: cols });
+  });
+  const flat = [];
+  dayCols.forEach(d => d.cols.forEach(c => flat.push(c)));
+  const useDays = flat.length > 0;
+  const checkCols = useDays ? flat : TRAIN_EXPORT_CHECK.map(c => ({ key: c[0], name: c[1] }));
+
+  const jName = 'Курсанти ' + lbl;
+  // Старі назви цієї ж рамки («Журнал …») теж прибираємо
+  [jName, 'Журнал ' + lbl].forEach(nm => { const old = ss.getSheetByName(nm); if (old) { try { ss.deleteSheet(old); } catch (e) {} } });
+  const js = ss.insertSheet(jName, 1);
+  const FIX = ['№','Студент','Інструктор'];
+  const head = FIX.concat(checkCols.map(c => c.name)).concat(['Екзамен']);
+  const jRows = [];
   let n = 0;
+  // «Слухач»: не здав вступний залік (10ку) — до наступних дисциплін не
+  // допускається, у їхніх клітинках і в екзамені горить статус «Слухач»
+  const introIdx = checkCols.findIndex(c => c.key === 'intro');
   groups.forEach(g => {
     const cs = people[g.instructor] || g.instructor;
     g.list.forEach(st => {
       n++;
       const ex = poolEx[st.n] || {};
-      const exTxt = ex.cert ? '🏅 Сертифіковано' : (ex.res || ex.adm || '');
-      jRows.push([n, st.n, cs].concat(TRAIN_EXPORT_CHECK.map(c => trainingExportCell_((st.c || {})[c[0]], c[0]))).concat([exTxt]));
+      const c = st.c || {};
+      const introTxt = trainingExportCell_(c['intro'], 'intro');
+      const failedIntro = /не здав|не пройдено/i.test(introTxt);
+      const cells = checkCols.map((cc, ci) => {
+        const v = trainingExportCell_(c[cc.key], cc.key);
+        if (failedIntro && introIdx !== -1 && ci > introIdx && !v) return 'Слухач';
+        return v;
+      });
+      const exTxt = failedIntro ? 'Слухач' : (ex.cert ? '🏅 Сертифіковано' : (ex.res || ex.adm || ''));
+      jRows.push([n, st.n, cs].concat(cells).concat([exTxt]));
     });
   });
-  if (jRows.length === 1) jRows.push(['', 'Груп на цей тиждень немає', '', '', '', '', '', '', '', '']);
-  js.getRange(1, 1, jRows.length, head.length).setValues(jRows.map(r => r.length === head.length ? r : r.concat(Array(head.length - r.length).fill(''))));
-  js.getRange(1, 1, 1, head.length).setBackground('#1a3a5c').setFontColor('#fff').setFontWeight('bold');
-  [40, 220, 110].concat(TRAIN_EXPORT_CHECK.map(() => 130)).concat([130]).forEach((w, i) => js.setColumnWidth(i + 1, w));
-  js.setFrozenRows(1);
+  if (!jRows.length) jRows.push(['', 'Груп на цей тиждень немає', ''].concat(checkCols.map(() => '')).concat(['']));
+  js.getRange(2, 1, 1, head.length).setValues([head]);
+  js.getRange(3, 1, jRows.length, head.length).setValues(jRows.map(r => r.length === head.length ? r : r.concat(Array(head.length - r.length).fill(''))));
+  // Рядок 1 — шапка днів над дисциплінами
+  if (useDays) {
+    js.getRange(1, 1, 1, FIX.length).merge().setValue('Курсанти');
+    let col = FIX.length + 1;
+    dayCols.forEach(d => {
+      js.getRange(1, col, 1, d.cols.length).merge().setValue(d.lbl);
+      col += d.cols.length;
+    });
+    js.getRange(1, col).setValue('Іспит');
+  } else {
+    js.getRange(1, 1, 1, head.length).merge().setValue('Тиждень ' + lbl);
+  }
+  js.getRange(1, 1, 1, head.length).setBackground('#d9e5f1').setFontWeight('bold').setHorizontalAlignment('center');
+  js.getRange(2, 1, 1, head.length).setBackground('#1a3a5c').setFontColor('#fff').setFontWeight('bold');
+  [40, 220, 110].concat(checkCols.map(() => 130)).concat([130]).forEach((w, i) => js.setColumnWidth(i + 1, w));
+  js.setFrozenRows(2);
+  // «Слухач» — підсвічення, щоб статус «горів» як у курсовій таблиці
+  try {
+    const rule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('Слухач').setBackground('#f4cccc').setFontColor('#990000')
+      .setRanges([js.getRange(3, FIX.length + 1, Math.max(jRows.length, 1), checkCols.length + 1)]).build();
+    js.setConditionalFormatRules([rule]);
+  } catch (e) {}
 
   // Дефолтний порожній «Аркуш1» більше не потрібен
   const def = ss.getSheetByName('Аркуш1') || ss.getSheetByName('Sheet1');

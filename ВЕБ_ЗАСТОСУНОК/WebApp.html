@@ -684,6 +684,9 @@ function canEditInv()   { return isAdminUser() || !!(S.auth && S.auth.canInv); }
 function canEditCrews() { return isAdminUser() || !!(S.auth && S.auth.canCrew); }
 function canViewInfo()  { return isAdminUser() || !!(S.auth && S.auth.canInfo); }
 function canInstructor(){ return isAdminUser() || !!(S.auth && S.auth.canInstr); }
+// Адмін курсу: редагує розклад, потік і будь-які групи; інструктор без
+// цього права — лише оцінює
+function canCourseAdmin(){ return isAdminUser() || !!(S.auth && S.auth.canCourse); }
 // Токен для привілейованих викликів: адмін працює без токена (за Google-акаунтом)
 function crewToken() { return (!isAdminUser() && S.auth) ? authToken() : ''; }
 function canManageCrew(crewId) { return canEditCrews() || !!(S.auth && S.auth.isMain && S.auth.crewId === crewId); }
@@ -1506,13 +1509,33 @@ function freqWarn(sel) {
 var _loading = 0;
 var _loadPending = false;   // запит на оновлення прийшов, поки тривало інше — виконати після
 var _loadStarted = 0;
+// Знімок даних для «нативного» оновлення: перемальовуємо лише коли
+// дані реально змінилися, а не за таймером
+function _dataFingerprint() {
+  try {
+    return JSON.stringify([S.items, S.trackers, S.flights, S.sims, S.freq, S.personnel, SECTORS]);
+  } catch(e) { return String(Math.random()); }
+}
+var _lastFp = '';
 // Завершення будь-якого шляху завантаження — спільне
 function _loadFinish(showToast, silent) {
   S.loadedAt = new Date();
   $('syncTime').textContent = S.loadedAt.toTimeString().slice(0,8);
   updateTopStats();
   saveSnapshot();
-  if (!silent) renderView();
+  if (!silent) {
+    renderView();
+    _lastFp = _dataFingerprint();
+  } else {
+    // Тихе оновлення: ререндер ТІЛЬКИ якщо дані змінились, користувач не
+    // зайнятий і розділ безпечно перемалювати (карти/навчання живуть своїм
+    // станом — їх таймер не смикає, свіжі дані підтягнуться самі при діях)
+    var fp = _dataFingerprint();
+    var changed = fp !== _lastFp;
+    _lastFp = fp;
+    var safeView = ['home','flights','freq','inventory','crews'].indexOf(S.view) !== -1;
+    if (changed && safeView && !userIsBusy()) renderView();
+  }
   if (showToast) toast('✅ Дані оновлено');
   if (_loadPending) { _loadPending = false; setTimeout(function(){ loadAll(); }, 200); }
 }
@@ -1657,8 +1680,11 @@ function renderView() {
     return;
   }
   // Перемальовка того самого розділу (згортання панелей, оновлення даних)
-  // не має скидати позицію прокрутки — інакше на мобільному сторінка «стрибає»
-  var keepScroll = (_lastRenderedView === S.view) ? c.scrollTop : 0;
+  // не має скидати позицію прокрутки — інакше на мобільному сторінка «стрибає».
+  // Мобільний гортає window/body, десктоп — #content: бережемо ОБИДВІ позиції.
+  var sameView = _lastRenderedView === S.view;
+  var keepScroll = sameView ? c.scrollTop : 0;
+  var keepWinY = sameView ? (window.scrollY || document.documentElement.scrollTop || 0) : 0;
   if (S.view === 'home') renderHome(c);
   else if (S.view === 'flights') renderFlights(c);
   else if (S.view === 'freq') renderFreq(c);
@@ -1671,6 +1697,7 @@ function renderView() {
   else if (S.view === 'settings') renderSettings(c);
   _lastRenderedView = S.view;
   c.scrollTop = keepScroll;
+  if (keepWinY) window.scrollTo(0, keepWinY);
 }
 
 /* ═══════════ АВТОРИЗАЦІЯ ═══════════ */
@@ -2706,6 +2733,7 @@ function admRenderPersonnel() {
         (!p.admin && p.rightCrew?' <span class="badge-main">👥 Екіпажі</span>':'')+
         (!p.admin && p.rightInfo?' <span class="badge-main">ⓘ Інформація</span>':'')+
         (!p.admin && p.rightInstr?' <span class="badge-main">🎓 Інструктор</span>':'')+
+        (!p.admin && p.rightCourse?' <span class="badge-main" style="background:rgba(255,184,0,.15);color:var(--accent)">🎓 Адмін курсу</span>':'')+
         (p.isMain?' <span class="badge-main">Головний</span>':'')+'</div>'+
       '<div class="member-name">'+esc(p.name||'')+' · '+esc(p.role||'без ролі')+' · '+esc(p.status||'')+
         (p.crewId ? ' · '+esc(p.crewName || p.crewId) : ' · без екіпажу')+'</div></div>'+
@@ -2748,7 +2776,10 @@ function admEditPerson(id) {
           '<span>ⓘ Доступ до розділу «Інформація» (документи підрозділу)</span></label></div>'+
         '<div class="f"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0">'+
           '<input type="checkbox" id="apRightInstr" style="width:auto"'+(p && p.rightInstr?' checked':'')+'>'+
-          '<span>🎓 Інструктор (розділ «Навчання»: студенти, навчальні вильоти)</span></label>'+
+          '<span>🎓 Інструктор (розділ «Навчання»: лише оцінювання у своїх/спільних групах)</span></label></div>'+
+        '<div class="f"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0">'+
+          '<input type="checkbox" id="apRightCourse" style="width:auto"'+(p && p.rightCourse?' checked':'')+'>'+
+          '<span>🗓 Адмін курсу (навчання: розклад, потік, будь-які групи, експорт)</span></label>'+
         '<div class="hint">Адмін має всі права автоматично — окремі чекбокси йому не потрібні</div></div>'
       : '')+
     '<button class="btn btn-green" id="apBtn" onclick="admSavePerson(\''+esc(id||'')+'\')">💾 Зберегти</button>'
@@ -2769,6 +2800,7 @@ function admSavePerson(id) {
     d.rightCrew = !!($('apRightCrew') && $('apRightCrew').checked);
     d.rightInfo = !!($('apRightInfo') && $('apRightInfo').checked);
     d.rightInstr = !!($('apRightInstr') && $('apRightInstr').checked);
+    d.rightCourse = !!($('apRightCourse') && $('apRightCourse').checked);
   }
   if (id) d.id = id;
   var pw = $('apPassword').value;
@@ -4490,12 +4522,21 @@ function renderSectorMap(sec) {
       }
     });
 
-    if (sec.bounds && sec.bounds.length >= 3) map.fitBounds(sec.bounds, { padding: [30, 30] });
+    // «Нативні» оновлення: якщо користувач уже налаштував зум/позицію цієї
+    // карти — відновлюємо їх, а не скидаємо fitBounds-ом при кожному ререндері
+    if (_secMapView && _secMapView.sec === sectorSel) {
+      map.setView(_secMapView.c, _secMapView.z);
+    } else if (sec.bounds && sec.bounds.length >= 3) map.fitBounds(sec.bounds, { padding: [30, 30] });
     else if (sectorPositions(sec).length) map.setView(sectorPositions(sec)[0].coords, 13);
     else map.setView([48.5, 35.0], 6);
+    map.on('moveend zoomend', function(){
+      _secMapView = { sec: sectorSel, c: map.getCenter(), z: map.getZoom() };
+    });
     setTimeout(function(){ map.invalidateSize(); }, 150);
   });
 }
+// Останній вигляд карти сектора (центр/зум), переживає перемальовки
+var _secMapView = null;
 
 /* ── Погода для FPV: open-meteo (координати огрублені до ~1 км) + KP-індекс ── */
 var _wx = { ts: 0, data: null, kp: null };
@@ -4913,12 +4954,19 @@ function trainNormWeeks(d) {
   });
   return d;
 }
-// Хто може працювати з групою: адмін, власник, співвласник (міжосібна)
-// або будь-який інструктор (загальна)
+// Хто може працювати з групою: адмін/адмін курсу, власник, співвласник
+// (міжосібна) або будь-який інструктор (загальна)
 function trainCanEdit(w) {
   var myId = (S.auth && S.auth.id) || '';
-  return isAdminUser() || w.instructor === myId ||
+  return canCourseAdmin() || w.instructor === myId ||
     (w.share && (w.share.t === 'c' || (w.share.ids || []).indexOf(myId) !== -1));
+}
+// «Слухач»: не здав вступний залік (10ку) — до наступних дисциплін не
+// допускається, поки не перездасть; бейдж горить у групі й таблиці курсу
+function trainIsListener(st) {
+  if (!st || !st.c || !st.c.intro) return false;
+  var ds = trainCellStatus(trainCellOf(st, 'intro'), 'intro');
+  return ds === 'Не здав' || ds === 'Не пройдено';
 }
 // Розклад: масив рядків {id,date,act,start,end,main,helpers[]} з аркуша
 // «Розклад»; null = ще не прийшов або старий бекенд (fallback на FLOW-плани)
@@ -4947,7 +4995,7 @@ function trainLoad() {
   }, function(e){ trainSched = null; fin(); }); // старий деплой — легасі-плани
 }
 function trainInstructorId() {
-  if (isAdminUser() && trainInstrSel) return trainInstrSel;
+  if (canCourseAdmin() && trainInstrSel) return trainInstrSel;
   return (S.auth && S.auth.id) || '';
 }
 
@@ -4975,7 +5023,7 @@ function renderTrain(c) {
     '<button class="inv-tab'+(trainTab==='group'?' active':'')+'" onclick="trainTab=\'group\';renderView()">Групи</button>'+
     '<button class="inv-tab'+(trainTab==='exam'?' active':'')+'" onclick="trainTab=\'exam\';renderView()">Екзамен</button>'+
   '</div>';
-  var top = '<div class="sec-head" style="margin-bottom:12px">'+ '<div>'+head+'</div>' +'</div>' + tabs;
+  var top = '<div class="sec-head" style="margin-bottom:12px">'+ '<div>'+head+'</div>' +'</div>' + trainDirtyBanner() + tabs;
 
   var body;
   if (trainTab === 'flow') body = trainFlowHtml();
@@ -5007,8 +5055,8 @@ function trainFlowRow(key) {
   return wk;
 }
 function trainFlowSave(wk) {
-  rpc('trainingSaveStudents', [wk.instructor, wk.week, wk.students], function(){},
-    function(e){ toast('❌ Не збережено: '+((e && e.message) || e), true); });
+  // Той самий шлях, що й групи: дебаунс + банер незбережених при невдачі
+  trainSaveStudents(wk);
 }
 // Хто в чиїй групі на обраний тиждень: імʼя → позивний інструктора
 function trainOwners(week) {
@@ -5028,7 +5076,7 @@ function trainWeekLbl(k) {
 // календар, графік) — як і раніше, тільки олівцем біля тижня.
 var trainFlowMode = 'view';
 function trainFlowHtml() {
-  var isAdm = isAdminUser();
+  var isAdm = canCourseAdmin();
   var canEd = isAdm && trainFlowMode === 'edit';
   var cur = trainMonday();
   if (!trainWeekSel || trainWeekSel === 'POOL') trainWeekSel = cur;
@@ -5100,14 +5148,9 @@ function trainFlowHtml() {
     return allPassed(groupSt) ? mk('Допущено', 'var(--green)') : mk('Не допущено', 'var(--dim)');
   }
 
-  // ── Загал студентів: № (група → алфавіт), група, короткі статуси ──
+  // ── Загал студентів: у ТОМУ Ж порядку, як завантажені у потік
+  // (з файлу або вручну) — без пересортувань за групами чи алфавітом ──
   var entries = pool.map(function(st, i){ return { st: st, idx: i }; });
-  entries.sort(function(a, b){
-    var ga = owner[a.st.n] ? (groupNo[owner[a.st.n]] || 98) : 99;
-    var gb = owner[b.st.n] ? (groupNo[owner[b.st.n]] || 98) : 99;
-    if (ga !== gb) return ga - gb;
-    return a.st.n.localeCompare(b.st.n, 'uk');
-  });
   var rows = entries.map(function(e, i){
     var st = e.st;
     return '<tr'+(i % 2 ? ' style="background:var(--panel-2)"' : '')+'>'+
@@ -5118,7 +5161,7 @@ function trainFlowHtml() {
             // Клік по бейджу групи — модалка спільності: додати інструкторів
             // або передати групу (власник цієї групи або адмін)
             var cs = owner[st.n], oid = ownId[cs] || '';
-            var canShare = oid && (isAdminUser() || oid === ((S.auth && S.auth.id) || ''));
+            var canShare = oid && (canCourseAdmin() || oid === ((S.auth && S.auth.id) || ''));
             return '<span class="badge-main"'+(canShare
               ? ' style="cursor:pointer" title="Спільність групи: інструктори, передача" data-o="'+esc(oid)+'" onclick="trainShareModal(this.dataset.o)"'
               : '')+'>'+(groupNo[cs] ? 'гр.'+groupNo[cs]+' · ' : '')+'🎓 '+esc(cs)+esc(shareMk[cs] || '')+'</span>';
@@ -5180,14 +5223,14 @@ function trainFlowHtml() {
    кліком по чипу: допуск (Допущено/Не допущено), після допуску — іспит
    (Склав/Не склав), після «Склав» — сертифікація. Логіка ще доповниться. */
 function trainExamHtml() {
-  var canEx = isAdminUser();
+  var canEx = canCourseAdmin();
   var pool = trainFlowRow('POOL').students;
   var owner = trainOwners(trainWeekSel && /^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel) ? trainWeekSel : trainMonday());
   var chip = function(txt, color, dim) {
     return '<span style="display:inline-block;border:1px solid '+(dim ? 'var(--line-2)' : color)+';color:'+(dim ? 'var(--dim)' : color)+';padding:1px 7px;font:700 9px var(--font-data);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">'+txt+'</span>';
   };
+  // Порядок — як у потоці (як завантажено з таблиці), без алфавіту
   var entries = pool.map(function(st, i){ return { st: st, idx: i }; });
-  entries.sort(function(a, b){ return a.st.n.localeCompare(b.st.n, 'uk'); });
   var rows = entries.map(function(e, i){
     var ex = e.st.ex || {};
     var ik = ' data-i="'+e.idx+'"';
@@ -5356,7 +5399,7 @@ function trainSideHtml(canEd) {
   // Олівець — РЕДАГУВАННЯ активностей тижня (тільки адмін курсу): вмикає
   // режим, у якому кліки по днях і ✕ на чипах працюють. «Оцінювання» групи
   // активностей не чіпає — воно лише про оцінки студентів.
-  var planEd = isAdminUser() && trainPlanEdit;
+  var planEd = canCourseAdmin() && trainPlanEdit;
   canEd = planEd;
   var weekRows = weekKeys.map(function(k){
     var sel = k === trainWeekSel;
@@ -5364,7 +5407,7 @@ function trainSideHtml(canEd) {
       '<div style="flex:1;min-width:0"><b>з '+esc(trainWeekRangeLbl(k))+'</b>'+
         (k === cur ? ' <span class="badge-main" style="background:var(--green);color:#0d0d0d">поточний</span>' : '')+
         (sel ? ' <span class="badge-main" style="background:var(--accent);color:var(--on-accent)">вибраний</span>' : '')+'</div>'+
-      (isAdminUser()
+      (canCourseAdmin()
         ? '<button class="inv-act" title="'+(sel && planEd ? 'Завершити редагування активностей' : 'Редагувати активності тижня (дні, графік)')+'"'+
             (sel && planEd ? ' style="color:var(--accent);border-color:var(--accent)"' : '')+
             ' data-w="'+esc(k)+'" onclick="event.stopPropagation();trainPlanEditToggle(this.dataset.w)">'+svgIcon('edit')+'</button>'
@@ -5437,8 +5480,8 @@ function trainSideHtml(canEd) {
     '</div>';
   }).join('') || '<div class="empty" style="padding:8px 0">Днів із заняттями ще немає'+(canEd ? ' — відкрий календар 🗓 і клікни день' : '')+'</div>';
   // Експорт курсу в окрему Google-таблицю (адмін): розклад + журнал рамки
-  var expBtn = isAdminUser()
-    ? '<button class="icon-btn" title="Google-таблиця курсу: розклад + журнал цієї рамки (попередні тижні лишаються в ній як бекап)" onclick="trainExportRun()">📄</button>'
+  var expBtn = canCourseAdmin()
+    ? '<button class="icon-btn" title="Google-таблиця курсу: розклад + курсанти цієї рамки (попередні тижні лишаються в ній як бекап)" onclick="trainExportRun()">📄</button>'
     : '';
 
   return '<div class="side-panel">'+
@@ -5469,7 +5512,7 @@ function trainWeekPick(k) { trainWeekSel = k; renderView(); }
 // тижня, тільки адмін курсу. «Оцінювання»/«Редагування» потоку його не дають.
 var trainPlanEdit = false;
 function trainPlanEditToggle(k) {
-  if (!isAdminUser()) return;
+  if (!canCourseAdmin()) return;
   if (trainWeekSel === k) trainPlanEdit = !trainPlanEdit;
   else { trainWeekSel = k; trainPlanEdit = true; }
   renderView();
@@ -5479,7 +5522,7 @@ function trainPlanEditToggle(k) {
 function trainDayClick(dateStr) {
   trainWeekSel = trainMondayOf(dateStr);
   renderView();
-  if (isAdminUser() && trainPlanEdit) trainDayModal(dateStr);
+  if (canCourseAdmin() && trainPlanEdit) trainDayModal(dateStr);
 }
 // Модалка дня (редагування — адмін курсу). З аркушем «Розклад» активність
 // має час початку/кінця, основного й допоміжних інструкторів — як у
@@ -5494,7 +5537,7 @@ function trainDayModal(dateStr) {
 }
 function trainDayModalRender_(dateStr) {
   trainDayModalDate_ = dateStr;
-  var instrs = S.personnel.filter(function(p){ return p.rightInstr || p.admin; });
+  var instrs = S.personnel.filter(function(p){ return p.rightInstr || p.rightCourse || p.admin; });
   var rows = trainDayDraft.map(function(a, i){
     var helpers = instrs.filter(function(p){ return p.callsign !== a.main; }).map(function(p){
       var on = a.helpers.indexOf(p.callsign) !== -1;
@@ -6078,7 +6121,10 @@ function trainGroupTable(wk, cols, colDates, lockSet) {
       var locked = !!(lockSet && !lockSet[ch[0]]);
       return trainCellHtml(o, i, ch[0], st, canMark, locked);
     }).join('');
-    return '<tr><td style="font-weight:700">'+esc(st.n)+'</td>'+cells+
+    var lst = trainIsListener(st)
+      ? ' <span class="badge-main" style="background:rgba(231,76,60,.15);color:var(--red)" title="Не здав вступний залік — до наступних дисциплін не допускається">Слухач</span>'
+      : '';
+    return '<tr><td style="font-weight:700">'+esc(st.n)+lst+'</td>'+cells+
       (canMark && trainMode === 'edit'
         ? '<td style="text-align:right"><button class="inv-act inv-act--del" title="Прибрати студента з групи" data-o="'+esc(o)+'" data-i="'+i+'" onclick="trainRemoveStudent(this.dataset.o,this.dataset.i)">'+svgIcon('x')+'</button></td>'
         : '')+'</tr>';
@@ -6089,7 +6135,7 @@ function trainGroupTable(wk, cols, colDates, lockSet) {
   var shareBadge = shareLbl
     ? ' <span class="badge-main" style="background:rgba(46,204,113,.12);color:var(--green)">'+esc(shareLbl)+'</span>'
     : '';
-  var shareBtn = (isAdminUser() || o === myId) && trainMode === 'edit'
+  var shareBtn = (canCourseAdmin() || o === myId) && trainMode === 'edit'
     ? '<button class="icon-btn" title="Спільність групи: додати інструкторів або передати" data-o="'+esc(o)+'" onclick="trainShareModal(this.dataset.o)">👥</button>'
     : '';
   var addBtn = canMark && trainMode === 'edit'
@@ -6115,7 +6161,7 @@ function trainStudentsHtml() {
   // Захист по дню: якщо СЬОГОДНІ у графіку є активності — інструктору
   // відкриті лише їхні дисципліни; адмін курсу може правити все і завжди
   var lockSet = null;
-  if (!isAdminUser()) {
+  if (!canCourseAdmin()) {
     var todayD = trainFmtDate(new Date());
     var tActs = trainPlanDays(trainMondayOf(todayD))[todayD] || [];
     if (tActs.length) {
@@ -6186,7 +6232,7 @@ function trainStudentsHtml() {
     ? shown.map(function(wk){ return trainGroupTable(wk, cols, colDates, lockSet); }).join('')
     : '<div class="empty">Доступних груп на цей тиждень немає</div>');
   // План днів і тижні в бічній панелі редагує тільки адмін курсу в режимі оцінювання
-  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(isAdminUser() && trainMode === 'edit')+'</div></div>';
+  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(canCourseAdmin() && trainMode === 'edit')+'</div></div>';
 }
 /* ── Смуга «Сьогодні»: прогрес активностей дня по групі ──
    Кожна група рухається своїм темпом: ✓ завершує ПОТОЧНУ активність
@@ -6244,7 +6290,7 @@ function trainShareModal(o) {
   var wk = trainRowBy(o);
   var sh = wk.share || { t: 'p', ids: [] };
   var myId = (S.auth && S.auth.id) || '';
-  var instrs = S.personnel.filter(function(p){ return (p.rightInstr || p.admin) && p.id !== o; });
+  var instrs = S.personnel.filter(function(p){ return (p.rightInstr || p.rightCourse || p.admin) && p.id !== o; });
   var typeChip = function(t, lbl, hint){
     return '<button class="inv-mode-btn'+(sh.t === t ? ' active' : '')+'" title="'+hint+'" data-o="'+esc(o)+'" data-t="'+t+'"'+
       ' onclick="trainShareSetType(this.dataset.o,this.dataset.t)">'+lbl+'</button>';
@@ -6261,26 +6307,53 @@ function trainShareModal(o) {
     idRows = '<div class="f"><label>Співвласники (працюють нарівні з власником)</label>'+
       '<div style="max-height:200px;overflow-y:auto">'+idRows+'</div></div>';
   }
-  var transfer = '<div class="f" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">'+
-    '<label>Передати групу (новий власник, разом з оцінками)</label>'+
-    '<div style="display:flex;gap:8px;align-items:center">'+
-      '<select id="tsTransferTo" style="flex:1">'+
-        '<option value="">— вибери інструктора —</option>'+
-        instrs.map(function(p){ return '<option value="'+esc(p.id)+'">'+esc(p.callsign)+'</option>'; }).join('')+
-      '</select>'+
-      '<button class="btn btn-sec" data-o="'+esc(o)+'" onclick="trainTransferDo(this.dataset.o)">→ Передати</button>'+
-    '</div></div>';
+  // «Передати» — лише на приватній: у міжосібній співвласники вже
+  // визначені списком, передача там не потрібна
+  var transfer = sh.t === 'p'
+    ? '<div class="f" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">'+
+        '<label>Передати групу (новий власник, разом з оцінками)</label>'+
+        '<div style="display:flex;gap:8px;align-items:center">'+
+          '<select id="tsTransferTo" style="flex:1">'+
+            '<option value="">— вибери інструктора —</option>'+
+            instrs.map(function(p){ return '<option value="'+esc(p.id)+'">'+esc(p.callsign)+'</option>'; }).join('')+
+          '</select>'+
+          '<button class="btn btn-sec" data-o="'+esc(o)+'" onclick="trainTransferDo(this.dataset.o)">→ Передати</button>'+
+        '</div></div>'
+    : '';
   var p = S.personnel.find(function(x){ return x.id === o; });
-  openModal('👥 Група '+esc(p ? p.callsign : o)+' · '+esc(trainWeekLbl(trainWeekSel)),
-    '<div class="f"><label>Тип групи</label><div class="inv-mode" style="margin-left:0">'+
-      typeChip('p', 'Приватна', 'Бачить і редагує лише власник (і адмін)')+
-      typeChip('s', 'Міжосібна', 'Вибрані інструктори працюють разом, оцінки спільні')+
-      typeChip('c', 'Загальна', 'Редагують усі інструктори')+
-    '</div></div>'+idRows+transfer+
-    '<div class="btn-row" style="margin-top:10px">'+
-      '<button class="btn btn-green" data-o="'+esc(o)+'" onclick="trainShareSave(this.dataset.o)">💾 Зберегти</button>'+
-      '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
-    '</div>');
+  var body;
+  if (sh.t === 'c') {
+    // Група вже загальна — тільки статус і повернення у приватні
+    body = '<div class="side-panel" style="margin:0 0 10px"><div class="side-panel-body">'+
+        '<b style="color:var(--green)">📢 Група загальна</b>'+
+        '<div class="hint" style="margin-top:4px">Її бачать і оцінюють усі інструктори.</div>'+
+      '</div></div>'+
+      '<div class="btn-row">'+
+        '<button class="btn btn-sec" data-o="'+esc(o)+'" onclick="trainShareMakeCommon(this.dataset.o, false)">🔒 Зробити приватною</button>'+
+        '<button class="btn btn-sec" onclick="closeModal()">Закрити</button>'+
+      '</div>';
+  } else {
+    body = '<div class="f"><label>Тип групи</label><div class="inv-mode" style="margin-left:0">'+
+        typeChip('p', 'Приватна', 'Бачить і редагує лише власник (і адмін курсу)')+
+        typeChip('s', 'Міжосібна', 'Вибрані інструктори працюють разом, оцінки спільні')+
+      '</div></div>'+idRows+transfer+
+      '<div class="btn-row" style="margin-top:10px">'+
+        '<button class="btn btn-green" data-o="'+esc(o)+'" onclick="trainShareSave(this.dataset.o)">💾 Зберегти</button>'+
+        '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
+      '</div>'+
+      // Окрема дія: група стає видимою всім інструкторам одразу
+      '<div class="f" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">'+
+        '<button class="btn" style="width:100%;background:var(--accent);color:var(--on-accent)" data-o="'+esc(o)+'" onclick="trainShareMakeCommon(this.dataset.o, true)">📢 Зробити групу загальною (зʼявиться в усіх)</button>'+
+      '</div>';
+  }
+  openModal('👥 Група '+esc(p ? p.callsign : o)+' · '+esc(trainWeekLbl(trainWeekSel)), body);
+}
+// Загальна ↔ приватна одним кліком, з миттєвим збереженням
+function trainShareMakeCommon(o, on) {
+  var wk = trainRowBy(o);
+  if (on && !confirm('📢 Зробити групу загальною? Вона зʼявиться в усіх інструкторів, і кожен зможе оцінювати.')) return;
+  wk.share = { t: on ? 'c' : 'p', ids: [] };
+  trainShareSave(o);
 }
 function trainShareSetType(o, t) {
   var wk = trainRowBy(o);
@@ -6489,6 +6562,9 @@ function trainTimeTickStart() {
 // Дебаунс ПО РЯДКАХ: одна спільна затримка губила б збереження, коли два
 // різні рядки (моя група + спільна) правляться поспіль
 var _trainSaveT = {};
+// Невдалі збереження НЕ губляться: рядок лягає в _trainDirty і зверху
+// розділу горить банер із кнопкою «Повторити», поки все не піде в таблицю
+var _trainDirty = {};
 function trainSaveStudents(wk) {
   var tk = wk.instructor + '|' + wk.week;
   clearTimeout(_trainSaveT[tk]);
@@ -6496,9 +6572,28 @@ function trainSaveStudents(wk) {
     // Група їде разом із прогресом дня і спільністю: {list, prog, share}
     var payload = wk.instructor === 'FLOW' ? wk.students
       : { list: wk.students, prog: wk.prog || {}, share: wk.share || { t: 'p', ids: [] } };
-    rpc('trainingSaveStudents', [wk.instructor, wk.week, payload], function(){},
-      function(e){ toast('❌ Не збережено: '+((e && e.message) || e), true); });
+    rpc('trainingSaveStudents', [wk.instructor, wk.week, payload], function(){
+      if (_trainDirty[tk]) { delete _trainDirty[tk]; if (S.view === 'train') renderView(); }
+    }, function(e){
+      _trainDirty[tk] = wk;
+      toast('❌ Не збережено: '+((e && e.message) || e), true);
+      if (S.view === 'train') renderView();
+    });
   }, 400);
+}
+function trainRetrySaves() {
+  var ks = Object.keys(_trainDirty);
+  if (!ks.length) return;
+  toast('⏳ Повторюю збереження…');
+  ks.forEach(function(tk){ trainSaveStudents(_trainDirty[tk]); });
+}
+// Банер незбережених змін (показується зверху розділу «Навчання»)
+function trainDirtyBanner() {
+  var n = Object.keys(_trainDirty).length;
+  if (!n) return '';
+  return '<div class="warn" style="margin:10px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+    '⚠ Не збережено змін: '+n+'. Найчастіша причина — у таблиці стоїть застарілий Код.gs/ApiEndpoint (потрібна «Нова версія» деплою).'+
+    '<button class="btn btn-mini btn-sec" onclick="trainRetrySaves()">↻ Повторити</button></div>';
 }
 // Добір у групу — тільки з пулу «Загального потоку». Зайняті іншою групою
 // цього тижня показуються замкненими.
@@ -6746,6 +6841,7 @@ function doTrkStatus(id, st) {
 /* ── Карта втрат (Leaflet + OSM, вантажиться ліниво при відкритті) ── */
 var _leafletLoading = false;
 var _lostMapObj = null;
+var _lostMapView = null;   // збережений зум/центр карти втрат
 function ensureLeaflet(cb) {
   if (window.L) { cb(); return; }
   if (_leafletLoading) { setTimeout(function(){ ensureLeaflet(cb); }, 250); return; }
@@ -6836,8 +6932,11 @@ function renderTrkMap() {
         mk._lossPopupFor = popupFor;
         pts.push([x.lat, x.lng]);
       });
-      if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 14 });
+      // Налаштований користувачем вигляд (зум/центр) переживає перемальовки
+      if (typeof _lostMapView !== 'undefined' && _lostMapView) map.setView(_lostMapView.c, _lostMapView.z);
+      else if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 14 });
       else map.setView([48.5, 35.0], 6);
+      map.on('moveend zoomend', function(){ _lostMapView = { c: map.getCenter(), z: map.getZoom() }; });
       setTimeout(function(){ map.invalidateSize(); }, 150);
     });
   }
@@ -9617,16 +9716,13 @@ function userIsBusy() {
 }
 setInterval(function(){
   if (document.hidden || (MODE === 'api' && !authToken()) || userIsBusy()) return;
-  // На вкладці карти втрат — не смикати: тихе оновлення даних без ререндеру
-  if (S.view === 'trackers' && trkTab === 'map') { loadAll(false, true); return; }
-  // Сектор: у редагуванні не оновлюємо ВЗАГАЛІ — ререндер зносить ручки
-  // вершин і режим малювання посеред роботи; у перегляді — тихо,
-  // щоб карта не скидала зум і позицію кожні 90 секунд
-  if (S.view === 'sector') {
-    if (!sectorEdit && !sectorDraw) loadAll(false, true);
-    return;
-  }
-  loadAll();
+  // Сектор у редагуванні не оновлюємо ВЗАГАЛІ — свіжі дані знесли б ручки
+  // вершин і режим малювання посеред роботи
+  if (S.view === 'sector' && (sectorEdit || sectorDraw)) return;
+  // «Нативне» оновлення: ЗАВЖДИ тихе — дані підтягуються у фоні, а
+  // перемальовка стається лише якщо вони реально змінилися (див. _loadFinish).
+  // Скрол, зум карт і заповнені форми лишаються на місці.
+  loadAll(false, true);
 }, 90000);
 </script>
 </body>
