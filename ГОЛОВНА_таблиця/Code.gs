@@ -5913,6 +5913,13 @@ function trainingGuard_() {
   throw new Error('Потрібне право «Інструктор» або права адміністратора');
 }
 
+// Тиждень із клітинки аркуша: Google Sheets міг автоконвертувати
+// «2026-09-07» у дату — повертаємо завжди рядок yyyy-MM-dd
+function trainingWeekStr_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return String(v || '').trim();
+}
+
 // Понеділок поточного тижня — ключ рамки
 function trainingWeekMonday_() {
   const d = new Date();
@@ -5935,8 +5942,11 @@ function getTraining() {
         try { st = JSON.parse(String(r[3] || '[]')) || []; } catch(e) {}
         // Для груп це масив студентів, для плану тижня (FLOW) — обʼєкт {days}
         if (!Array.isArray(st) && (typeof st !== 'object' || !st)) st = [];
-        return { id: String(r[0]), instructor: String(r[1]).trim(),
-                 week: String(r[2]).trim(), students: st };
+        const ins = String(r[1]).trim();
+        const wk = trainingWeekStr_(r[2]);
+        // Пул потоку, збережений у форматі групи ({list:…}) — назад у масив
+        if (ins === 'FLOW' && wk === 'POOL' && st && !Array.isArray(st) && Array.isArray(st.list)) st = st.list;
+        return { id: String(r[0]), instructor: ins, week: wk, students: st };
       });
   }
   return { week: trainingWeekMonday_(), weeks: rows };
@@ -5998,8 +6008,14 @@ function trainingSaveStudents(instructorId, week, students) {
     Object.keys(prog || {}).forEach(k => {
       if (/^\d{4}-\d{2}-\d{2}$/.test(k)) cp[k] = Math.max(0, Math.min(20, parseInt(prog[k], 10) || 0));
     });
-    // json збирається всередині лока: share може взятись зі старого рядка
-    json = { list: clean, prog: cp, share: share };
+    if (isFlow) {
+      // Пул потоку — завжди чистий масив (без {list}-обгортки), інакше
+      // читачі старішого коду бачили порожній потік і затирали його
+      json = JSON.stringify(clean);
+    } else {
+      // json збирається всередині лока: share може взятись зі старого рядка
+      json = { list: clean, prog: cp, share: share };
+    }
   }
   return withScriptLock(function() {
     const sheet = ensureTrainingSheet();
@@ -6009,7 +6025,7 @@ function trainingSaveStudents(instructorId, week, students) {
       sheet.getRange(3, 1, lastRow - 2, 3).getValues().forEach((r, i) => {
         const m = String(r[0]).match(/TRN-(\d+)/);
         if (m) maxN = Math.max(maxN, +m[1]);
-        if (String(r[1]).trim() === instructorId && String(r[2]).trim() === week) rowNum = i + 3;
+        if (String(r[1]).trim() === instructorId && trainingWeekStr_(r[2]) === week) rowNum = i + 3;
       });
     }
     let out;
@@ -6265,7 +6281,7 @@ function trainingShareGroup(instructorId, week, share) {
     if (sheet.getLastRow() < 3) throw new Error('Групу не знайдено');
     let rowNum = 0;
     sheet.getRange(3, 1, sheet.getLastRow() - 2, 3).getValues().forEach((r, i) => {
-      if (String(r[1]).trim() === instructorId && String(r[2]).trim() === week) rowNum = i + 3;
+      if (String(r[1]).trim() === instructorId && trainingWeekStr_(r[2]) === week) rowNum = i + 3;
     });
     if (!rowNum) throw new Error('Групу не знайдено');
     let obj = null;
@@ -6295,7 +6311,7 @@ function trainingTransferGroup(instructorId, week, newOwner) {
     if (sheet.getLastRow() < 3) throw new Error('Групу не знайдено');
     let rowNum = 0, clash = 0;
     sheet.getRange(3, 1, sheet.getLastRow() - 2, 3).getValues().forEach((r, i) => {
-      const ins = String(r[1]).trim(), wk = String(r[2]).trim();
+      const ins = String(r[1]).trim(), wk = trainingWeekStr_(r[2]);
       if (ins === instructorId && wk === week) rowNum = i + 3;
       if (ins === newOwner && wk === week) clash = i + 3;
     });
@@ -6403,16 +6419,20 @@ function trainingExportSheet(week) {
   let poolEx = {};
   if (trs.getLastRow() >= 3) {
     trs.getRange(3, 1, trs.getLastRow() - 2, 4).getValues().forEach(r => {
-      const ins = String(r[1]).trim(), wk = String(r[2]).trim();
+      // Тиждень нормалізуємо: Sheets міг автоконвертувати його в дату,
+      // і тоді жодна група не збігалася з рамкою експорту
+      const ins = String(r[1]).trim(), wk = trainingWeekStr_(r[2]);
       let obj = null;
       try { obj = JSON.parse(String(r[3] || '')); } catch (e) {}
-      if (ins === 'FLOW' && wk === 'POOL' && Array.isArray(obj)) {
-        obj.forEach(s => { if (s && s.n && s.ex) poolEx[s.n] = s.ex; });
+      if (ins === 'FLOW' && wk === 'POOL') {
+        // Пул буває і масивом, і {list:…} — екзаменні стани беремо з обох
+        const pl = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.list) ? obj.list : []);
+        pl.forEach(s => { if (s && s.n && s.ex) poolEx[s.n] = s.ex; });
         return;
       }
       if (ins === 'FLOW' || wk !== week) return;
       const list = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.list) ? obj.list : []);
-      if (list.length) groups.push({ instructor: ins, list: list });
+      if (list.length) groups.push({ instructor: ins, list: list, share: (obj && obj.share) || null });
     });
   }
   const people = {};
@@ -6450,7 +6470,8 @@ function trainingExportSheet(week) {
   // допускається, у їхніх клітинках і в екзамені горить статус «Слухач»
   const introIdx = checkCols.findIndex(c => c.key === 'intro');
   groups.forEach(g => {
-    const cs = people[g.instructor] || g.instructor;
+    // Загальна група не закріплена за окремим інструктором
+    const cs = (g.share && g.share.t === 'c') ? 'Загальна' : (people[g.instructor] || g.instructor);
     g.list.forEach(st => {
       n++;
       const ex = poolEx[st.n] || {};

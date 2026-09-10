@@ -5059,8 +5059,12 @@ function trainFlowRow(key) {
            students: key === 'POOL' ? [] : { days: {} } };
     wks.push(wk);
   }
-  // Захист від старих/битих даних: пул — масив, план — обʼєкт із days
-  if (key === 'POOL' && !Array.isArray(wk.students)) wk.students = [];
+  // Захист від старих/битих даних: пул — масив, план — обʼєкт із days.
+  // Пул, що приїхав у форматі групи ({list:…}), РОЗГОРТАЄМО, а не обнуляємо —
+  // інакше потік «зникав» після перезаходу і затирався порожнім
+  if (key === 'POOL' && !Array.isArray(wk.students)) {
+    wk.students = (wk.students && Array.isArray(wk.students.list)) ? wk.students.list : [];
+  }
   if (key !== 'POOL' && (Array.isArray(wk.students) || !wk.students)) wk.students = { days: {} };
   return wk;
 }
@@ -5108,13 +5112,14 @@ function trainFlowHtml() {
   var ownId = {};      // позивний інструктора → його id (для модалки спільності)
   var shareMk = {};    // позивний інструктора → маркер спільності групи
   var studentRow = {}; // імʼя студента → його запис із клітинками
+  var commonGrp = {};  // позивний → група загальна (без окремого інструктора)
   groups.forEach(function(g, gi){
     var p = S.personnel.find(function(x){ return x.id === g.instructor; });
     var cs = p ? p.callsign : g.instructor;
     groupNo[cs] = gi + 1;
     ownId[cs] = g.instructor;
-    shareMk[cs] = g.share && g.share.t === 'c' ? ' · заг.'
-      : g.share && g.share.t === 's' && (g.share.ids || []).length ? ' +' + g.share.ids.length : '';
+    commonGrp[cs] = !!(g.share && g.share.t === 'c');
+    shareMk[cs] = g.share && g.share.t === 's' && (g.share.ids || []).length ? ' +' + g.share.ids.length : '';
     g.students.forEach(function(st){ if (!studentRow[st.n]) studentRow[st.n] = st; });
   });
 
@@ -5172,9 +5177,13 @@ function trainFlowHtml() {
             // або передати групу (власник цієї групи або адмін)
             var cs = owner[st.n], oid = ownId[cs] || '';
             var canShare = oid && (canCourseAdmin() || oid === ((S.auth && S.auth.id) || ''));
-            return '<span class="badge-main"'+(canShare
-              ? ' style="cursor:pointer" title="Спільність групи: інструктори, передача" data-o="'+esc(oid)+'" onclick="trainShareModal(this.dataset.o)"'
-              : '')+'>'+(groupNo[cs] ? 'гр.'+groupNo[cs]+' · ' : '')+'🎓 '+esc(cs)+esc(shareMk[cs] || '')+'</span>';
+            // Загальна група не закріплена за інструктором — без позивного
+            var lbl = commonGrp[cs] ? '👥 Загальна' : '🎓 '+esc(cs)+esc(shareMk[cs] || '');
+            var stl = (canShare ? 'cursor:pointer;' : '') +
+              (commonGrp[cs] ? 'background:rgba(46,204,113,.12);color:var(--green);' : '');
+            return '<span class="badge-main"'+(stl ? ' style="'+stl+'"' : '')+(canShare
+              ? ' title="Спільність групи: інструктори, передача" data-o="'+esc(oid)+'" onclick="trainShareModal(this.dataset.o)"'
+              : '')+'>'+(groupNo[cs] ? 'гр.'+groupNo[cs]+' · ' : '')+lbl+'</span>';
           })()
         : '<span class="hint">не розподілений</span>')+'</td>'+
       '<td>'+mini(studentRow[st.n])+'</td>'+
@@ -6165,8 +6174,14 @@ function trainGroupTable(wk, cols, colDates, lockSet) {
   var addBtn = canMark && trainMode === 'edit'
     ? '<button class="icon-btn" title="Додати студента з потоку" style="background:var(--accent);color:var(--on-accent)" data-o="'+esc(o)+'" onclick="trainGroupAddModal(this.dataset.o)">'+svgIcon('personAdd')+'</button>'
     : '';
+  // Загальна група не закріплена за окремим інструктором — без позивного
+  var isCommon = wk.share && wk.share.t === 'c';
+  var capTxt = isCommon
+    ? '👥 Загальна група · '+esc(trainWeekLbl(trainWeekSel))
+    : '🎓 '+esc(p ? p.callsign : o)+' · '+esc(trainWeekLbl(trainWeekSel));
+  if (isCommon) shareBadge = '';
   return '<div class="matrix-panel" style="margin-bottom:14px">'+
-    '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 '+esc(p ? p.callsign : o)+' · '+esc(trainWeekLbl(trainWeekSel))+'</span>'+shareBadge+
+    '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">'+capTxt+'</span>'+shareBadge+
       '<span class="count-pill">'+(wk.students || []).length+'</span>'+
       '<div class="info-acts" style="align-items:center;gap:8px">'+addBtn+shareBtn+'</div></div>'+
     trainDayBarHtml(wk, canMark)+
