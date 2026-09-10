@@ -6072,8 +6072,22 @@ var trainGrpFilter = {};   // {'c':1} — загальні; {'OP-001':1} — г�
 function trainGrpFilterToggle(k) {
   if (!k) trainGrpFilter = {};
   else if (trainGrpFilter[k]) delete trainGrpFilter[k];
-  else trainGrpFilter[k] = 1;
+  else {
+    trainGrpFilter[k] = 1;
+    // Адмін курсу клікнув інструктора без групи — створюємо йому порожню
+    // рамку локально, щоб одразу було куди добирати студентів
+    if (k !== 'c' && canCourseAdmin()) trainRowBy(k);
+  }
   renderView();
+}
+// Інструктори, присутні на курсі: право «Інструктор»/«Курс-адмін» (чи адмін)
+// і НЕ у відпочинку/переведені. Коли зʼявиться синхронізація секторів —
+// сюди ж додасться фільтр за сектором навчання.
+function trainCourseInstructors() {
+  return S.personnel.filter(function(p){
+    return (p.rightInstr || p.rightCourse || p.admin) &&
+      ['Відпочинок', 'Переведений', 'Видалений'].indexOf(String(p.status || '').trim()) === -1;
+  });
 }
 function trainShareLbl(w) {
   if (!w.share || w.share.t === 'p') return '';
@@ -6191,17 +6205,21 @@ function trainStudentsHtml() {
     });
   }
   var colDates = trainColDates();
-  // Фільтр чипами: Усі · Загальні · власники доступних груп
-  var owners = [];
+  // Фільтр чипами — у стилі інвентарних: Усі · Загальні · ВСІ інструктори,
+  // присутні на курсі (не лише власники наявних груп)
+  var owners = trainCourseInstructors().map(function(p){ return p.id; });
+  // Власник наявної групи поза ростером (права зняли, група лишилась) —
+  // все одно в переліку, інакше до його групи не дістатись. Порожній
+  // instructor (адмін без входу) чипа не отримує.
   groups.forEach(function(w){
-    if (owners.indexOf(w.instructor) === -1) owners.push(w.instructor);
+    if (w.instructor && owners.indexOf(w.instructor) === -1) owners.push(w.instructor);
   });
   var anyF = Object.keys(trainGrpFilter).length > 0;
   var chip = function(k, lbl, on){
-    return '<button class="inv-mode-btn'+(on ? ' active' : '')+'" data-f="'+esc(k)+'" onclick="trainGrpFilterToggle(this.dataset.f)">'+lbl+'</button>';
+    return '<button class="filter-chip'+(on ? ' active' : '')+'" data-f="'+esc(k)+'" onclick="trainGrpFilterToggle(this.dataset.f)">'+lbl+'</button>';
   };
   var hasCommon = groups.some(function(w){ return w.share && w.share.t === 'c'; });
-  var fChips = '<div class="inv-mode" style="margin-left:0;flex-wrap:wrap">'+
+  var fChips = '<div class="type-chips">'+
     chip('', 'Усі', !anyF)+
     (hasCommon ? chip('c', 'Загальні', !!trainGrpFilter['c']) : '')+
     owners.map(function(oid){
