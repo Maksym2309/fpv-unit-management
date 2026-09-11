@@ -5129,8 +5129,9 @@ function trainFlowHtml() {
     groupNo[cs] = gi + 1;
     // Рамка COMMON без ownId: модалка спільності їй не потрібна
     if (g.instructor !== 'COMMON') ownId[cs] = g.instructor;
-    commonGrp[cs] = g.instructor === 'COMMON' || !!(g.share && g.share.t === 'c');
-    shareMk[cs] = g.share && g.share.t === 's' && (g.share.ids || []).length ? ' +' + g.share.ids.length : '';
+    commonGrp[cs] = g.instructor === 'COMMON';
+    shareMk[cs] = g.share && g.share.t === 'c' ? ' · заг.'
+      : g.share && g.share.t === 's' && (g.share.ids || []).length ? ' +' + g.share.ids.length : '';
     g.students.forEach(function(st){ if (!studentRow[st.n]) studentRow[st.n] = st; });
   });
 
@@ -6185,8 +6186,9 @@ function trainGroupTable(wk, cols, colDates, lockSet) {
   var addBtn = canMark && trainMode === 'edit'
     ? '<button class="icon-btn" title="Додати студента з потоку" style="background:var(--accent);color:var(--on-accent)" data-o="'+esc(o)+'" onclick="trainGroupAddModal(this.dataset.o)">'+svgIcon('personAdd')+'</button>'
     : '';
-  // Загальна група не закріплена за окремим інструктором — без позивного
-  var isCommon = o === 'COMMON' || (wk.share && wk.share.t === 'c');
+  // «Загальна група» — ТІЛЬКИ рамка COMMON; чиясь група з прапорцем
+  // «загальна» (спадок) показується як група власника з бейджем
+  var isCommon = o === 'COMMON';
   var capTxt = isCommon
     ? '👥 Загальна група · '+esc(trainWeekLbl(trainWeekSel))
     : '🎓 '+esc(p ? p.callsign : o)+' · '+esc(trainWeekLbl(trainWeekSel));
@@ -6389,13 +6391,15 @@ function trainShareModal(o) {
   var p = S.personnel.find(function(x){ return x.id === o; });
   var body;
   if (sh.t === 'c') {
-    // Група вже загальна — тільки статус і повернення у приватні
+    // Спадок: група позначена «загальною» ще ДО появи окремої рамки
+    // «Загальна група» — пропонуємо перелити студентів туди
     body = '<div class="side-panel" style="margin:0 0 10px"><div class="side-panel-body">'+
-        '<b style="color:var(--green)">📢 Група загальна</b>'+
-        '<div class="hint" style="margin-top:4px">Її бачать і оцінюють усі інструктори.</div>'+
+        '<b style="color:var(--green)">📢 Група позначена загальною (спадок)</b>'+
+        '<div class="hint" style="margin-top:4px">Тепер для спільної роботи є окрема картка «👥 Загальна група». Перелий студентів туди — і не буде двох «загальних».</div>'+
       '</div></div>'+
       '<div class="btn-row">'+
-        '<button class="btn btn-sec" data-o="'+esc(o)+'" onclick="trainShareMakeCommon(this.dataset.o, false)">🔒 Зробити приватною</button>'+
+        '<button class="btn" style="background:var(--accent);color:var(--on-accent)" data-o="'+esc(o)+'" onclick="trainMergeToCommon(this.dataset.o)">→ Перелити в «Загальну групу»</button>'+
+        '<button class="btn btn-sec" data-o="'+esc(o)+'" onclick="trainShareMakeCommon(this.dataset.o, false)">🔒 Лишити мені (зробити приватною)</button>'+
         '<button class="btn btn-sec" onclick="closeModal()">Закрити</button>'+
       '</div>';
   } else {
@@ -6407,19 +6411,39 @@ function trainShareModal(o) {
         '<button class="btn btn-green" data-o="'+esc(o)+'" onclick="trainShareSave(this.dataset.o)">💾 Зберегти</button>'+
         '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
       '</div>'+
-      // Окрема дія: група стає видимою всім інструкторам одразу
-      '<div class="f" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">'+
-        '<button class="btn" style="width:100%;background:var(--accent);color:var(--on-accent)" data-o="'+esc(o)+'" onclick="trainShareMakeCommon(this.dataset.o, true)">📢 Зробити групу загальною (зʼявиться в усіх)</button>'+
-      '</div>';
+      '<div class="hint" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">Потрібна спільна робота всіх інструкторів? Для цього є окрема картка «👥 Загальна група» — закидай студентів одразу в неї.</div>';
   }
   openModal('👥 Група '+esc(p ? p.callsign : o)+' · '+esc(trainWeekLbl(trainWeekSel)), body);
 }
-// Загальна ↔ приватна одним кліком, з миттєвим збереженням
+// Зняти спадковий прапорець «загальна» (група знову приватна)
 function trainShareMakeCommon(o, on) {
   var wk = trainRowBy(o);
-  if (on && !confirm('📢 Зробити групу загальною? Вона зʼявиться в усіх інструкторів, і кожен зможе оцінювати.')) return;
   wk.share = { t: on ? 'c' : 'p', ids: [] };
   trainShareSave(o);
+}
+// Перелити студентів (з оцінками) у рамку «Загальна група»; своя група
+// очищається і стає приватною
+function trainMergeToCommon(o) {
+  var wk = trainRowBy(o);
+  var common = trainRowBy('COMMON');
+  var n = (wk.students || []).length;
+  if (!n) { toast('⚠ Група порожня', true); return; }
+  if (!confirm('→ Перелити '+n+' студентів (з оцінками) у «Загальну групу»? Ця група стане порожньою і приватною.')) return;
+  var have = {};
+  common.students.forEach(function(s){ have[s.n.toLowerCase()] = 1; });
+  wk.students.forEach(function(s){ if (!have[s.n.toLowerCase()]) common.students.push(s); });
+  // Прогрес дня теж їде в загальну (де в неї ще немає)
+  common.prog = common.prog || {};
+  Object.keys(wk.prog || {}).forEach(function(k){ if (!(k in common.prog)) common.prog[k] = wk.prog[k]; });
+  wk.students = [];
+  wk.prog = {};
+  wk.share = { t: 'p', ids: [] };
+  trainSaveStudents(common);
+  trainSaveStudents(wk);
+  rpc('trainingShareGroup', [o, wk.week, { t: 'p', ids: [] }], function(){}, function(){});
+  closeModal();
+  renderView();
+  toast('→ Перелито у «Загальну групу»: ' + n);
 }
 function trainShareSetType(o, t) {
   var wk = trainRowBy(o);

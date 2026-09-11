@@ -6499,9 +6499,9 @@ function trainingExportSheet(week) {
   // допускається, у їхніх клітинках і в екзамені горить статус «Слухач»
   const introIdx = checkCols.findIndex(c => c.key === 'intro');
   groups.forEach(g => {
-    // Загальна група не закріплена за окремим інструктором
-    const cs = (g.instructor === 'COMMON' || (g.share && g.share.t === 'c'))
-      ? 'Загальна' : (people[g.instructor] || g.instructor);
+    // «Загальна» — тільки рамка COMMON; група зі спадковим прапорцем
+    // «загальна» лишається за своїм власником
+    const cs = g.instructor === 'COMMON' ? 'Загальна' : (people[g.instructor] || g.instructor);
     g.list.forEach(st => {
       n++;
       const ex = poolEx[st.n] || {};
