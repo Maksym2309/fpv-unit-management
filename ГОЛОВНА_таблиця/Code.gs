@@ -5948,6 +5948,11 @@ function getTraining() {
         if (ins === 'FLOW' && wk === 'POOL' && st && !Array.isArray(st) && Array.isArray(st.list)) st = st.list;
         return { id: String(r[0]), instructor: ins, week: wk, students: st };
       });
+    // Захист від дублікатів «інструктор × тиждень» (лишились від часів,
+    // коли тиждень-дата ламав upsert): виграє нижній (найсвіжіший) рядок
+    const dedup = {};
+    rows.forEach(r => { dedup[r.instructor + '|' + r.week] = r; });
+    rows = Object.keys(dedup).map(k => dedup[k]);
   }
   return { week: trainingWeekMonday_(), weeks: rows };
 }
@@ -5966,12 +5971,15 @@ function trainingSaveStudents(instructorId, week, students) {
   const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
   const isAdm = courseAdmin_();   // адмін курсу = повні права в навчанні
   const isOwner = !!(me && me.id === instructorId);
+  // «Загальна» група тижня (COMMON) — окремий статус: не чиясь група,
+  // а спільна рамка, яку бачить і редагує будь-який інструктор
+  const isCommon = instructorId === 'COMMON';
   if (isFlow && !isAdm) {
     throw new Error('Пул студентів і план потоку редагує тільки адміністратор курсу');
   }
   // Не власник і не адмін — можливо, співвласник спільної групи:
   // право перевіряється нижче, по share вже збереженого рядка
-  let needShareCheck = !isFlow && !isAdm && !isOwner;
+  let needShareCheck = !isFlow && !isCommon && !isAdm && !isOwner;
   let json;
   if (isFlow && week !== 'POOL') {
     // Графік рамки: {days:{'yyyy-mm-dd': ['Теорія', …]}} — конкретні дати
@@ -6021,11 +6029,24 @@ function trainingSaveStudents(instructorId, week, students) {
     const sheet = ensureTrainingSheet();
     const lastRow = sheet.getLastRow();
     let rowNum = 0, maxN = 0;
+    const dupRows = [];   // зайві рядки цього ж ключа — чистяться нижче
     if (lastRow >= 3) {
       sheet.getRange(3, 1, lastRow - 2, 3).getValues().forEach((r, i) => {
         const m = String(r[0]).match(/TRN-(\d+)/);
         if (m) maxN = Math.max(maxN, +m[1]);
-        if (String(r[1]).trim() === instructorId && trainingWeekStr_(r[2]) === week) rowNum = i + 3;
+        if (String(r[1]).trim() === instructorId && trainingWeekStr_(r[2]) === week) {
+          if (rowNum) dupRows.push(rowNum);   // попередній стає зайвим
+          rowNum = i + 3;                      // виграє нижній (найсвіжіший)
+        }
+      });
+    }
+    // Захист від дублікатів: якщо ключ зустрівся кілька разів — пишемо
+    // в найсвіжіший рядок, а решту видаляємо (знизу вгору, щоб індекси
+    // не «поїхали»); rowNum коригується на кількість видалених над ним
+    if (dupRows.length) {
+      dupRows.sort((a, b) => b - a).forEach(rn => {
+        sheet.deleteRow(rn);
+        if (rn < rowNum) rowNum--;
       });
     }
     let out;
@@ -6049,7 +6070,7 @@ function trainingSaveStudents(instructorId, week, students) {
       } else {
         json.share = json.share || oldShare;
       }
-      if (!json.share || json.share.t === 'p') delete json.share;
+      if (isCommon || !json.share || json.share.t === 'p') delete json.share;
       out = JSON.stringify(json);
     }
     if (out.length > 30000) throw new Error('Список завеликий');
@@ -6270,6 +6291,7 @@ function trainingShareGroup(instructorId, week, share) {
   trainingGuard_();
   instructorId = String(instructorId || '').trim();
   week = String(week || '').trim();
+  if (instructorId === 'COMMON') throw new Error('Загальна група спільна за визначенням');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
   const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
   if (!courseAdmin_() && (!me || me.id !== instructorId)) {
@@ -6301,7 +6323,8 @@ function trainingTransferGroup(instructorId, week, newOwner) {
   week = String(week || '').trim();
   newOwner = String(newOwner || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
-  if (!newOwner || newOwner === 'FLOW') throw new Error('Вкажи нового власника');
+  if (instructorId === 'COMMON') throw new Error('Загальна група не передається — вона спільна');
+  if (!newOwner || newOwner === 'FLOW' || newOwner === 'COMMON') throw new Error('Вкажи нового власника');
   const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
   if (!courseAdmin_() && (!me || me.id !== instructorId)) {
     throw new Error('Передати групу може її власник або адмін курсу');
@@ -6434,6 +6457,12 @@ function trainingExportSheet(week) {
       const list = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.list) ? obj.list : []);
       if (list.length) groups.push({ instructor: ins, list: list, share: (obj && obj.share) || null });
     });
+    // Дублікати «інструктор × тиждень» в аркуші (спадок бага з датою
+    // тижня): в експорт іде лише найсвіжіший (нижній) рядок кожного ключа
+    const gd = {};
+    groups.forEach(g => { gd[g.instructor] = g; });
+    groups.length = 0;
+    Object.keys(gd).forEach(k => groups.push(gd[k]));
   }
   const people = {};
   getPersonnelList().forEach(p => { people[p.id] = p.callsign; });
@@ -6471,7 +6500,8 @@ function trainingExportSheet(week) {
   const introIdx = checkCols.findIndex(c => c.key === 'intro');
   groups.forEach(g => {
     // Загальна група не закріплена за окремим інструктором
-    const cs = (g.share && g.share.t === 'c') ? 'Загальна' : (people[g.instructor] || g.instructor);
+    const cs = (g.instructor === 'COMMON' || (g.share && g.share.t === 'c'))
+      ? 'Загальна' : (people[g.instructor] || g.instructor);
     g.list.forEach(st => {
       n++;
       const ex = poolEx[st.n] || {};

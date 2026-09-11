@@ -4962,13 +4962,22 @@ function trainNormWeeks(d) {
     if (!Array.isArray(w.students)) w.students = [];
     w.share = trainShareOf(w.share);
   });
+  // Захист від дублікатів «інструктор × тиждень» зі старого бекенда:
+  // виграє останній запис ключа, порядок — за першою появою
+  var seen = {}, out = [];
+  (d.weeks || []).forEach(function(w){
+    var k = w.instructor + '|' + w.week;
+    if (seen[k] !== undefined) out[seen[k]] = w;
+    else { seen[k] = out.length; out.push(w); }
+  });
+  d.weeks = out;
   return d;
 }
 // Хто може працювати з групою: адмін/адмін курсу, власник, співвласник
-// (міжосібна) або будь-який інструктор (загальна)
+// (міжосібна), будь-який інструктор (загальна за share або рамка COMMON)
 function trainCanEdit(w) {
   var myId = (S.auth && S.auth.id) || '';
-  return canCourseAdmin() || w.instructor === myId ||
+  return canCourseAdmin() || w.instructor === myId || w.instructor === 'COMMON' ||
     (w.share && (w.share.t === 'c' || (w.share.ids || []).indexOf(myId) !== -1));
 }
 // «Слухач»: не здав вступний залік (10ку) — до наступних дисциплін не
@@ -5078,7 +5087,8 @@ function trainOwners(week) {
   (trainState.data.weeks || []).forEach(function(w){
     if (w.instructor === 'FLOW' || w.week !== week || !Array.isArray(w.students)) return;
     var p = S.personnel.find(function(x){ return x.id === w.instructor; });
-    w.students.forEach(function(st){ owner[st.n] = p ? p.callsign : w.instructor; });
+    var cs = w.instructor === 'COMMON' ? 'Загальна' : (p ? p.callsign : w.instructor);
+    w.students.forEach(function(st){ owner[st.n] = cs; });
   });
   return owner;
 }
@@ -5115,10 +5125,11 @@ function trainFlowHtml() {
   var commonGrp = {};  // позивний → група загальна (без окремого інструктора)
   groups.forEach(function(g, gi){
     var p = S.personnel.find(function(x){ return x.id === g.instructor; });
-    var cs = p ? p.callsign : g.instructor;
+    var cs = g.instructor === 'COMMON' ? 'Загальна' : (p ? p.callsign : g.instructor);
     groupNo[cs] = gi + 1;
-    ownId[cs] = g.instructor;
-    commonGrp[cs] = !!(g.share && g.share.t === 'c');
+    // Рамка COMMON без ownId: модалка спільності їй не потрібна
+    if (g.instructor !== 'COMMON') ownId[cs] = g.instructor;
+    commonGrp[cs] = g.instructor === 'COMMON' || !!(g.share && g.share.t === 'c');
     shareMk[cs] = g.share && g.share.t === 's' && (g.share.ids || []).length ? ' +' + g.share.ids.length : '';
     g.students.forEach(function(st){ if (!studentRow[st.n]) studentRow[st.n] = st; });
   });
@@ -6175,15 +6186,21 @@ function trainGroupTable(wk, cols, colDates, lockSet) {
     ? '<button class="icon-btn" title="Додати студента з потоку" style="background:var(--accent);color:var(--on-accent)" data-o="'+esc(o)+'" onclick="trainGroupAddModal(this.dataset.o)">'+svgIcon('personAdd')+'</button>'
     : '';
   // Загальна група не закріплена за окремим інструктором — без позивного
-  var isCommon = wk.share && wk.share.t === 'c';
+  var isCommon = o === 'COMMON' || (wk.share && wk.share.t === 'c');
   var capTxt = isCommon
     ? '👥 Загальна група · '+esc(trainWeekLbl(trainWeekSel))
     : '🎓 '+esc(p ? p.callsign : o)+' · '+esc(trainWeekLbl(trainWeekSel));
   if (isCommon) shareBadge = '';
+  if (o === 'COMMON') shareBtn = '';   // спільність/передача для неї безглузді
+  // Очистити вміст групи (списки і оцінки) — власник/адмін курсу, або
+  // будь-який інструктор для загальної
+  var clearBtn = canMark && trainMode === 'edit' && (wk.students || []).length
+    ? '<button class="inv-act inv-act--del" title="Очистити групу (прибрати всіх студентів з оцінками)" data-o="'+esc(o)+'" onclick="trainGroupClear(this.dataset.o)">'+svgIcon('trash')+'</button>'
+    : '';
   return '<div class="matrix-panel" style="margin-bottom:14px">'+
     '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">'+capTxt+'</span>'+shareBadge+
       '<span class="count-pill">'+(wk.students || []).length+'</span>'+
-      '<div class="info-acts" style="align-items:center;gap:8px">'+addBtn+shareBtn+'</div></div>'+
+      '<div class="info-acts" style="align-items:center;gap:8px">'+addBtn+shareBtn+clearBtn+'</div></div>'+
     trainDayBarHtml(wk, canMark)+
     ((wk.students || []).length
       ? '<div style="overflow-x:auto"><table class="crew-table">'+header+rows+'</table></div>'
@@ -6194,8 +6211,11 @@ function trainStudentsHtml() {
   var cur = trainMonday();
   if (!trainWeekSel || !/^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel)) trainWeekSel = cur;
   var myId = (S.auth && S.auth.id) || '';
-  // Моя група існує завжди (хоч і порожня) — щоб було куди добирати людей
+  // Моя група існує завжди (хоч і порожня) — щоб було куди добирати людей.
+  // «Загальна» (COMMON) — теж завжди: окремий статус, не чиясь група;
+  // будь-який інструктор одразу закидає в неї студентів
   trainRowBy(trainInstructorId());
+  trainRowBy('COMMON');
   var groups = trainMyGroups();
   // Захист по дню: якщо СЬОГОДНІ у графіку є активності — інструктору
   // відкриті лише їхні дисципліни; адмін курсу може правити все і завжди
@@ -6237,13 +6257,13 @@ function trainStudentsHtml() {
   // все одно в переліку, інакше до його групи не дістатись. Порожній
   // instructor (адмін без входу) чипа не отримує.
   groups.forEach(function(w){
-    if (w.instructor && owners.indexOf(w.instructor) === -1) owners.push(w.instructor);
+    if (w.instructor && w.instructor !== 'COMMON' && owners.indexOf(w.instructor) === -1) owners.push(w.instructor);
   });
   var anyF = Object.keys(trainGrpFilter).length > 0;
   var chip = function(k, lbl, on){
     return '<button class="filter-chip'+(on ? ' active' : '')+'" data-f="'+esc(k)+'" onclick="trainGrpFilterToggle(this.dataset.f)">'+lbl+'</button>';
   };
-  var hasCommon = groups.some(function(w){ return w.share && w.share.t === 'c'; });
+  var hasCommon = groups.some(function(w){ return w.instructor === 'COMMON' || (w.share && w.share.t === 'c'); });
   var fChips = '<div class="type-chips">'+
     chip('', 'Усі', !anyF)+
     (hasCommon ? chip('c', 'Загальні', !!trainGrpFilter['c']) : '')+
@@ -6258,11 +6278,13 @@ function trainStudentsHtml() {
   '</div>';
   var shown = groups.filter(function(w){
     if (!anyF) return true;
-    if (trainGrpFilter['c'] && w.share && w.share.t === 'c') return true;
+    if (trainGrpFilter['c'] && (w.instructor === 'COMMON' || (w.share && w.share.t === 'c'))) return true;
     return !!trainGrpFilter[w.instructor];
   });
-  // Своя група — першою, решта за позивними
+  // Загальна — першою, потім своя, решта за позивними
   shown.sort(function(a, b){
+    if (a.instructor === 'COMMON') return -1;
+    if (b.instructor === 'COMMON') return 1;
     if (a.instructor === myId) return -1;
     if (b.instructor === myId) return 1;
     var pa = S.personnel.find(function(x){ return x.id === a.instructor; });
@@ -6330,6 +6352,7 @@ function trainActUndo(o) {
 /* ── Спільність групи: тип (приватна/міжосібна/загальна), співвласники,
    передача іншому інструктору. Власник або адмін. ── */
 function trainShareModal(o) {
+  if (o === 'COMMON') { toast('👥 Загальна група спільна за визначенням — окремого власника в неї немає'); return; }
   var wk = trainRowBy(o);
   var sh = wk.share || { t: 'p', ids: [] };
   var myId = (S.auth && S.auth.id) || '';
@@ -6681,6 +6704,18 @@ function trainRemoveStudent(o, i) {
   wk.students.splice(+i, 1);
   trainSaveStudents(wk);
   renderView();
+}
+// Очистити ВМІСТ групи: всі студенти з оцінками і прогрес дня
+function trainGroupClear(o) {
+  var wk = trainRowBy(o);
+  var n = (wk.students || []).length;
+  if (!n) return;
+  if (!confirm('🗑 Очистити групу — прибрати всіх '+n+' студентів разом з оцінками?\nСтуденти лишаться в загальному потоці.')) return;
+  wk.students = [];
+  wk.prog = {};
+  trainSaveStudents(wk);
+  renderView();
+  toast('🗑 Групу очищено');
 }
 
 /* ЧП по навчальному вильоту — редагування свого вильоту з Журналу польоту */
