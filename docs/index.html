@@ -5951,7 +5951,7 @@ function trainCellOf(st, key) {
   }
   return { t: c.t || TRAIN_TYPE_DEF[key] || 'status', st: c.st || '', note: c.note || '',
            sec: +c.sec || 0, run: +c.run || 0, score: (c.score === 0 || c.score) ? +c.score : null,
-           cnt: +c.cnt || 0, fin: c.fin ? 1 : 0 };
+           cnt: +c.cnt || 0, fin: c.fin ? 1 : 0, q: c.q || '' };
 }
 function trainCellRef(o, i, key) {
   var wk = trainRowBy(o), st = wk.students[+i];
@@ -5967,6 +5967,8 @@ function trainFmtTime(sec) {
 }
 // Похідний статус: поріг часу і бал перекривають ручний (крім ручного «Не пройдено»)
 function trainCellStatus(cell, key) {
+  // Оцінка «Погано» на статусній станції = «Не пройдено» (і блокує ⚑)
+  if (cell.t === 'status' && cell.q === 'погано') return 'Не пройдено';
   // 🏁 Станцію завершено вручну — прогрес закритий, статус «Пройдено»
   if (cell.fin && cell.t !== 'grade') return 'Пройдено';
   if (cell.t === 'time') {
@@ -6022,7 +6024,7 @@ function trainCellHtml(o, i, key, st, canMark, locked) {
   } else {
     noteLine = '<div class="hint" style="opacity:.4">немає коментаря</div>';
   }
-  var val = '', chip = trainStChip(ds);
+  var val = '', chip = trainStChip(ds), mid = '';
   // Плашка «ЗАВЕРШИТИ» у стилі чипів статусів — під часом/селектом:
   // жовта = станція відкрита, зелена = активовано (час і спроби закриті).
   // Клік перемикає в обидва боки.
@@ -6062,32 +6064,53 @@ function trainCellHtml(o, i, key, st, canMark, locked) {
       val = cell.score !== null ? '<b class="mono" style="font-size:13px;color:'+trainStColor(ds)+'">'+cell.score+' / 10</b>' : '';
     }
   } else {
+    // Статусна станція, компактне розкладання без порожніх рядків:
+    //   ряд 1 — оцінка (Добре/Достатньо/Погано; «Погано» = Не пройдено
+    //           і не дає завершити станцію),
+    //   ряд 2 — компактний селект статусу + ± спроб,
+    //   ряд 3 — «Завершити» + ×N.
+    var QUAL = [['добре','Добре','var(--green)'],['достатньо','Достатньо','var(--accent)'],['погано','Погано','var(--red)']];
+    var qd = QUAL.find(function(x){ return x[0] === cell.q; });
     if (edit && !cell.fin) {
-      val = '<select class="inv-status-sel" style="width:auto;min-width:0"'+ik+' onchange="trainStatusSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
-        TRAIN_STATUSES.map(function(s){
-          return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
-        }).join('')+'</select>';
+      val = QUAL.map(function(x){
+        var on = cell.q === x[0];
+        return '<span style="display:inline-block;cursor:pointer;border:1px solid '+(on ? x[2] : 'var(--line-2)')+';color:'+(on ? x[2] : 'var(--dim)')+';padding:1px 5px;font:700 8.5px var(--font-data);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap"'+
+          ' title="Оцінка станції'+(x[0] === 'погано' ? ' · «Погано» = Не пройдено, завершити не дасть' : '')+' (повторний клік — зняти)"'+ik+
+          ' data-q="'+x[0]+'" onclick="trainQualSet(this.dataset.o,this.dataset.i,this.dataset.k,this.dataset.q)">'+x[1]+'</span>';
+      }).join(' ');
+      mid = '<div style="min-height:20px;margin-top:2px;display:flex;align-items:center;gap:3px;flex-wrap:wrap">'+
+        '<select class="inv-status-sel" style="width:auto;min-width:0;font-size:10px;padding:2px 4px"'+ik+' onchange="trainStatusSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
+          TRAIN_STATUSES.map(function(s){
+            return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
+          }).join('')+'</select>'+
+        ' <button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="+1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,1)">＋</button>'+
+        (cell.cnt ? '<button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="−1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,-1)">−</button>' : '')+
+      '</div>';
       chip = ''; // селект і є статус — не дублюємо
+    } else if (qd) {
+      // перегляд або завершена станція: чип оцінки поруч зі статусом
+      chip += ' <span style="display:inline-block;border:1px solid '+qd[2]+';color:'+qd[2]+';padding:1px 6px;font:700 9px var(--font-data);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">'+qd[1]+'</span>';
     }
   }
-  // Лічильник повторень: практика буває не раз — «×N» накручується
-  // навчальними вильотами, ± дає коригувати вручну. Тільки для статусних
-  // клітинок — балів і часу не стосується
-  var cntHtml = '';
-  if (cell.t === 'status' && (cell.cnt || edit)) {
-    cntHtml = (cell.cnt ? ' <span class="mono" title="Пройдених повторень" style="font-size:10px;color:var(--muted)">×'+cell.cnt+'</span>' : '');
-    if (edit && !cell.fin) {
-      cntHtml += ' <button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="+1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,1)">＋</button>'+
-        (cell.cnt ? '<button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="−1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,-1)">−</button>' : '');
-    }
-  }
+  // Лічильник повторень «×N»: накручується навчальними вильотами, ± живе
+  // в ряду селекта. Тільки для статусних клітинок
+  var cntHtml = cell.t === 'status' && cell.cnt
+    ? ' <span class="mono" title="Пройдених повторень" style="font-size:10px;color:var(--muted)">×'+cell.cnt+'</span>'
+    : '';
   var lockWrap = locked && trainMode === 'edit' && canMark;
   return '<td style="vertical-align:top'+(lockWrap ? ';opacity:.4' : '')+'"'+
       (lockWrap ? ' title="Не за графіком сьогодні — редагує адміністратор курсу"' : '')+'>'+
-    '<div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;min-height:26px">'+val+'</div>'+
+    '<div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;min-height:26px">'+val+'</div>'+mid+
     '<div style="min-height:18px;margin-top:2px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">'+chip+finBtn+'<span>'+cntHtml+'</span></div>'+
     noteLine+
   '</td>';
+}
+// Оцінка статусної станції; повторний клік по активній — зняти
+function trainQualSet(o, i, key, q) {
+  var cell = trainCellRef(o, i, key);
+  if (!cell || cell.fin) return;
+  cell.q = cell.q === q ? '' : q;
+  trainCellSave(o); renderView();
 }
 function trainCntInc(o, i, key, d) {
   var cell = trainCellRef(o, i, key);
@@ -6520,6 +6543,11 @@ function trainColTimePause(o, key) {
 function trainFinSet(o, i, key) {
   var cell = trainCellRef(o, i, key);
   if (!cell || cell.t === 'grade') return;
+  // Оцінка «Погано» = «Не пройдено» — таку станцію не завершити
+  if (cell.t === 'status' && cell.q === 'погано') {
+    toast('⚠ «Погано» — це Не пройдено, станцію так не завершити', true);
+    return;
+  }
   if (cell.run) { cell.sec = Math.round(trainEffSec(cell)); cell.run = 0; cell.st = 'Пауза'; }
   cell.fin = 1;
   trainCellSave(o); renderView();
@@ -6536,6 +6564,7 @@ function trainColFin(o, key) {
   wk.students.forEach(function(st, i){
     var c = trainCellRef(o, i, key);
     if (!c || c.t === 'grade') return;
+    if (c.t === 'status' && c.q === 'погано') return; // «Погано» не завершується
     if (c.run) { c.sec = Math.round(trainEffSec(c)); c.run = 0; c.st = 'Пауза'; }
     c.fin = 1;
   });
