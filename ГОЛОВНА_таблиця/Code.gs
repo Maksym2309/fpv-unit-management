@@ -5965,7 +5965,9 @@ function trainingSaveStudents(instructorId, week, students) {
   instructorId = String(instructorId || '').trim();
   week = String(week || '').trim();
   const isFlow = instructorId === 'FLOW';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(week) && !(isFlow && week === 'POOL')) {
+  // Пул: поточний 'POOL' або архівний потік 'POOL-yyyy-MM-dd(-n)'
+  const isPool = isFlow && /^POOL(-\d{4}-\d{2}-\d{2}(-\d+)?)?$/.test(week);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week) && !isPool) {
     throw new Error('Некоректний тиждень: ' + week);
   }
   const me = (__API_CTX && __API_CTX.person) ? __API_CTX.person : null;
@@ -5981,7 +5983,7 @@ function trainingSaveStudents(instructorId, week, students) {
   // право перевіряється нижче, по share вже збереженого рядка
   let needShareCheck = !isFlow && !isCommon && !isAdm && !isOwner;
   let json;
-  if (isFlow && week !== 'POOL') {
+  if (isFlow && !isPool) {
     // Графік рамки: {days:{'yyyy-mm-dd': ['Теорія', …]}} — конкретні дати
     // («тиждень» може бути несуцільним); старі ключі 1..7 теж приймаються
     const days = (students && typeof students === 'object' && students.days) || {};
@@ -6343,6 +6345,58 @@ function trainingTransferGroup(instructorId, week, newOwner) {
     sheet.getRange(rowNum, 2).setValue(newOwner);
     sheet.getRange(rowNum, 5).setValue(nowTS());
     return { ok: true };
+  });
+}
+
+// ============================================================
+// НОВИЙ ПОТІК: поточний пул архівується рядком FLOW × POOL-дата
+// (нічого не видаляється, архів можна відкривати й правити), POOL
+// очищається під новий набір. Перед цим — повна копія файла таблиці
+// в теку бекапів Drive і експорт поточної рамки в «Навчання — курси».
+// ============================================================
+function trainingNewFlow() {
+  trainingGuard_();
+  if (!courseAdmin_()) throw new Error('Новий потік відкриває адміністратор курсу');
+  const tz = Session.getScriptTimeZone();
+  const today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  // Повний бекап файла таблиці — точка повернення на будь-який випадок
+  let backupName = '';
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    backupName = 'Бекап перед новим потоком ' + Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd_HH-mm');
+    DriveApp.getFileById(ss.getId()).makeCopy(backupName, getBackupFolder());
+  } catch (e) { backupName = ''; }
+  // Людський знімок поточної рамки в «Навчання — курси» (не критично)
+  try { trainingExportSheet(trainingWeekMonday_()); } catch (e) {}
+  return withScriptLock(function() {
+    const sheet = ensureTrainingSheet();
+    if (sheet.getLastRow() < 3) throw new Error('Потік порожній — нічого архівувати');
+    const vals = sheet.getRange(3, 1, sheet.getLastRow() - 2, 4).getValues();
+    let poolRow = 0, poolJson = '';
+    const takenKeys = {};
+    let maxN = 0;
+    vals.forEach((r, i) => {
+      const m = String(r[0]).match(/TRN-(\d+)/);
+      if (m) maxN = Math.max(maxN, +m[1]);
+      if (String(r[1]).trim() !== 'FLOW') return;
+      const wk = trainingWeekStr_(r[2]);
+      if (wk === 'POOL') { poolRow = i + 3; poolJson = String(r[3] || ''); }
+      if (/^POOL-/.test(wk)) takenKeys[wk] = 1;
+    });
+    if (!poolRow) throw new Error('Потік порожній — нічого архівувати');
+    let list = [];
+    try {
+      const obj = JSON.parse(poolJson || '[]');
+      list = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.list) ? obj.list : []);
+    } catch (e) {}
+    if (!list.length) throw new Error('Потік порожній — нічого архівувати');
+    // Ключ архіву: POOL-дата; кілька за день — суфікс -2, -3…
+    let key = 'POOL-' + today, n = 1;
+    while (takenKeys[key]) { n++; key = 'POOL-' + today + '-' + n; }
+    const id = 'TRN-' + String(maxN + 1).padStart(3, '0');
+    sheet.appendRow([id, 'FLOW', key, JSON.stringify(list), nowTS()]);
+    sheet.getRange(poolRow, 4, 1, 2).setValues([['[]', nowTS()]]);
+    return { archived: key, students: list.length, backup: backupName };
   });
 }
 

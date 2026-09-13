@@ -1015,6 +1015,20 @@ var DEMO_DATA = {
   trainingExportSheet: function(){
     throw new Error('В демо-режимі експорт недоступний — підключи базу');
   },
+  trainingNewFlow: function(){
+    var weeks = DEMO_DATA.getTraining().weeks;
+    var pool = weeks.find(function(w){ return w.instructor === 'FLOW' && w.week === 'POOL'; });
+    var list = pool ? (Array.isArray(pool.students) ? pool.students : (pool.students && pool.students.list) || []) : [];
+    if (!list.length) throw new Error('Потік порожній — нічого архівувати');
+    var d = new Date();
+    var base = 'POOL-' + d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+    var key = base, n = 1;
+    while (weeks.some(function(w){ return w.instructor === 'FLOW' && w.week === key; })) { n++; key = base + '-' + n; }
+    weeks.push({ id: 'TRN-A' + n, instructor: 'FLOW', week: key, students: list });
+    pool.students = [];
+    try { localStorage.setItem('wh_training', JSON.stringify(weeks)); } catch(e) {}
+    return { archived: key, students: list.length, backup: '' };
+  },
   // Звичайний старт вильоту (з підтримкою навчального і студента)
   startFlight: function(data){
     var n = DEMO_DATA.getFlightList.filter(function(f){ return f.id.indexOf('FLT-') === 0; }).length;
@@ -5059,22 +5073,24 @@ function renderTrain(c) {
 var TRAIN_ACTS = ['Теорія','Вступний залік','Симулятор','Зліт/посадка','Маневрування','Виявлення/супровід цілі','Робота в екіпажі','Екзамен'];
 var TRAIN_DAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Нд'];
 
-// FLOW-рядок (пул 'POOL' або план тижня); створюється локально за потреби
+// FLOW-рядок (пул 'POOL'/архів 'POOL-дата' або план тижня); створюється
+// локально за потреби
 function trainFlowRow(key) {
+  var isPool = /^POOL/.test(key);
   var wks = trainState.data.weeks;
   var wk = wks.find(function(w){ return w.instructor === 'FLOW' && w.week === key; });
   if (!wk) {
     wk = { id: '', instructor: 'FLOW', week: key,
-           students: key === 'POOL' ? [] : { days: {} } };
+           students: isPool ? [] : { days: {} } };
     wks.push(wk);
   }
   // Захист від старих/битих даних: пул — масив, план — обʼєкт із days.
   // Пул, що приїхав у форматі групи ({list:…}), РОЗГОРТАЄМО, а не обнуляємо —
   // інакше потік «зникав» після перезаходу і затирався порожнім
-  if (key === 'POOL' && !Array.isArray(wk.students)) {
+  if (isPool && !Array.isArray(wk.students)) {
     wk.students = (wk.students && Array.isArray(wk.students.list)) ? wk.students.list : [];
   }
-  if (key !== 'POOL' && (Array.isArray(wk.students) || !wk.students)) wk.students = { days: {} };
+  if (!isPool && (Array.isArray(wk.students) || !wk.students)) wk.students = { days: {} };
   return wk;
 }
 function trainFlowSave(wk) {
@@ -5095,6 +5111,26 @@ function trainOwners(week) {
 function trainWeekLbl(k) {
   return 'з ' + k.slice(8,10) + '.' + k.slice(5,7);
 }
+/* ── Потоки: поточний пул 'POOL' + архівні 'POOL-дата' ──
+   «Новий потік» архівує пул окремим рядком (нічого не видаляється) і
+   очищає POOL під новий набір. Селектор потоків повертає до архівних
+   даних: перегляд і правки йдуть ТІЛЬКИ в архівний рядок — поточний
+   потік не зачіпається. */
+var trainPoolSel = 'POOL';
+function trainPoolRef() { return trainFlowRow(trainPoolSel); }
+function trainPoolKeys() {
+  var arch = [];
+  (trainState.data.weeks || []).forEach(function(w){
+    if (w.instructor === 'FLOW' && /^POOL-/.test(w.week) && arch.indexOf(w.week) === -1) arch.push(w.week);
+  });
+  arch.sort().reverse(); // новіші архіви зверху
+  return ['POOL'].concat(arch);
+}
+function trainPoolLbl(k) {
+  if (k === 'POOL') return 'Поточний потік';
+  var m = k.match(/^POOL-(\d{4})-(\d{2})-(\d{2})(?:-(\d+))?$/);
+  return m ? 'Потік до ' + m[3] + '.' + m[2] + '.' + m[1] + (m[4] ? ' (' + m[4] + ')' : '') : k;
+}
 // Перемикач Перегляд/Редагування (бачить лише адмін курсу) розблоковує
 // дії ПУЛУ: додати студента, імпорт із файлу, видалення. Розклад (дні,
 // календар, графік) — як і раніше, тільки олівцем біля тижня.
@@ -5104,7 +5140,8 @@ function trainFlowHtml() {
   var canEd = isAdm && trainFlowMode === 'edit';
   var cur = trainMonday();
   if (!trainWeekSel || trainWeekSel === 'POOL') trainWeekSel = cur;
-  var pool = trainFlowRow('POOL').students;
+  var pool = trainPoolRef().students;
+  var isArch = trainPoolSel !== 'POOL';
   var owner = trainOwners(trainWeekSel);
   var range = trainWeekRangeLbl(trainWeekSel);
   var cols = trainColOrder();
@@ -5214,18 +5251,32 @@ function trainFlowHtml() {
         '<button class="inv-mode-btn'+(trainFlowMode === 'edit' ? ' active' : '')+'" onclick="trainFlowMode=\'edit\';renderView()">Редагування</button>'+
       '</div>'
     : '';
-  var acts = '<div class="info-acts" style="align-items:center;gap:8px">'+
+  // Селектор потоків (коли є архіви) + «Новий потік» — тільки на поточному
+  var poolKeys = trainPoolKeys();
+  var poolSel = poolKeys.length > 1
+    ? '<select style="width:auto;min-width:0;font-size:11px" onchange="trainPoolSel=this.value;renderView()">'+
+        poolKeys.map(function(k){
+          return '<option value="'+esc(k)+'"'+(k === trainPoolSel ? ' selected' : '')+'>'+esc(trainPoolLbl(k))+'</option>';
+        }).join('')+'</select>'
+    : '';
+  var newFlowBtn = canEd && !isArch && pool.length
+    ? '<button class="icon-btn" title="Новий потік: заархівувати поточний пул (повернешся до нього селектором) і почати чистий набір. Перед цим — копія таблиці в Drive і експорт рамки" onclick="trainNewFlowModal()">🎯</button>'
+    : '';
+  var acts = '<div class="info-acts" style="align-items:center;gap:8px">'+poolSel+
     (canEd
       ? '<button class="icon-btn" title="Додати студента в потік" style="background:var(--accent);color:var(--on-accent)" onclick="trainPoolAddModal()">'+svgIcon('personAdd')+'</button>'+
         '<button class="icon-btn" title="Імпорт списку з файлу (.txt/.csv — рядок = студент; .xlsx — розпізнаю ПІБ автоматично)" onclick="$(\'trainImpFile\').click()">'+svgIcon('upload')+'</button>'
-      : '')+flowToggle+'</div>'+
+      : '')+newFlowBtn+flowToggle+'</div>'+
     (canEd ? '<input type="file" id="trainImpFile" accept=".txt,.csv,.xlsx,text/plain" style="display:none" onchange="trainPoolImport(this)">' : '');
+  var archBar = isArch
+    ? '<div class="hint" style="padding:6px 12px;border-bottom:1px solid var(--line)">⏳ '+esc(trainPoolLbl(trainPoolSel))+' (архів) — правки зберігаються тільки сюди, поточний потік не зачіпається</div>'
+    : '';
   var main = '<div class="matrix-panel">'+
-    '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 Загал студентів</span>'+
-      '<span class="count-pill">'+pool.length+'</span>'+acts+'</div>'+
+    '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">'+(isArch ? '⏳' : '🎓')+' Загал студентів</span>'+
+      '<span class="count-pill">'+pool.length+'</span>'+acts+'</div>'+archBar+
     (rows
       ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th style="width:34px">№</th><th>Студент</th><th>Група · '+esc(range)+'</th><th>Станції</th><th>Екзамен</th>'+(canEd?'<th></th>':'')+'</tr>'+rows+'</table></div>'
-      : '<div class="empty">Потік порожній'+(canEd?' — додай студентів або імпортуй список із файлу':'')+'</div>')+
+      : '<div class="empty">Потік порожній'+(canEd && !isArch ? ' — додай студентів або імпортуй список із файлу' : '')+'</div>')+
   '</div>';
 
   // ── Навчальні групи тижня — бокова панель у стилі «Екіпажів у секторі»:
@@ -5255,7 +5306,7 @@ function trainFlowHtml() {
    (Склав/Не склав), після «Склав» — сертифікація. Логіка ще доповниться. */
 function trainExamHtml() {
   var canEx = canCourseAdmin();
-  var pool = trainFlowRow('POOL').students;
+  var pool = trainPoolRef().students; // слідує за селектором потоку (архіви теж)
   var owner = trainOwners(trainWeekSel && /^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel) ? trainWeekSel : trainMonday());
   var chip = function(txt, color, dim) {
     return '<span style="display:inline-block;border:1px solid '+(dim ? 'var(--line-2)' : color)+';color:'+(dim ? 'var(--dim)' : color)+';padding:1px 7px;font:700 9px var(--font-data);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">'+txt+'</span>';
@@ -5302,7 +5353,7 @@ function trainExamHtml() {
     : 'Екзаменні статуси ставить адміністратор курсу.')+'</div>';
 }
 function trainExamCycle(i, field) {
-  var wk = trainFlowRow('POOL');
+  var wk = trainPoolRef();
   var st = wk.students[+i];
   if (!st) return;
   st.ex = st.ex || {};
@@ -5650,7 +5701,7 @@ function trainPoolAddModal() {
 function trainPoolAddDo() {
   var name = ($('tpName') ? $('tpName').value : '').trim();
   if (!name) { toast('⚠ Вкажи імʼя', true); return; }
-  var wk = trainFlowRow('POOL');
+  var wk = trainPoolRef();
   if (wk.students.some(function(s){ return s.n.toLowerCase() === name.toLowerCase(); })) {
     toast('⚠ «'+name+'» вже в потоці', true); return;
   }
@@ -5659,7 +5710,7 @@ function trainPoolAddDo() {
   closeModal(); renderView();
 }
 function trainPoolRemove(i) {
-  var wk = trainFlowRow('POOL');
+  var wk = trainPoolRef();
   var st = wk.students[+i];
   if (!st || !confirm('Видалити «'+st.n+'» з потоку?')) return;
   wk.students.splice(+i, 1);
@@ -5670,7 +5721,7 @@ function trainPoolRemove(i) {
 // групами, тож перейменування протягується в усі групи; екзаменний стан
 // живе в самому записі пулу і їде разом з ним
 function trainPoolRenameModal(i) {
-  var st = trainFlowRow('POOL').students[+i];
+  var st = trainPoolRef().students[+i];
   if (!st) return;
   openModal('✏️ Імʼя студента',
     '<div class="f"><label>Імʼя *</label><input type="text" id="tprName" value="'+esc(st.n)+'" onkeydown="if(event.key===\'Enter\')trainPoolRenameDo('+(+i)+')"></div>'+
@@ -5678,7 +5729,7 @@ function trainPoolRenameModal(i) {
   setTimeout(function(){ var el = $('tprName'); if (el) { el.focus(); el.select(); } }, 60);
 }
 function trainPoolRenameDo(i) {
-  var wk = trainFlowRow('POOL');
+  var wk = trainPoolRef();
   var st = wk.students[+i];
   var name = ($('tprName') ? $('tprName').value : '').trim();
   if (!st || !name) { toast('⚠ Вкажи імʼя', true); return; }
@@ -5821,7 +5872,7 @@ function trainXlsxNames(buf) {
 // Прев'ю імпорту: чекбокси, зайвих (інструктор, «(контроль)»…) знімаєш
 function trainImpPreview(names) {
   var have = {};
-  trainFlowRow('POOL').students.forEach(function(s){ have[s.n.toLowerCase()] = 1; });
+  trainPoolRef().students.forEach(function(s){ have[s.n.toLowerCase()] = 1; });
   var rows = names.map(function(n, i){
     var dup = !!have[n.toLowerCase()];
     return '<label style="display:flex;align-items:center;gap:8px;padding:4px 2px;border-bottom:1px solid var(--line);cursor:pointer'+(dup?';opacity:.45':'')+'">'+
@@ -5841,7 +5892,7 @@ function trainImpApply() {
     .filter(function(cb){ return cb.checked && !cb.disabled; })
     .map(function(cb){ return cb.value; });
   if (!picked.length) { toast('⚠ Нікого не вибрано', true); return; }
-  var wk = trainFlowRow('POOL');
+  var wk = trainPoolRef();
   var have = {};
   wk.students.forEach(function(s){ have[s.n.toLowerCase()] = 1; });
   var added = 0;
@@ -5852,6 +5903,32 @@ function trainImpApply() {
   trainFlowSave(wk);
   toast('⬆ Імпортовано: '+added);
   closeModal(); renderView();
+}
+/* ── 🎯 Новий потік: архівувати поточний пул і почати чистий набір ── */
+function trainNewFlowModal() {
+  var n = trainFlowRow('POOL').students.length;
+  openModal('🎯 Новий потік',
+    '<div class="hint" style="margin-bottom:10px">Поточний потік ('+n+' студ.) буде заархівовано окремим записом — '+
+      'повернутися до нього (подивитись чи поправити) можна будь-коли селектором потоків, поточний набір це не зачіпає. '+
+      'Перед архівацією: повна копія таблиці в теку бекапів Drive і експорт поточної рамки в «Навчання — курси». '+
+      'Пул очиститься під новий набір; групи, розклад і оцінки минулих тижнів лишаються як були.</div>'+
+    '<div class="btn-row">'+
+      '<button class="btn btn-green" onclick="trainNewFlowDo()">🎯 Архівувати й почати новий</button>'+
+      '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
+    '</div>');
+}
+function trainNewFlowDo() {
+  toast('⏳ Архівую потік і роблю бекап…');
+  rpc('trainingNewFlow', [], function(r){
+    // локальне дзеркало: рядок POOL стає архівом, новий POOL — порожній
+    var wks = trainState.data.weeks;
+    var cur = wks.find(function(w){ return w.instructor === 'FLOW' && w.week === 'POOL'; });
+    if (cur) cur.week = (r && r.archived) || ('POOL-' + trainFmtDate(new Date()));
+    wks.push({ id: '', instructor: 'FLOW', week: 'POOL', students: [] });
+    trainPoolSel = 'POOL';
+    toast('🎯 Потік заархівовано ('+((r && r.students) || 0)+' студ.)'+(r && r.backup ? ' · копія таблиці в Drive' : ''));
+    closeModal(); renderView();
+  }, function(e){ toast('❌ '+((e && e.message) || e), true); });
 }
 // Активності дня живуть у рамці СВОГО календарного тижня — тому окремі
 // розкидані дні зберігаються коректно, кожен у своєму FLOW-рядку
