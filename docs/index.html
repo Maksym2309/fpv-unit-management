@@ -6497,7 +6497,10 @@ function trainColTimeStart(o, key) {
   var wk = trainRowBy(o);
   wk.students.forEach(function(st, i){
     var c = trainCellRef(o, i, key);
-    if (c && c.t === 'time' && !c.run && !c.fin) { c.run = Date.now(); c.st = 'В процесі'; }
+    if (c && c.t === 'time' && !c.run && !c.fin) {
+      c.run = Date.now(); c.st = 'В процесі';
+      trainPauseOthers_(o, i, key); // інші процеси кожного студента — на паузу
+    }
   });
   trainCellSave(o); renderView();
   toast('▶ Час пішов усій групі');
@@ -6548,11 +6551,31 @@ function trainColFinClear(o, key) {
   trainCellSave(o); renderView();
   toast('↺ Станцію знову відкрито всій групі');
 }
+// Одна активна станція на студента: пуск нової ставить решту «В процесі»
+// на паузу (таймер завмирає з накопиченим часом). Повертає назви пауз.
+function trainPauseOthers_(o, i, exceptKey) {
+  var wk = trainRowBy(o), st = wk.students[+i];
+  if (!st || !st.c) return [];
+  var paused = [];
+  Object.keys(st.c).forEach(function(k){
+    if (k === exceptKey) return;
+    var c = trainCellRef(o, i, k);
+    if (!c || c.fin) return;
+    if (c.run) { c.sec = Math.round(trainEffSec(c)); c.run = 0; c.st = 'Пауза'; }
+    else if (c.st === 'В процесі') c.st = 'Пауза';
+    else return;
+    var ch = TRAIN_CHECK.find(function(x){ return x[0] === k; });
+    paused.push(ch ? ch[1] : k);
+  });
+  return paused;
+}
 function trainTimeStart(o, i, key) {
   var cell = trainCellRef(o, i, key);
   if (!cell) return;
   cell.run = Date.now();
   cell.st = 'В процесі';
+  var p = trainPauseOthers_(o, i, key);
+  if (p.length) toast('⏸ На паузу: ' + p.join(', '));
   trainCellSave(o); renderView();
 }
 function trainTimePause(o, i, key, autoNote) {
@@ -6567,6 +6590,11 @@ function trainStatusSet(o, i, key, v) {
   var cell = trainCellRef(o, i, key);
   if (!cell) return;
   cell.st = v === '—' ? '' : v;
+  // «В процесі» — активна станція: інші процеси студента стають на паузу
+  if (cell.st === 'В процесі') {
+    var p = trainPauseOthers_(o, i, key);
+    if (p.length) toast('⏸ На паузу: ' + p.join(', '));
+  }
   trainCellSave(o); renderView();
 }
 function trainScoreSet(o, i, key, v) {
