@@ -5016,6 +5016,7 @@ function trainLoad() {
     else {
       trainState.data = trainNormWeeks(dat);
       if (!trainWeekSel) trainWeekSel = trainState.data.week;
+      trainPoolSel = trainPoolForWeek(trainWeekSel); // потік під вибраний тиждень
     }
     if (S.view === 'train') renderView();
   }
@@ -5120,7 +5121,44 @@ function trainWeekLbl(k) {
    даних: перегляд і правки йдуть ТІЛЬКИ в архівний рядок — поточний
    потік не зачіпається. */
 var trainPoolSel = 'POOL';
-function trainPoolRef() { return trainFlowRow(trainPoolSel); }
+// Потік прив'язаний до тижня через свій період: вибрав тиждень — потік
+// підтягнувся сам. Тиждень нового потоку → новий; старий тиждень →
+// архівний з таблиці; тиждень поза всіма потоками → порожньо ('').
+function trainPoolForWeek(weekKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekKey || '')) return 'POOL';
+  var d = new Date(weekKey + 'T00:00:00');
+  d.setDate(d.getDate() + 6);
+  var endS = trainFmtDate(d);
+  var hit = function(w){
+    return w && w.period && w.period.s && w.period.e &&
+      !(w.period.e < weekKey || w.period.s > endS);
+  };
+  var rows = trainState.data ? (trainState.data.weeks || []) : [];
+  var cur = rows.find(function(w){ return w.instructor === 'FLOW' && w.week === 'POOL'; });
+  if (hit(cur)) return 'POOL';
+  var arch = rows.filter(function(w){ return w.instructor === 'FLOW' && /^POOL-/.test(w.week) && hit(w); });
+  if (arch.length) {
+    arch.sort(function(a, b){ return b.week.localeCompare(a.week); });
+    return arch[0].week;
+  }
+  // Поточний потік без періоду — стара поведінка: він скрізь
+  if (cur && !(cur.period && cur.period.s)) return 'POOL';
+  return '';
+}
+// Вибір потоку селектором: відкриваємо його й стрибаємо на його перший тиждень
+function trainPoolPick(k) {
+  trainPoolSel = k;
+  var row = trainFlowRow(k);
+  if (row.period && row.period.s) trainWeekSel = trainMondayOf(row.period.s);
+  renderView();
+}
+function trainPoolRef() {
+  if (!trainPoolSel) {
+    // Тиждень поза потоками: транзитний порожній обʼєкт, у weeks НЕ пишеться
+    return { id: '', instructor: 'FLOW', week: '', students: [], period: null };
+  }
+  return trainFlowRow(trainPoolSel);
+}
 function trainPoolKeys() {
   var arch = [];
   (trainState.data.weeks || []).forEach(function(w){
@@ -5289,47 +5327,54 @@ function trainFlowHtml() {
         '<button class="inv-mode-btn'+(trainFlowMode === 'edit' ? ' active' : '')+'" onclick="trainFlowMode=\'edit\';renderView()">Редагування</button>'+
       '</div>'
     : '';
-  // Селектор потоків (коли є архіви) + «Новий потік» — тільки на поточному
+  // Селектор потоків (коли є архіви) + «Новий потік» — тільки на поточному.
+  // Порожній вибір ('') = вибраний тиждень поза періодами всіх потоків
   var poolKeys = trainPoolKeys();
-  var poolSel = poolKeys.length > 1
-    ? '<select style="width:auto;min-width:0;font-size:11px" onchange="trainPoolSel=this.value;renderView()">'+
+  var poolSel = poolKeys.length > 1 || !trainPoolSel
+    ? '<select style="width:auto;min-width:0;font-size:11px" onchange="trainPoolPick(this.value)">'+
+        (!trainPoolSel ? '<option value="" selected>— тиждень поза потоками —</option>' : '')+
         poolKeys.map(function(k){
           return '<option value="'+esc(k)+'"'+(k === trainPoolSel ? ' selected' : '')+'>'+esc(trainPoolLbl(k))+'</option>';
         }).join('')+'</select>'
     : '';
-  var newFlowBtn = canEd && !isArch && pool.length
+  var newFlowBtn = canEd && (!trainPoolSel || (!isArch && pool.length))
     ? '<button class="icon-btn" title="Новий потік: заархівувати поточний пул (повернешся до нього селектором) і почати чистий набір. Перед цим — копія таблиці в Drive і експорт рамки" onclick="trainNewFlowModal()">🎯</button>'
     : '';
   // 📆 Період потоку (з…по, будь-які дні) — редагується будь-коли, без
   // захистів по датах; назви й тижні підтягуються самі
   var perNow = trainPoolRef().period;
-  var perBtn = canEd
+  var perBtn = canEd && trainPoolSel
     ? '<button class="icon-btn" title="Період потоку: з якого по який день (редагується будь-коли)" onclick="trainPeriodModal()">📆</button>'
     : '';
   var perLbl = perNow ? '<span class="badge-main" title="Період потоку">'+esc(trainPeriodLbl(perNow))+'</span>' : '';
   var acts = '<div class="info-acts" style="align-items:center;gap:8px">'+perLbl+poolSel+
-    (canEd
+    (canEd && trainPoolSel
       ? '<button class="icon-btn" title="Додати студента в потік" style="background:var(--accent);color:var(--on-accent)" onclick="trainPoolAddModal()">'+svgIcon('personAdd')+'</button>'+
         '<button class="icon-btn" title="Імпорт списку з файлу (.txt/.csv — рядок = студент; .xlsx — розпізнаю ПІБ автоматично)" onclick="$(\'trainImpFile\').click()">'+svgIcon('upload')+'</button>'
       : '')+perBtn+newFlowBtn+flowToggle+'</div>'+
     (canEd ? '<input type="file" id="trainImpFile" accept=".txt,.csv,.xlsx,text/plain" style="display:none" onchange="trainPoolImport(this)">' : '');
-  var archBar = isArch
+  var archBar = trainPoolSel && isArch
     ? '<div class="hint" style="padding:6px 12px;border-bottom:1px solid var(--line)">⏳ '+esc(trainPoolLbl(trainPoolSel))+' (архів) — правки зберігаються тільки сюди, поточний потік не зачіпається</div>'
     : '';
+  // Тиждень поза періодами всіх потоків: потік порожній, підказка що робити
+  var emptyMsg = !trainPoolSel
+    ? 'Тиждень '+esc(trainWeekRangeLbl(trainWeekSel))+' поза періодами потоків. Створи новий потік 🎯, признач період наявному (📆 у ньому) або відкрий потік селектором.'
+    : 'Потік порожній'+(canEd && !isArch ? ' — додай студентів або імпортуй список із файлу' : '');
   var main = '<div class="matrix-panel">'+
     '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">'+(isArch ? '⏳' : '🎓')+' Загал студентів</span>'+
       '<span class="count-pill">'+pool.length+'</span>'+acts+'</div>'+archBar+
     (rows
       ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th style="width:34px">№</th><th>Студент</th><th>Група · '+esc(range)+'</th><th>Станції</th><th>Екзамен</th>'+(canEd?'<th></th>':'')+'</tr>'+rows+'</table></div>'
-      : '<div class="empty">Потік порожній'+(canEd && !isArch ? ' — додай студентів або імпортуй список із файлу' : '')+'</div>')+
+      : '<div class="empty">'+emptyMsg+'</div>')+
   '</div>';
 
   // ── Навчальні групи тижня — бокова панель у стилі «Екіпажів у секторі»:
   // компактно, без складу — №, інструктор, кількість ──
   var gRows = groups.map(function(g, gi){
     var p = S.personnel.find(function(x){ return x.id === g.instructor; });
+    var cs = g.instructor === 'COMMON' ? '👥 Загальна' : '🎓 ' + (p ? p.callsign : g.instructor);
     return '<tr><td class="mono" style="width:44px">гр.'+(gi+1)+'</td>'+
-      '<td>🎓 '+esc(p ? p.callsign : g.instructor)+'</td>'+
+      '<td>'+esc(cs)+'</td>'+
       '<td class="mono" style="text-align:right">'+g.students.length+'</td></tr>';
   }).join('');
   var groupsPanel = '<div class="side-panel">'+
@@ -5398,6 +5443,7 @@ function trainExamHtml() {
     : 'Екзаменні статуси ставить адміністратор курсу.')+'</div>';
 }
 function trainExamCycle(i, field) {
+  if (!trainPoolSel) return; // тиждень поза потоками — нема куди писати
   var wk = trainPoolRef();
   var st = wk.students[+i];
   if (!st) return;
@@ -5650,7 +5696,11 @@ function trainExportRun() {
       '<div class="hint">Аркуші «Розклад» і «Журнал» цієї рамки переписані свіжими даними; попередні тижні лишились у таблиці як бекап. Доступ до файлу роздаєш сам у Google Drive.</div>');
   }, function(e){ toast('❌ '+((e && e.message) || e), true); });
 }
-function trainWeekPick(k) { trainWeekSel = k; renderView(); }
+function trainWeekPick(k) {
+  trainWeekSel = k;
+  trainPoolSel = trainPoolForWeek(k); // потік підтягується під тиждень
+  renderView();
+}
 /* 🗑 Видалити тиждень зі списку: порожній зникає одразу; з розкладом —
    після підтвердження його активності чистяться з аркуша «Розклад»
    (саме тому він і висів «крайнім»). Тиждень із групами, де є студенти,
@@ -5730,6 +5780,7 @@ function trainPlanEditToggle(k) {
 // редагування активностей — одразу модалка цього дня
 function trainDayClick(dateStr) {
   trainWeekSel = trainMondayOf(dateStr);
+  trainPoolSel = trainPoolForWeek(trainWeekSel); // потік слідує за тижнем
   renderView();
   if (canCourseAdmin() && trainPlanEdit) trainDayModal(dateStr);
 }
