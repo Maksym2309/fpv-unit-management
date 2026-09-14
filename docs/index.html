@@ -768,7 +768,7 @@ var DEMO_DATA = {
   getInventoryCaps: { mode:'full', admin:true, email:'pilot@unit.mil',
     statuses:['Робочий','Ремонт','На перевірці','Несправний','Втрачений','Списаний','Резерв'] },
   getPersonnelList: [
-    {id:'OP-001', callsign:'Яструб', name:'Олексій', role:'Командир', status:'Активний', crewId:'CRW-001', crewName:'АЛЬФА', isMain:true, admin:true, canInv:true, canCrew:true, canInfo:true, canInstr:true},
+    {id:'OP-001', callsign:'Яструб', name:'Олексій', role:'Командир', status:'Активний', crewId:'CRW-001', crewName:'АЛЬФА', isMain:true, admin:true, rightInstr:true, canInv:true, canCrew:true, canInfo:true, canInstr:true},
     {id:'OP-002', callsign:'Сокіл',  name:'Іван',    role:'Пілот',    status:'Активний', crewId:'CRW-001', crewName:'АЛЬФА', isMain:false, rightCrew:true, canCrew:true},
     {id:'OP-003', callsign:'Ворон',  name:'Сергій',  role:'Технік',   status:'Відпочинок', crewId:'', crewName:'', isMain:false, rightInv:true, canInv:true},
     {id:'OP-004', callsign:'Грім',   name:'Дмитро',  role:'Штурман',  status:'Активний', crewId:'CRW-002', crewName:'БРАВО', isMain:true, rightInstr:true, canInstr:true}
@@ -5699,9 +5699,9 @@ function trainPeriodModal() {
   var wk = trainPoolRef();
   var per = wk.period || { s: '', e: '' };
   openModal('📆 Період потоку · ' + esc(trainPoolLbl(trainPoolSel)),
-    '<div class="f"><label>Початок (будь-який день, не лише понеділок)</label>'+
+    '<div class="f"><label>Початок курсу (будь-який день)</label>'+
       '<input type="date" id="tpPerS" value="'+esc(per.s || '')+'"></div>'+
-    '<div class="f"><label>Кінець</label>'+
+    '<div class="f"><label>Кінець курсу (будь-який день)</label>'+
       '<input type="date" id="tpPerE" value="'+esc(per.e || '')+'"></div>'+
     '<div class="btn-row">'+
       '<button class="btn btn-green" onclick="trainPeriodSave()">💾 Зберегти</button>'+
@@ -5756,7 +5756,8 @@ function trainDayModal(dateStr) {
 }
 function trainDayModalRender_(dateStr) {
   trainDayModalDate_ = dateStr;
-  var instrs = S.personnel.filter(function(p){ return p.rightInstr || p.rightCourse || p.admin; });
+  // Основний/допоміжні на активність — лише справжні інструктори
+  var instrs = trainCourseInstructors();
   var rows = trainDayDraft.map(function(a, i){
     var helpers = instrs.filter(function(p){ return p.callsign !== a.main; }).map(function(p){
       var on = a.helpers.indexOf(p.callsign) !== -1;
@@ -6050,10 +6051,11 @@ function trainNewFlowModal() {
       'повернутися до нього (подивитись чи поправити) можна будь-коли селектором потоків, поточний набір це не зачіпає. '+
       'Перед архівацією: повна копія таблиці в теку бекапів Drive і експорт поточної рамки в «Навчання — курси». '+
       'Пул очиститься під новий набір; групи, розклад і оцінки минулих тижнів лишаються як були.</div>'+
-    '<div class="f"><label>Період нового потоку (необовʼязково, будь-які дні — потім можна змінити 📆)</label>'+
-      '<div style="display:flex;gap:8px;align-items:center">'+
-        '<input type="date" id="tnfS" style="flex:1"><span class="hint">–</span>'+
-        '<input type="date" id="tnfE" style="flex:1"></div></div>'+
+    '<div class="f"><label>Початок курсу (будь-який день)</label>'+
+      '<input type="date" id="tnfS"></div>'+
+    '<div class="f"><label>Кінець курсу (будь-який день)</label>'+
+      '<input type="date" id="tnfE"></div>'+
+    '<div class="hint" style="margin-bottom:8px">Дати необовʼязкові — потім можна задати чи змінити кнопкою 📆.</div>'+
     '<div class="btn-row">'+
       '<button class="btn btn-green" onclick="trainNewFlowDo()">🎯 Архівувати й почати новий</button>'+
       '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
@@ -6360,12 +6362,14 @@ function trainGrpFilterToggle(k) {
   }
   renderView();
 }
-// Інструктори, присутні на курсі: право «Інструктор»/«Курс-адмін» (чи адмін)
-// і НЕ у відпочинку/переведені. Коли зʼявиться синхронізація секторів —
-// сюди ж додасться фільтр за сектором навчання.
+// Інструктори, присутні на курсі: ЛИШЕ право «Інструктор» і НЕ у
+// відпочинку/переведені. Курс-адмін — не інструктор: він розподіляє
+// людей, редагує розклад/потік/дати, але групу на себе не бере і у
+// виборах інструкторів не показується. Коли зʼявиться синхронізація
+// секторів — сюди ж додасться фільтр за сектором навчання.
 function trainCourseInstructors() {
   return S.personnel.filter(function(p){
-    return (p.rightInstr || p.rightCourse || p.admin) &&
+    return p.rightInstr &&
       ['Відпочинок', 'Переведений', 'Видалений'].indexOf(String(p.status || '').trim()) === -1;
   });
 }
@@ -6462,10 +6466,12 @@ function trainStudentsHtml() {
   var cur = trainMonday();
   if (!trainWeekSel || !/^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel)) trainWeekSel = cur;
   var myId = (S.auth && S.auth.id) || '';
-  // Моя група існує завжди (хоч і порожня) — щоб було куди добирати людей.
-  // «Загальна» (COMMON) — теж завжди: окремий статус, не чиясь група;
+  // Моя група існує завжди (хоч і порожня) — але ЛИШЕ для справжнього
+  // інструктора: курс-адмін керує курсом, а групу на себе не бере.
+  // «Загальна» (COMMON) — завжди: окремий статус, не чиясь група;
   // будь-який інструктор одразу закидає в неї студентів
-  trainRowBy(trainInstructorId());
+  var meP = S.personnel.find(function(p){ return p.id === myId; });
+  if (meP && meP.rightInstr) trainRowBy(myId);
   trainRowBy('COMMON');
   var groups = trainMyGroups();
   // Захист по дню: якщо СЬОГОДНІ у графіку є активності — інструктору
@@ -6594,7 +6600,8 @@ function trainShareModal(o) {
   var wk = trainRowBy(o);
   var sh = wk.share || { t: 'p', ids: [] };
   var myId = (S.auth && S.auth.id) || '';
-  var instrs = S.personnel.filter(function(p){ return (p.rightInstr || p.rightCourse || p.admin) && p.id !== o; });
+  // Співвласники/передача — лише справжні інструктори (курс-адмін групу не бере)
+  var instrs = trainCourseInstructors().filter(function(p){ return p.id !== o; });
   var typeChip = function(t, lbl, hint){
     return '<button class="inv-mode-btn'+(sh.t === t ? ' active' : '')+'" title="'+hint+'" data-o="'+esc(o)+'" data-t="'+t+'"'+
       ' onclick="trainShareSetType(this.dataset.o,this.dataset.t)">'+lbl+'</button>';

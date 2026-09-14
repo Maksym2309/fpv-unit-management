@@ -6083,6 +6083,12 @@ function trainingSaveStudents(instructorId, week, students) {
       sheet.getRange(rowNum, 4, 1, 2).setValues([[out, nowTS()]]);
       return { id: String(sheet.getRange(rowNum, 1).getValue()) };
     }
+    // НОВА група може належати лише справжньому інструктору: курс-адмін
+    // розподіляє людей і керує курсом, але групу на себе не бере
+    if (!isFlow && !isCommon) {
+      const own = readPersonnel().find(p => p.id === instructorId);
+      if (!own || !own.rightInstr) throw new Error('Група може належати лише інструктору (право «Інструктор»)');
+    }
     const id = 'TRN-' + String(maxN + 1).padStart(3, '0');
     sheet.appendRow([id, instructorId, week, out, nowTS()]);
     return { id: id };
@@ -6334,6 +6340,10 @@ function trainingTransferGroup(instructorId, week, newOwner) {
   if (!courseAdmin_() && (!me || me.id !== instructorId)) {
     throw new Error('Передати групу може її власник або адмін курсу');
   }
+  // Групу бере лише справжній інструктор: курс-адмін керує курсом,
+  // але власником групи не буває
+  const tgt = readPersonnel().find(p => p.id === newOwner);
+  if (!tgt || !tgt.rightInstr) throw new Error('Новий власник має мати право «Інструктор»');
   return withScriptLock(function() {
     const sheet = ensureTrainingSheet();
     if (sheet.getLastRow() < 3) throw new Error('Групу не знайдено');
