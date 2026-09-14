@@ -6019,9 +6019,12 @@ function trainingSaveStudents(instructorId, week, students) {
       if (/^\d{4}-\d{2}-\d{2}$/.test(k)) cp[k] = Math.max(0, Math.min(20, parseInt(prog[k], 10) || 0));
     });
     if (isFlow) {
-      // Пул потоку — завжди чистий масив (без {list}-обгортки), інакше
-      // читачі старішого коду бачили порожній потік і затирали його
-      json = JSON.stringify(clean);
+      // Пул потоку: чистий масив або {list, period:{s,e}} — період потоку
+      // («з якого по який день»), обидва читачі розгортають {list}
+      const per = (students && !Array.isArray(students) && students.period) ? students.period : null;
+      const dRe = /^\d{4}-\d{2}-\d{2}$/;
+      const pOk = per && dRe.test(String(per.s || '')) && dRe.test(String(per.e || ''));
+      json = JSON.stringify(pOk ? { list: clean, period: { s: String(per.s), e: String(per.e) } } : clean);
     } else {
       // json збирається всередині лока: share може взятись зі старого рядка
       json = { list: clean, prog: cp, share: share };
@@ -6354,11 +6357,16 @@ function trainingTransferGroup(instructorId, week, newOwner) {
 // очищається під новий набір. Перед цим — повна копія файла таблиці
 // в теку бекапів Drive і експорт поточної рамки в «Навчання — курси».
 // ============================================================
-function trainingNewFlow() {
+function trainingNewFlow(start, end) {
   trainingGuard_();
   if (!courseAdmin_()) throw new Error('Новий потік відкриває адміністратор курсу');
   const tz = Session.getScriptTimeZone();
   const today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  // Період нового потоку (необов'язковий, будь-які дати — без захистів)
+  const dRe = /^\d{4}-\d{2}-\d{2}$/;
+  start = String(start || '').trim(); end = String(end || '').trim();
+  const newPeriod = dRe.test(start) && dRe.test(end)
+    ? { s: start <= end ? start : end, e: start <= end ? end : start } : null;
   // Повний бекап файла таблиці — точка повернення на будь-який випадок
   let backupName = '';
   try {
@@ -6384,19 +6392,22 @@ function trainingNewFlow() {
       if (/^POOL-/.test(wk)) takenKeys[wk] = 1;
     });
     if (!poolRow) throw new Error('Потік порожній — нічого архівувати');
-    let list = [];
+    let list = [], oldPeriod = null;
     try {
       const obj = JSON.parse(poolJson || '[]');
       list = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.list) ? obj.list : []);
+      if (obj && !Array.isArray(obj) && obj.period) oldPeriod = obj.period;
     } catch (e) {}
     if (!list.length) throw new Error('Потік порожній — нічого архівувати');
     // Ключ архіву: POOL-дата; кілька за день — суфікс -2, -3…
     let key = 'POOL-' + today, n = 1;
     while (takenKeys[key]) { n++; key = 'POOL-' + today + '-' + n; }
     const id = 'TRN-' + String(maxN + 1).padStart(3, '0');
-    sheet.appendRow([id, 'FLOW', key, JSON.stringify(list), nowTS()]);
-    sheet.getRange(poolRow, 4, 1, 2).setValues([['[]', nowTS()]]);
-    return { archived: key, students: list.length, backup: backupName };
+    // Період старого потоку їде в архів разом зі списком
+    sheet.appendRow([id, 'FLOW', key, JSON.stringify(oldPeriod ? { list: list, period: oldPeriod } : list), nowTS()]);
+    sheet.getRange(poolRow, 4, 1, 2).setValues([[
+      newPeriod ? JSON.stringify({ list: [], period: newPeriod }) : '[]', nowTS()]]);
+    return { archived: key, students: list.length, backup: backupName, period: newPeriod };
   });
 }
 
