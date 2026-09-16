@@ -6339,11 +6339,14 @@ function trainCellHtml(o, i, key, st, canMark, locked) {
       val = cell.score !== null ? '<b class="mono" style="font-size:13px;color:'+trainStColor(ds)+'">'+cell.score+' / 10</b>' : '';
     }
   } else {
-    // Статусна станція, компактне розкладання без порожніх рядків:
+    // Статусна станція. ДО завершення:
     //   ряд 1 — оцінка (Добре/Достатньо/Погано; «Погано» = Не пройдено
     //           і не дає завершити станцію),
-    //   ряд 2 — компактний селект статусу + ± спроб,
-    //   ряд 3 — «Завершити» + ×N.
+    //   ряд 2 — компактний селект статусу,
+    //   ряд 3 — нормальні кнопки − / рахунок / ＋,
+    //   ряд 4 — «Завершити».
+    // ПІСЛЯ завершення (і в перегляді): зверху чип оцінки, рахунок ×N —
+    // навпроти «Завершити».
     var QUAL = [['добре','Добре','var(--green)'],['достатньо','Достатньо','var(--accent)'],['погано','Погано','var(--red)']];
     var qd = QUAL.find(function(x){ return x[0] === cell.q; });
     if (edit && !cell.fin) {
@@ -6356,24 +6359,28 @@ function trainCellHtml(o, i, key, st, canMark, locked) {
         QUAL.map(function(x){
           return '<option value="'+x[0]+'"'+(cell.q === x[0] ? ' selected' : '')+'>'+x[1]+'</option>';
         }).join('')+'</select>';
-      // Ряд 2 — компактний селект статусу (стрілка впритул) + ± спроб
+      // Ряд 2 — компактний селект статусу (стрілка впритул)
       mid = '<div style="min-height:20px;margin-top:2px;display:flex;align-items:center;gap:3px;flex-wrap:wrap">'+
         '<select class="inv-status-sel train-sel"'+ik+' onchange="trainStatusSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
           TRAIN_STATUSES.map(function(s){
             return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
           }).join('')+'</select>'+
-        ' <button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="+1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,1)">＋</button>'+
-        (cell.cnt ? '<button style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:10px;color:var(--dim)" title="−1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,-1)">−</button>' : '')+
+      '</div>'+
+      // Ряд 3 — рахунок спроб із нормальними кнопками − N ＋
+      '<div style="margin-top:3px;display:flex;align-items:center;gap:6px">'+
+        '<button class="inv-act" title="−1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,-1)">−</button>'+
+        '<span class="mono" title="Пройдених повторень" style="font:700 12px var(--font-data);min-width:14px;text-align:center">'+(cell.cnt || 0)+'</span>'+
+        '<button class="inv-act" title="+1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,1)">＋</button>'+
       '</div>';
       chip = ''; // селект і є статус — не дублюємо
     } else if (qd) {
-      // перегляд або завершена станція: чип оцінки поруч зі статусом
-      chip += ' <span style="display:inline-block;border:1px solid '+qd[2]+';color:'+qd[2]+';padding:1px 6px;font:700 9px var(--font-data);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">'+qd[1]+'</span>';
+      // перегляд або завершена станція: чип оцінки ЗВЕРХУ
+      val = '<span style="display:inline-block;border:1px solid '+qd[2]+';color:'+qd[2]+';padding:1px 6px;font:700 9px var(--font-data);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">'+qd[1]+'</span>';
     }
   }
-  // Лічильник повторень «×N»: накручується навчальними вильотами, ± живе
-  // в ряду селекта. Тільки для статусних клітинок
-  var cntHtml = cell.t === 'status' && cell.cnt
+  // Лічильник повторень «×N» навпроти «Завершити» — коли станція
+  // завершена або в перегляді (в редагуванні він у ряду з − ＋)
+  var cntHtml = cell.t === 'status' && cell.cnt && !(edit && !cell.fin)
     ? ' <span class="mono" title="Пройдених повторень" style="font-size:10px;color:var(--muted)">×'+cell.cnt+'</span>'
     : '';
   var lockWrap = locked && trainMode === 'edit' && canMark;
