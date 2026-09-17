@@ -5169,8 +5169,29 @@ function trainPoolForWeek(weekKey) {
     // випадок, коли потік архівували серед тижня)
     if (weekKey < noPer[i].date) return noPer[i].key;
   }
-  // Поточний потік без періоду — все, що лишилось (після архівів)
-  if (cur && !(cur.period && cur.period.s)) return 'POOL';
+  // Поточний потік без періоду — все, що лишилось (після архівів), АЛЕ
+  // не МИНУЛІ тижні чужого набору: якщо в групах минулого тижня є
+  // студенти і ЖОДЕН із них не з поточного пулу — це інший
+  // (незаархівований) потік, поточних людей туди не підставляємо
+  if (cur && !(cur.period && cur.period.s)) {
+    if (weekKey < trainMonday()) {
+      var curNames = {};
+      (Array.isArray(cur.students) ? cur.students : []).forEach(function(s){
+        if (s && s.n) curNames[String(s.n).trim()] = 1;
+      });
+      var wkHasStudents = false, wkHasMine = false;
+      rows.forEach(function(w){
+        if (w.instructor === 'FLOW' || w.week !== weekKey || !Array.isArray(w.students)) return;
+        w.students.forEach(function(s){
+          if (!s || !s.n) return;
+          wkHasStudents = true;
+          if (curNames[String(s.n).trim()]) wkHasMine = true;
+        });
+      });
+      if (wkHasStudents && !wkHasMine && Object.keys(curNames).length) return '';
+    }
+    return 'POOL';
+  }
   return '';
 }
 // Вибір потоку селектором: відкриваємо його й стрибаємо на його перший тиждень
