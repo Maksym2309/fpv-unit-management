@@ -5160,26 +5160,25 @@ function trainPoolForWeek(weekKey) {
     if (weekKey < noPer[i].date) return noPer[i].key;
   }
   // Поточний потік без періоду — все, що лишилось (після архівів), АЛЕ
-  // не МИНУЛІ тижні чужого набору: якщо в групах минулого тижня є
-  // студенти і ЖОДЕН із них не з поточного пулу — це інший
-  // (незаархівований) потік, поточних людей туди не підставляємо
+  // не тижні чужого набору — МИНУЛІ, ПОТОЧНІ чи МАЙБУТНІ: якщо в групах
+  // тижня є студенти і ЖОДЕН із них не з поточного пулу — це інший потік
+  // (старий незаархівований або наступний, спланований заздалегідь),
+  // поточних людей туди не підставляємо
   if (cur && !(cur.period && cur.period.s)) {
-    if (weekKey < trainMonday()) {
-      var curNames = {};
-      (Array.isArray(cur.students) ? cur.students : []).forEach(function(s){
-        if (s && s.n) curNames[String(s.n).trim()] = 1;
+    var curNames = {};
+    (Array.isArray(cur.students) ? cur.students : []).forEach(function(s){
+      if (s && s.n) curNames[String(s.n).trim()] = 1;
+    });
+    var wkHasStudents = false, wkHasMine = false;
+    rows.forEach(function(w){
+      if (w.instructor === 'FLOW' || w.week !== weekKey || !Array.isArray(w.students)) return;
+      w.students.forEach(function(s){
+        if (!s || !s.n) return;
+        wkHasStudents = true;
+        if (curNames[String(s.n).trim()]) wkHasMine = true;
       });
-      var wkHasStudents = false, wkHasMine = false;
-      rows.forEach(function(w){
-        if (w.instructor === 'FLOW' || w.week !== weekKey || !Array.isArray(w.students)) return;
-        w.students.forEach(function(s){
-          if (!s || !s.n) return;
-          wkHasStudents = true;
-          if (curNames[String(s.n).trim()]) wkHasMine = true;
-        });
-      });
-      if (wkHasStudents && !wkHasMine && Object.keys(curNames).length) return '';
-    }
+    });
+    if (wkHasStudents && !wkHasMine && Object.keys(curNames).length) return '';
     return 'POOL';
   }
   return '';
