@@ -5452,16 +5452,27 @@ function trainExamHtml() {
       '<td>'+wrap(cert, 'cert', certEnabled, 'Клік — сертифікувати / зняти')+'</td>'+
     '</tr>';
   }).join('');
-  return '<div class="matrix-panel" style="margin-top:12px">'+
-    '<div class="matrix-panel-head"><span class="cap">🎓 Екзамен</span>'+
+  // Бейдж потоку: видно, чий екзамен показано (потік слідує за тижнем)
+  var per = trainPoolRef().period;
+  var poolBadge = trainPoolSel
+    ? '<span class="badge-main"'+(trainPoolSel !== 'POOL' ? ' style="background:rgba(255,184,0,.14);color:var(--accent)"' : '')+'>'+
+        esc(trainPoolLbl(trainPoolSel))+(per && trainPoolSel === 'POOL' ? '' : '')+'</span>'
+    : '';
+  var emptyMsg = !trainPoolSel
+    ? 'Тиждень '+esc(trainWeekRangeLbl(trainWeekSel))+' поза періодами потоків — вибери інший тиждень праворуч.'
+    : 'Потік порожній — додай студентів у «Загальний потік»';
+  var main = '<div class="matrix-panel">'+
+    '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">🎓 Екзамен</span>'+poolBadge+
       '<span class="count-pill">'+pool.length+'</span></div>'+
     (rows
       ? '<div style="overflow-x:auto"><table class="crew-table"><tr><th>№</th><th>Студент</th><th>Група</th><th>Допуск</th><th>Іспит</th><th>Сертифікація</th></tr>'+rows+'</table></div>'
-      : '<div class="empty">Потік порожній — додай студентів у «Загальний потік»</div>')+
+      : '<div class="empty">'+emptyMsg+'</div>')+
   '</div>'+
   '<div class="hint" style="margin-top:8px">'+(canEx
     ? 'Клік по чипу: допуск → після допуску іспит → після «Склав» сертифікація.'
     : 'Екзаменні статуси ставить адміністратор курсу.')+'</div>';
+  // Бокова панель тижнів — екзамен теж відповідає вибраному тижню
+  return '<div class="freq-layout" style="margin-top:12px"><div>'+main+'</div><div>'+trainSideHtml(canCourseAdmin())+'</div></div>';
 }
 function trainExamCycle(i, field) {
   if (!trainPoolSel) return; // тиждень поза потоками — нема куди писати
