@@ -5165,7 +5165,9 @@ function trainPoolForWeek(weekKey) {
     .filter(function(a){ return a.date; })
     .sort(function(a, b){ return a.date.localeCompare(b.date); }); // старіші перші
   for (var i = 0; i < noPer.length; i++) {
-    if (endS < noPer[i].date) return noPer[i].key;
+    // Тиждень, що ПОЧАВСЯ до дати архівації — того архіву (покриває і
+    // випадок, коли потік архівували серед тижня)
+    if (weekKey < noPer[i].date) return noPer[i].key;
   }
   // Поточний потік без періоду — все, що лишилось (після архівів)
   if (cur && !(cur.period && cur.period.s)) return 'POOL';
