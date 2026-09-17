@@ -6445,8 +6445,48 @@ function trainingExportCell_(c, key) {
     const ds = st || (sc ? (+c.score >= 7 ? 'Здав' : 'Повтор') : '');
     return [sc, ds].filter(Boolean).join(' · ');
   }
+  // Статусна станція: ✔ = завершено («Не пройдено ✔» — завершено без
+  // проходження), ×N — спроби, оцінка Добре/Достатньо/Погано — після «·»
   const cnt = +c.cnt ? ' ×' + (+c.cnt) : '';
-  return (c.fin ? 'Пройдено ✔' : st) + cnt;
+  const q = c.q === 'добре' ? 'Добре' : c.q === 'достатньо' ? 'Достатньо' : c.q === 'погано' ? 'Погано' : '';
+  const base = c.fin ? (st === 'Не пройдено' ? 'Не пройдено ✔' : 'Пройдено ✔') : st;
+  return base + cnt + (q ? ' · ' + q : '');
+}
+// Розбір клітинки «Курсанти» назад у стан — щоб таблиця працювала в
+// обидва боки. Розуміє наші формати та прості людські значення
+// («Пройдено», «Не здав», «9»). Невпізнане → null (не чіпаємо базу).
+function trainingParseCell_(text, type) {
+  const t = String(text || '').trim();
+  if (!t || /^слухач$/i.test(t)) return null;
+  const fin = t.indexOf('✔') !== -1;
+  const stM = t.match(/Не\s+пройдено|Пройдено|В\s+процесі|Пауза|Повтор|Не\s+здав|Здав/i);
+  const stTxt = stM ? stM[0].replace(/\s+/g, ' ') : '';
+  const norm = s => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '';
+  if (type === 'time') {
+    const tm = t.match(/(\d{1,2}):(\d{2})/);
+    if (!tm && !stM) return null;
+    const out = { fin: fin ? 1 : 0 };
+    if (tm) out.sec = (+tm[1]) * 3600 + (+tm[2]) * 60;
+    if (stM && !fin) out.st = norm(stTxt);
+    return out;
+  }
+  if (type === 'grade') {
+    const sc = t.match(/(?:^|\s)(\d{1,2})(?:\s*\/\s*10)?(?:\s|$|·)/);
+    const out = {};
+    if (sc) out.score = Math.max(0, Math.min(10, +sc[1]));
+    if (stM) out.st = norm(stTxt);
+    if (!sc && !stM) return null;
+    return out;
+  }
+  // статусна
+  const out = { fin: fin ? 1 : 0 };
+  const cnt = t.match(/×\s*(\d+)/);
+  if (cnt) out.cnt = +cnt[1];
+  const qM = t.match(/Добре|Достатньо|Погано/i);
+  if (qM) out.q = qM[0].toLowerCase();
+  if (stM) out.st = norm(stTxt);
+  if (!stM && !fin && !cnt && !qM) return null;
+  return out;
 }
 
 function trainingExportSheet(week) {
@@ -6622,7 +6662,141 @@ function trainingExportSheet(week) {
   // Дефолтний порожній «Аркуш1» більше не потрібен
   const def = ss.getSheetByName('Аркуш1') || ss.getSheetByName('Sheet1');
   if (def && ss.getSheets().length > 1) { try { ss.deleteSheet(def); } catch (e) {} }
-  return { url: ss.getUrl(), name: ss.getName(), frame: lbl };
+  // Знімок записаного (для двобічної синхронізації): що ми поклали в
+  // кожну клітинку «Курсантів» — з ним порівнюються правки в таблиці
+  const snap = { cols: checkCols.map(c => c.key), cells: {} };
+  jRows.forEach(r => {
+    const nm = String(r[1] || '').trim();
+    if (nm) snap.cells[nm] = r.slice(FIX.length).map(String); // дисципліни + екзамен
+  });
+  return { url: ss.getUrl(), name: ss.getName(), frame: lbl, snap: snap };
+}
+
+// ── Двобічна синхронізація рамки з таблицею «Навчання — курси» ──
+// 1) PULL: правки в аркуші «Курсанти» (проти знімка останнього пушу)
+//    застосовуються в базу; конфлікт (змінили і там, і тут) — виграє
+//    застосунок. 2) PUSH: аркуші рамки переписуються свіжою базою,
+//    знімок оновлюється. Нові рядки/студенти в таблиці НЕ підтягуються —
+//    склад груп ведеться в застосунку.
+function trainingSyncSheet(week) {
+  trainingGuard_();
+  if (!courseAdmin_()) throw new Error('Синхронізацію робить адміністратор курсу');
+  week = String(week || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new Error('Некоректний тиждень: ' + week);
+  const tz = Session.getScriptTimeZone();
+  const d0 = new Date(week + 'T00:00:00');
+  const d6 = new Date(d0); d6.setDate(d6.getDate() + 6);
+  const lbl = Utilities.formatDate(d0, tz, 'dd.MM') + '–' + Utilities.formatDate(d6, tz, 'dd.MM') + '.' + Utilities.formatDate(d6, tz, 'yy');
+  const props = PropertiesService.getScriptProperties();
+  let snap = null;
+  try { snap = JSON.parse(props.getProperty('TRSNAP:' + week) || 'null'); } catch (e) {}
+  let pulled = 0;
+  const ssid = props.getProperty(TRAIN_EXPORT_PROP);
+  if (ssid && snap && snap.cols && snap.cells) {
+    try {
+      const ss = SpreadsheetApp.openById(ssid);
+      const js = ss.getSheetByName('Курсанти ' + lbl);
+      if (js && js.getLastRow() >= 3) pulled = trainingPullSheet_(js, week, snap);
+    } catch (e) {}
+  }
+  const res = trainingExportSheet(week);   // push свіжої бази + новий знімок
+  props.setProperty('TRSNAP:' + week, JSON.stringify(res.snap || {}));
+  return { url: res.url, name: res.name, frame: lbl, pulled: pulled };
+}
+
+// Читає «Курсанти» рамки і застосовує правки таблиці в базу.
+// Правка = клітинка відрізняється від знімка; якщо база теж відійшла
+// від знімка (правили в застосунку) — база виграє, клітинку не чіпаємо.
+function trainingPullSheet_(js, week, snap) {
+  const nCols = snap.cols.length;
+  const width = 3 + nCols + 1; // №, Студент, Інструктор + дисципліни + екзамен
+  const vals = js.getRange(3, 1, js.getLastRow() - 2, width).getValues();
+  const trs = ensureTrainingSheet();
+  if (trs.getLastRow() < 3) return 0;
+  const rows = trs.getRange(3, 1, trs.getLastRow() - 2, 4).getValues();
+  // Групи рамки + всі пули (екзаменні стани можуть жити і в архівних)
+  const groupRows = [], poolRows = [];
+  rows.forEach((r, i) => {
+    const ins = String(r[1]).trim(), wk = trainingWeekStr_(r[2]);
+    let obj = null;
+    try { obj = JSON.parse(String(r[3] || '')); } catch (e) {}
+    if (ins === 'FLOW' && /^POOL/.test(wk)) { poolRows.push({ row: i + 3, obj: obj }); return; }
+    if (ins === 'FLOW' || wk !== week) return;
+    const list = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.list) ? obj.list : []);
+    if (list.length) groupRows.push({ row: i + 3, obj: obj, list: list, dirty: false });
+  });
+  const findCell = nm => {
+    for (let gi = 0; gi < groupRows.length; gi++) {
+      const st = groupRows[gi].list.find(s => s && String(s.n).trim() === nm);
+      if (st) return { g: groupRows[gi], st: st };
+    }
+    return null;
+  };
+  const TYPE_DEF = { sim: 'time', intro: 'grade' };
+  let pulled = 0;
+  vals.forEach(r => {
+    const nm = String(r[1] || '').trim();
+    const snapRow = nm && snap.cells[nm];
+    if (!snapRow) return;
+    const hit = findCell(nm);
+    // Дисципліни
+    for (let ci = 0; ci < nCols; ci++) {
+      const tableVal = String(r[3 + ci] == null ? '' : r[3 + ci]).trim();
+      const snapVal = String(snapRow[ci] == null ? '' : snapRow[ci]).trim();
+      if (tableVal === snapVal || !hit) continue;
+      const key = snap.cols[ci];
+      const cur = (hit.st.c || {})[key];
+      const baseVal = String(trainingExportCell_(cur, key)).trim();
+      if (baseVal !== snapVal) continue;            // база теж змінилась — виграє застосунок
+      const type = (cur && cur.t) || TYPE_DEF[key] || 'status';
+      const parsed = trainingParseCell_(tableVal, type);
+      if (parsed === null && tableVal !== '') continue; // не зрозуміли — не чіпаємо
+      hit.st.c = hit.st.c || {};
+      const cell = (typeof cur === 'object' && cur) ? cur : { t: type };
+      if (tableVal === '') {                        // клітинку стерли — чистимо стан
+        cell.st = ''; cell.fin = 0; cell.cnt = 0; cell.q = '';
+        if (type === 'time') cell.sec = 0;
+        if (type === 'grade') cell.score = null;
+      } else {
+        cell.t = cell.t || type;
+        Object.keys(parsed).forEach(k => { cell[k] = parsed[k]; });
+      }
+      hit.st.c[key] = cell;
+      hit.g.dirty = true;
+      pulled++;
+    }
+    // Екзамен (останній стовпець)
+    const exTable = String(r[3 + nCols] == null ? '' : r[3 + nCols]).trim();
+    const exSnap = String(snapRow[nCols] == null ? '' : snapRow[nCols]).trim();
+    if (exTable !== exSnap) {
+      for (let pi = 0; pi < poolRows.length; pi++) {
+        const p = poolRows[pi];
+        const list = Array.isArray(p.obj) ? p.obj : (p.obj && Array.isArray(p.obj.list) ? p.obj.list : []);
+        const st = list.find(s => s && String(s.n).trim() === nm);
+        if (!st) continue;
+        const ex = st.ex || {};
+        const baseEx = ex.cert ? '🏅 Сертифіковано' : (ex.res || ex.adm || '');
+        if (String(baseEx).trim() !== exSnap) break; // база змінилась — виграє
+        if (/сертиф/i.test(exTable)) { st.ex = { adm: 'Допущено', res: 'Склав', cert: true }; }
+        else if (/не\s+склав/i.test(exTable)) { st.ex = { adm: 'Допущено', res: 'Не склав', cert: false }; }
+        else if (/склав/i.test(exTable)) { st.ex = { adm: 'Допущено', res: 'Склав', cert: false }; }
+        else if (/не\s+допущено/i.test(exTable)) { st.ex = { adm: 'Не допущено', res: '', cert: false }; }
+        else if (/допущено/i.test(exTable)) { st.ex = { adm: 'Допущено', res: '', cert: false }; }
+        else if (exTable === '') { delete st.ex; }
+        else break;                                  // не зрозуміли — не чіпаємо
+        trs.getRange(p.row, 4, 1, 2).setValues([[JSON.stringify(p.obj), nowTS()]]);
+        pulled++;
+        break;
+      }
+    }
+  });
+  // Змінені групи — назад у рядки «Навчання»
+  groupRows.forEach(g => {
+    if (!g.dirty) return;
+    const out = Array.isArray(g.obj) ? g.list : g.obj; // list уже в obj за посиланням
+    trs.getRange(g.row, 4, 1, 2).setValues([[JSON.stringify(out), nowTS()]]);
+  });
+  return pulled;
 }
 
 function getAllData(needCaps) {

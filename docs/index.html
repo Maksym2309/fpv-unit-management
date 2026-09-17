@@ -1021,6 +1021,9 @@ var DEMO_DATA = {
   trainingExportSheet: function(){
     throw new Error('В демо-режимі експорт недоступний — підключи базу');
   },
+  trainingSyncSheet: function(){
+    throw new Error('В демо-режимі синхронізація з таблицею недоступна — підключи базу');
+  },
   trainingNewFlow: function(start, end){
     var weeks = DEMO_DATA.getTraining().weeks;
     var pool = weeks.find(function(w){ return w.instructor === 'FLOW' && w.week === 'POOL'; });
@@ -5027,6 +5030,7 @@ function trainLoad() {
       trainState.data = trainNormWeeks(dat);
       if (!trainWeekSel) trainWeekSel = trainState.data.week;
       trainPoolSel = trainPoolForWeek(trainWeekSel); // потік під вибраний тиждень
+      trainAutoSync(); // тихий двобічний синк рамки з таблицею курсів
     }
     if (S.view === 'train') renderView();
   }
@@ -5255,7 +5259,27 @@ function trainFlowHtml() {
     commonGrp[cs] = g.instructor === 'COMMON';
     shareMk[cs] = g.share && g.share.t === 'c' ? ' · заг.'
       : g.share && g.share.t === 's' && (g.share.ids || []).length ? ' +' + g.share.ids.length : '';
-    g.students.forEach(function(st){ if (!studentRow[st.n]) studentRow[st.n] = st; });
+  });
+  // Статуси студента — агреговані по ВСІХ тижнях періоду потоку (новіший
+  // тиждень перекриває), а не лише по вибраному: перемикання тижня більше
+  // не «стирає» оцінки в потоці — видно попередній/наступний потік з даними
+  var aggWeeks = trainPoolRef().period ? trainPoolWeeks_(trainPoolRef().period) : [trainWeekSel];
+  aggWeeks.slice().sort().forEach(function(wkKey){
+    (trainState.data.weeks || []).forEach(function(w){
+      if (w.instructor === 'FLOW' || w.week !== wkKey || !Array.isArray(w.students)) return;
+      w.students.forEach(function(st){
+        if (!st || !st.n) return;
+        var agg = studentRow[st.n] = studentRow[st.n] || { n: st.n, c: {} };
+        agg.c = agg.c || {};
+        TRAIN_CHECK.forEach(function(ch){
+          if (!st.c || !st.c[ch[0]]) return;
+          var cell = trainCellOf(st, ch[0]);
+          if (cell.st || cell.sec || cell.run || cell.cnt || cell.fin || cell.q || cell.score !== null || cell.note) {
+            agg.c[ch[0]] = st.c[ch[0]];
+          }
+        });
+      });
+    });
   });
 
   // Компактний зріз по ВСІХ навчальних станціях: коротка назва + позначка
@@ -5350,18 +5374,15 @@ function trainFlowHtml() {
   var newFlowBtn = canEd && (!trainPoolSel || (!isArch && pool.length))
     ? '<button class="icon-btn" title="Новий потік: заархівувати поточний пул (повернешся до нього селектором) і почати чистий набір. Перед цим — копія таблиці в Drive і експорт рамки" onclick="trainNewFlowModal()">🎯</button>'
     : '';
-  // 📆 Період потоку (з…по, будь-які дні) — редагується будь-коли, без
-  // захистів по датах; назви й тижні підтягуються самі
+  // Період потоку показується бейджем; КНОПКА зміни граничних днів (📆)
+  // живе в боковій панелі «Тижні» — поруч із тим, чим керує
   var perNow = trainPoolRef().period;
-  var perBtn = canEd && trainPoolSel
-    ? '<button class="icon-btn" title="Період потоку: з якого по який день (редагується будь-коли)" onclick="trainPeriodModal()">📆</button>'
-    : '';
   var perLbl = perNow ? '<span class="badge-main" title="Період потоку">'+esc(trainPeriodLbl(perNow))+'</span>' : '';
   var acts = '<div class="info-acts" style="align-items:center;gap:8px">'+perLbl+poolSel+
     (canEd && trainPoolSel
       ? '<button class="icon-btn" title="Додати студента в потік" style="background:var(--accent);color:var(--on-accent)" onclick="trainPoolAddModal()">'+svgIcon('personAdd')+'</button>'+
         '<button class="icon-btn" title="Імпорт списку з файлу (.txt/.csv — рядок = студент; .xlsx — розпізнаю ПІБ автоматично)" onclick="$(\'trainImpFile\').click()">'+svgIcon('upload')+'</button>'
-      : '')+perBtn+newFlowBtn+flowToggle+'</div>'+
+      : '')+newFlowBtn+flowToggle+'</div>'+
     (canEd ? '<input type="file" id="trainImpFile" accept=".txt,.csv,.xlsx,text/plain" style="display:none" onchange="trainPoolImport(this)">' : '');
   var archBar = trainPoolSel && isArch
     ? '<div class="hint" style="padding:6px 12px;border-bottom:1px solid var(--line)">⏳ '+esc(trainPoolLbl(trainPoolSel))+' (архів) — правки зберігаються тільки сюди, поточний потік не зачіпається</div>'
@@ -5680,11 +5701,15 @@ function trainSideHtml(canEd) {
   }).join('') || '<div class="empty" style="padding:8px 0">Днів із заняттями ще немає'+(canEd ? ' — відкрий календар 🗓 і клікни день' : '')+'</div>';
   // Експорт курсу в окрему Google-таблицю (адмін): розклад + журнал рамки
   var expBtn = canCourseAdmin()
-    ? '<button class="icon-btn" title="Google-таблиця курсу: розклад + курсанти цієї рамки (попередні тижні лишаються в ній як бекап)" onclick="trainExportRun()">📄</button>'
+    ? '<button class="icon-btn" title="Таблиця курсу: двобічна синхронізація рамки (правки з таблиці ← → з застосунку) + доступ до файлу" onclick="trainExportRun()">📄</button>'
     : '';
 
+  // 📆 Граничні дні потоку вибраного тижня — редагуються звідси
+  var perEditBtn = canCourseAdmin()
+    ? '<button class="icon-btn" title="Граничні дні потоку: з якого по який день (будь-які дати)" onclick="trainPeriodModal()">📆</button>'
+    : '';
   return '<div class="side-panel">'+
-      '<div class="side-head"><span class="cap">📅 Тижні</span>'+
+      '<div class="side-head"><span class="cap">📅 Тижні</span>'+perEditBtn+
         '<button class="icon-btn'+(trainCalOpen?'':'')+'" title="'+(trainCalOpen?'Згорнути календар':'Розгорнутий перегляд — календар місяця')+'"'+
           (trainCalOpen?' style="background:var(--accent);color:var(--on-accent)"':'')+' onclick="trainCalToggle()">🗓</button>'+
       '</div>'+
@@ -5695,16 +5720,34 @@ function trainSideHtml(canEd) {
       '<div class="side-body" style="padding:8px 10px">'+dayRows+'</div>'+
     '</div>';
 }
-// Експорт рамки: одна таблиця «Навчання — курси», пара аркушів на рамку;
-// повторний експорт переписує лише свою пару, старі тижні лишаються
+/* ── Таблиця «Навчання — курси» працює в ОБИДВА боки ──
+   Кнопка 📄 не «зберігає потік», а синхронізує рамку і дає доступ:
+   спершу правки З таблиці (проти знімка останнього пушу) їдуть у базу,
+   потім свіжа база переписує аркуші рамки. Конфлікт однієї клітинки —
+   виграє застосунок. Тихий авто-синк — при вході в розділ. */
 function trainExportRun() {
-  toast('⏳ Створюю таблицю курсу…');
-  rpc('trainingExportSheet', [trainWeekSel], function(r){
+  toast('⏳ Синхронізую з таблицею курсу…');
+  rpc('trainingSyncSheet', [trainWeekSel], function(r){
+    var pulled = (r && r.pulled) || 0;
     openModal('📄 Таблиця курсу · '+esc((r && r.frame) || ''),
-      '<div class="f"><label>Google-таблиця оновлена</label>'+
+      '<div class="f"><label>Синхронізовано в обидва боки'+(pulled ? ' · з таблиці підтягнуто правок: '+pulled : '')+'</label>'+
         '<a href="'+esc((r && r.url) || '#')+'" target="_blank" rel="noopener" class="btn btn-green" style="text-decoration:none;display:inline-block">🔗 Відкрити «'+esc((r && r.name) || 'таблицю')+'»</a></div>'+
-      '<div class="hint">Аркуші «Розклад» і «Журнал» цієї рамки переписані свіжими даними; попередні тижні лишились у таблиці як бекап. Доступ до файлу роздаєш сам у Google Drive.</div>');
+      '<div class="hint">У таблиці можна працювати як у застосунку: правити статуси, бали, спроби (×N), оцінки й екзамен — зміни підтягнуться сюди при наступній синхронізації. Склад груп і нові студенти ведуться тільки в застосунку. Доступ до файлу роздаєш сам у Google Drive.</div>');
+    if (pulled) { trainState.data = null; trainLoad(); }
   }, function(e){ toast('❌ '+((e && e.message) || e), true); });
+}
+// Тихий авто-синк рамки при вході (адмін курсу, раз на сесію на рамку)
+var _trainSyncDone = {};
+function trainAutoSync() {
+  if (!canCourseAdmin() || !/^\d{4}-\d{2}-\d{2}$/.test(trainWeekSel || '')) return;
+  if (_trainSyncDone[trainWeekSel]) return;
+  _trainSyncDone[trainWeekSel] = 1;
+  rpc('trainingSyncSheet', [trainWeekSel], function(r){
+    if (r && r.pulled) {
+      toast('⟳ З таблиці курсу підтягнуто правок: ' + r.pulled);
+      trainState.data = null; trainLoad();
+    }
+  }, function(){}); // демо/старий деплой — мовчки пропускаємо
 }
 function trainWeekPick(k) {
   trainWeekSel = k;
@@ -5746,9 +5789,12 @@ function trainWeekDelete(k) {
    Редагується будь-коли (✎ біля селектора потоків); назви потоку,
    список тижнів і бейджі старт/фініш підтягуються самі. */
 function trainPeriodModal() {
-  var wk = trainPoolRef();
+  // Тиждень поза потоками → редагуємо період ПОТОЧНОГО потоку, щоб можна
+  // було «дотягнути» його межі на цей тиждень
+  var key = trainPoolSel || 'POOL';
+  var wk = trainFlowRow(key);
   var per = wk.period || { s: '', e: '' };
-  openModal('📆 Період потоку · ' + esc(trainPoolLbl(trainPoolSel)),
+  openModal('📆 Період потоку · ' + esc(trainPoolLbl(key)),
     '<div class="f"><label>Початок курсу (будь-який день)</label>'+
       '<input type="date" id="tpPerS" value="'+esc(per.s || '')+'"></div>'+
     '<div class="f"><label>Кінець курсу (будь-який день)</label>'+
@@ -5765,16 +5811,18 @@ function trainPeriodSave() {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !/^\d{4}-\d{2}-\d{2}$/.test(e)) {
     toast('⚠ Вкажи обидві дати', true); return;
   }
-  var wk = trainPoolRef();
+  var wk = trainFlowRow(trainPoolSel || 'POOL');
   wk.period = s <= e ? { s: s, e: e } : { s: e, e: s };
   trainFlowSave(wk);
+  trainPoolSel = trainPoolForWeek(trainWeekSel); // межі змінились — перевибрати
   closeModal(); renderView();
   toast('📆 Період потоку: ' + trainPeriodLbl(wk.period));
 }
 function trainPeriodClear() {
-  var wk = trainPoolRef();
+  var wk = trainFlowRow(trainPoolSel || 'POOL');
   delete wk.period;
   trainFlowSave(wk);
+  trainPoolSel = trainPoolForWeek(trainWeekSel);
   closeModal(); renderView();
 }
 // Режим редагування активностей (дні, графік) — вмикається ОЛІВЦЕМ біля
