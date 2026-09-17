@@ -5149,13 +5149,25 @@ function trainPoolForWeek(weekKey) {
   };
   var rows = trainState.data ? (trainState.data.weeks || []) : [];
   var cur = rows.find(function(w){ return w.instructor === 'FLOW' && w.week === 'POOL'; });
+  // 1) Точні межі (📆) — головні
   if (hit(cur)) return 'POOL';
   var arch = rows.filter(function(w){ return w.instructor === 'FLOW' && /^POOL-/.test(w.week) && hit(w); });
   if (arch.length) {
     arch.sort(function(a, b){ return b.week.localeCompare(a.week); });
     return arch[0].week;
   }
-  // Поточний потік без періоду — стара поведінка: він скрізь
+  // 2) Фолбек без меж — за датою архівації: архів POOL-дата покриває
+  // тижні, що закінчились ДО цієї дати (між ним і старішим архівом);
+  // поточний потік — усе після найновішого архіву. Точніше — через 📆.
+  var noPer = rows.filter(function(w){
+    return w.instructor === 'FLOW' && /^POOL-/.test(w.week) && !(w.period && w.period.s);
+  }).map(function(w){ return { key: w.week, date: (w.week.match(/^POOL-(\d{4}-\d{2}-\d{2})/) || [])[1] || '' }; })
+    .filter(function(a){ return a.date; })
+    .sort(function(a, b){ return a.date.localeCompare(b.date); }); // старіші перші
+  for (var i = 0; i < noPer.length; i++) {
+    if (endS < noPer[i].date) return noPer[i].key;
+  }
+  // Поточний потік без періоду — все, що лишилось (після архівів)
   if (cur && !(cur.period && cur.period.s)) return 'POOL';
   return '';
 }
