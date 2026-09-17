@@ -6232,10 +6232,13 @@ function trainFmtTime(sec) {
 }
 // Похідний статус: поріг часу і бал перекривають ручний (крім ручного «Не пройдено»)
 function trainCellStatus(cell, key) {
-  // Оцінка «Погано» на статусній станції = «Не пройдено» (і блокує ⚑)
-  if (cell.t === 'status' && cell.q === 'погано') return 'Не пройдено';
-  // 🏁 Станцію завершено вручну — прогрес закритий, статус «Пройдено»
-  if (cell.fin && cell.t !== 'grade') return 'Пройдено';
+  // 🏁 Станцію завершено вручну — прогрес закритий. Статус за замовчуванням
+  // «Пройдено», але статусній станції можна вручну поставити «Не пройдено»
+  // (завершено без проходження); оцінка Добре/Достатньо/Погано — окремо
+  if (cell.fin && cell.t !== 'grade') {
+    if (cell.t === 'status' && cell.st === 'Не пройдено') return 'Не пройдено';
+    return 'Пройдено';
+  }
   if (cell.t === 'time') {
     var goal = TRAIN_TIME_GOAL[key];
     if (goal && trainEffSec(cell) >= goal) return 'Пройдено';
@@ -6329,42 +6332,50 @@ function trainCellHtml(o, i, key, st, canMark, locked) {
       val = cell.score !== null ? '<b class="mono" style="font-size:13px;color:'+trainStColor(ds)+'">'+cell.score+' / 10</b>' : '';
     }
   } else {
-    // Статусна станція. ДО завершення:
-    //   ряд 1 — оцінка (Добре/Достатньо/Погано; «Погано» = Не пройдено
-    //           і не дає завершити станцію),
-    //   ряд 2 — компактний селект статусу,
-    //   ряд 3 — нормальні кнопки − / рахунок / ＋,
-    //   ряд 4 — «Завершити».
-    // ПІСЛЯ завершення (і в перегляді): зверху чип оцінки, рахунок ×N —
-    // навпроти «Завершити».
+    // Статусна станція. ДО завершення (без оцінки):
+    //   ряд 1 — селект статусу (повний список),
+    //   ряд 2 — нормальні кнопки − / рахунок / ＋,
+    //   ряд 3 — «Завершити».
+    // ПІСЛЯ завершення: ряд 1 — оцінка (Добре/Достатньо/Погано),
+    //   ряд 2 — статус «— / Пройдено / Не пройдено» (можна вказати
+    //   «завершено без проходження»), ряд 3 — «Завершити» + ×N.
     var QUAL = [['добре','Добре','var(--green)'],['достатньо','Достатньо','var(--accent)'],['погано','Погано','var(--red)']];
     var qd = QUAL.find(function(x){ return x[0] === cell.q; });
     if (edit && !cell.fin) {
-      // Ряд 1 — оцінка випадаючим списком (колір тексту = вибрана оцінка)
-      var qCol = qd ? qd[2] : 'var(--dim)';
-      val = '<select class="inv-status-sel train-sel" style="color:'+qCol+'"'+
-        ' title="Оцінка станції · «Погано» = Не пройдено, завершити не дасть"'+ik+
-        ' onchange="trainQualSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
-        '<option value=""'+(cell.q ? '' : ' selected')+'>Оцінка…</option>'+
-        QUAL.map(function(x){
-          return '<option value="'+x[0]+'"'+(cell.q === x[0] ? ' selected' : '')+'>'+x[1]+'</option>';
+      // Ряд 1 — селект статусу (стрілка впритул)
+      val = '<select class="inv-status-sel train-sel"'+ik+' onchange="trainStatusSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
+        TRAIN_STATUSES.map(function(s){
+          return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
         }).join('')+'</select>';
-      // Ряд 2 — компактний селект статусу (стрілка впритул)
-      mid = '<div style="min-height:20px;margin-top:2px;display:flex;align-items:center;gap:3px;flex-wrap:wrap">'+
-        '<select class="inv-status-sel train-sel"'+ik+' onchange="trainStatusSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
-          TRAIN_STATUSES.map(function(s){
-            return '<option value="'+esc(s)+'"'+(s === (cell.st || '—') ? ' selected' : '')+'>'+esc(s)+'</option>';
-          }).join('')+'</select>'+
-      '</div>'+
-      // Ряд 3 — рахунок спроб із нормальними кнопками − N ＋
-      '<div style="margin-top:3px;display:flex;align-items:center;gap:6px">'+
+      // Ряд 2 — рахунок спроб із нормальними кнопками − N ＋
+      mid = '<div style="margin-top:3px;display:flex;align-items:center;gap:6px">'+
         '<button class="inv-act" title="−1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,-1)">−</button>'+
         '<span class="mono" title="Пройдених повторень" style="font:700 12px var(--font-data);min-width:14px;text-align:center">'+(cell.cnt || 0)+'</span>'+
         '<button class="inv-act" title="+1 повторення"'+ik+' onclick="trainCntInc(this.dataset.o,this.dataset.i,this.dataset.k,1)">＋</button>'+
       '</div>';
       chip = ''; // селект і є статус — не дублюємо
+    } else if (edit && cell.fin) {
+      // Ряд 1 — оцінка станції (ставиться ПІСЛЯ завершення)
+      var qCol = qd ? qd[2] : 'var(--dim)';
+      val = '<select class="inv-status-sel train-sel" style="color:'+qCol+'"'+
+        ' title="Оцінка завершеної станції"'+ik+
+        ' onchange="trainQualSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
+        '<option value=""'+(cell.q ? '' : ' selected')+'>Оцінка…</option>'+
+        QUAL.map(function(x){
+          return '<option value="'+x[0]+'"'+(cell.q === x[0] ? ' selected' : '')+'>'+x[1]+'</option>';
+        }).join('')+'</select>';
+      // Ряд 2 — статус завершеної станції: Пройдено / Не пройдено
+      // (завершено без проходження — бувало й таке)
+      var finSt = cell.st === 'Не пройдено' ? 'Не пройдено' : 'Пройдено';
+      mid = '<div style="min-height:20px;margin-top:2px;display:flex;align-items:center;gap:3px;flex-wrap:wrap">'+
+        '<select class="inv-status-sel train-sel"'+ik+' onchange="trainStatusSet(this.dataset.o,this.dataset.i,this.dataset.k,this.value)">'+
+          ['Пройдено','Не пройдено'].map(function(s){
+            return '<option value="'+esc(s)+'"'+(s === finSt ? ' selected' : '')+'>'+esc(s)+'</option>';
+          }).join('')+'</select>'+
+      '</div>';
+      chip = ''; // селект і є статус — не дублюємо
     } else if (qd) {
-      // перегляд або завершена станція: чип оцінки ЗВЕРХУ
+      // перегляд: чип оцінки ЗВЕРХУ, статус-чип нижче
       val = '<span style="display:inline-block;border:1px solid '+qd[2]+';color:'+qd[2]+';padding:1px 6px;font:700 9px var(--font-data);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">'+qd[1]+'</span>';
     }
   }
@@ -6381,10 +6392,10 @@ function trainCellHtml(o, i, key, st, canMark, locked) {
     noteLine+
   '</td>';
 }
-// Оцінка статусної станції (з випадаючого списку; порожнє — зняти)
+// Оцінка статусної станції — ставиться ПІСЛЯ завершення (порожнє — зняти)
 function trainQualSet(o, i, key, q) {
   var cell = trainCellRef(o, i, key);
-  if (!cell || cell.fin) return;
+  if (!cell) return;
   cell.q = q || '';
   trainCellSave(o); renderView();
 }
@@ -6811,12 +6822,10 @@ function trainColTimePause(o, key) {
 function trainFinSet(o, i, key) {
   var cell = trainCellRef(o, i, key);
   if (!cell || cell.t === 'grade') return;
-  // Оцінка «Погано» = «Не пройдено» — таку станцію не завершити
-  if (cell.t === 'status' && cell.q === 'погано') {
-    toast('⚠ «Погано» — це Не пройдено, станцію так не завершити', true);
-    return;
-  }
   if (cell.run) { cell.sec = Math.round(trainEffSec(cell)); cell.run = 0; cell.st = 'Пауза'; }
+  // Завершення статусної станції за замовчуванням = «Пройдено»;
+  // «Не пройдено» (завершено без проходження) ставиться селектом після
+  if (cell.t === 'status' && cell.st !== 'Не пройдено') cell.st = 'Пройдено';
   cell.fin = 1;
   trainCellSave(o); renderView();
 }
@@ -6832,8 +6841,8 @@ function trainColFin(o, key) {
   wk.students.forEach(function(st, i){
     var c = trainCellRef(o, i, key);
     if (!c || c.t === 'grade') return;
-    if (c.t === 'status' && c.q === 'погано') return; // «Погано» не завершується
     if (c.run) { c.sec = Math.round(trainEffSec(c)); c.run = 0; c.st = 'Пауза'; }
+    if (c.t === 'status' && c.st !== 'Не пройдено') c.st = 'Пройдено';
     c.fin = 1;
   });
   trainCellSave(o); renderView();
