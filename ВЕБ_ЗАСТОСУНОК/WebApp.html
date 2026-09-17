@@ -5694,14 +5694,17 @@ function trainSideHtml(canEd) {
     ? '<button class="icon-btn" title="Таблиця курсу: двобічна синхронізація рамки (правки з таблиці ← → з застосунку) + доступ до файлу" onclick="trainExportRun()">📄</button>'
     : '';
 
-  // 📆 Граничні дні потоку вибраного тижня — редагуються звідси
-  var perEditBtn = canCourseAdmin()
+  // 📆 Граничні дні потоку — тільки коли ввімкнено олівець (редагування
+  // тижня); кнопки тримаються купкою праворуч
+  var perEditBtn = canCourseAdmin() && trainPlanEdit
     ? '<button class="icon-btn" title="Граничні дні потоку: з якого по який день (будь-які дати)" onclick="trainPeriodModal()">📆</button>'
     : '';
   return '<div class="side-panel">'+
-      '<div class="side-head"><span class="cap">📅 Тижні</span>'+perEditBtn+
-        '<button class="icon-btn'+(trainCalOpen?'':'')+'" title="'+(trainCalOpen?'Згорнути календар':'Розгорнутий перегляд — календар місяця')+'"'+
-          (trainCalOpen?' style="background:var(--accent);color:var(--on-accent)"':'')+' onclick="trainCalToggle()">🗓</button>'+
+      '<div class="side-head"><span class="cap">📅 Тижні</span>'+
+        '<div style="display:flex;align-items:center;gap:6px">'+perEditBtn+
+          '<button class="icon-btn" title="'+(trainCalOpen?'Згорнути календар':'Розгорнутий перегляд — календар місяця')+'"'+
+            (trainCalOpen?' style="background:var(--accent);color:var(--on-accent)"':'')+' onclick="trainCalToggle()">🗓</button>'+
+        '</div>'+
       '</div>'+
       '<div class="side-body" style="padding:8px">'+weekRows+calHtml+'</div>'+
     '</div>'+
