@@ -5402,15 +5402,10 @@ function trainFlowHtml() {
         '<button class="inv-mode-btn'+(trainFlowMode === 'edit' ? ' active' : '')+'" onclick="trainFlowMode=\'edit\';renderView()">Редагування</button>'+
       '</div>'
     : '';
-  // Селектор потоків (коли є кілька) + «Новий потік» — тільки на поточному
-  var poolKeys = trainPoolKeys();
-  if (trainPoolSel && poolKeys.indexOf(trainPoolSel) === -1) poolKeys.push(trainPoolSel);
-  var poolSel = poolKeys.length > 1
-    ? '<select style="width:auto;min-width:0;font-size:11px" onchange="trainPoolPick(this.value)">'+
-        poolKeys.map(function(k){
-          return '<option value="'+esc(k)+'"'+(k === trainPoolSel ? ' selected' : '')+'>'+esc(trainPoolLbl(k))+'</option>';
-        }).join('')+'</select>'
-    : '';
+  // Селектора потоків більше нема — потік вибирається тижнем праворуч;
+  // бейдж лише показує, чий набір на екрані
+  var poolSel = '<span class="badge-main"'+(trainPoolSel !== 'POOL' ? ' style="background:rgba(255,184,0,.14);color:var(--accent)"' : '')+'>'+
+    esc(trainPoolLbl(trainPoolSel))+'</span>';
   var newFlowBtn = canEd && trainPoolSel === 'POOL' && pool.length
     ? '<button class="icon-btn" title="Закрити потік: заархівувати пул (повернешся до нього селектором чи тижнем) і почати чистий. Перед цим — копія таблиці в Drive і експорт рамки" onclick="trainNewFlowModal()">🎯</button>'
     : '';
