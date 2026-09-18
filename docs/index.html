@@ -2924,7 +2924,7 @@ function flightCard(f) {
           '</div>'
         : '')+
       '<input type="text" id="endNote-'+esc(f.id)+'" placeholder="Примітка…" style="margin-top:8px">'+
-      '<button class="btn btn-green" onclick="doEnd(\''+esc(f.id)+'\')">🛬 Приземлився</button>'
+      '<button class="btn btn-green" id="endBtn-'+esc(f.id)+'" onclick="doEnd(\''+esc(f.id)+'\')">🛬 Приземлився</button>'
     : '<div class="hint" style="margin-top:8px">🔒 Тільки автор вильоту може завершити</div>';
 
   var crewObj = crewById(f.crew);
@@ -2958,10 +2958,16 @@ function doEnd(fid) {
     };
     if (!confirm('❗ Позначити борт '+droneId+' як ВТРАЧЕНИЙ? Трекер і SIM теж стануть втраченими.')) return;
   }
+  // Захист від подвійного «Приземлився»: другий клік не шле повторний запит
+  var btn = $('endBtn-'+fid);
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Завершую виліт…'; }
   rpc('endFlight', [fid, ds, note], function(){
     delete fltStatuses[fid];
     toast('🛬 Виліт '+fid+' завершено');
     loadAll();
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '🛬 Приземлився'; }
+    toast('❌ '+((e && e.message) || e), true);
   });
 }
 function renderLogTable() {
@@ -3199,7 +3205,9 @@ function doStartFlight() {
   var busy = busyDrones();
   if (busy[drone] && !confirm('⚠ Борт '+drone+' вже в повітрі ('+busy[drone]+'). Все одно злетіти?')) return;
   var c = crewById(crewId);
-  var btn = $('nfBtn'); btn.disabled = true; btn.textContent = '⏳ Запис…';
+  var btn = $('nfBtn');
+  if (!btn || btn.disabled) return; // захист від подвійного кліку
+  btn.disabled = true; btn.textContent = '⏳ Запис…';
   var fltTrk = $('nfTrk') ? $('nfTrk').value : '';
   var fltSystem = $('nfSystem').value, fltFreq = $('nfFreq').value;
   var isTrain = nfTraining && canInstructor();
@@ -3760,12 +3768,18 @@ function cellClick(freq) {
   openModal('⚫ Чужа частота',
     '<div class="tcard-meta mono" style="margin-bottom:10px">'+freq+' МГц ('+esc(freqToCodeLocal(freq))+')</div>'+
     '<div class="f"><label>Опис</label><input type="text" id="extDesc" placeholder="Напр. Сусідній підрозділ"></div>'+
-    '<button class="btn" onclick="confirmExt('+freq+')">Позначити зайнятою</button>'
+    '<button class="btn" id="extBtn" onclick="confirmExt('+freq+')">Позначити зайнятою</button>'
   );
 }
 function confirmExt(freq) {
+  var btn = $('extBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Позначаю…'; }
   var desc = $('extDesc').value.trim() || 'Чужий підрозділ';
-  rpc('addExternalFreq', [freq, desc], function(){ closeModal(); toast('⚫ '+freq+' МГц позначено'); reloadFreq(); });
+  rpc('addExternalFreq', [freq, desc], function(){ closeModal(); toast('⚫ '+freq+' МГц позначено'); reloadFreq(); },
+    function(e){
+      if (btn) { btn.disabled = false; btn.textContent = 'Позначити зайнятою'; }
+      toast('❌ '+((e && e.message) || e), true);
+    });
 }
 function delExt(freq) {
   rpc('removeExternalFreq', [freq], function(){ toast('✅ '+freq+' МГц звільнено'); reloadFreq(); });
@@ -4940,6 +4954,10 @@ function sectorAssign(opId, secId) {
       renderView(); return;
     }
   }
+  // Захист від повторної зміни під час запису: селект блокується до
+  // відповіді (перерендер по завершенню поверне його живим)
+  var sel = document.querySelector('select[data-op="'+opId+'"]');
+  if (sel) { if (sel.disabled) return; sel.disabled = true; }
   rpc('setPersonSector', [opId, secId], function(){
     p.sector = secId;
     toast('✓ '+p.callsign+' → '+(secId ? sectorName(secId) : 'без сектора'));
@@ -5774,16 +5792,20 @@ function trainSideHtml(canEd) {
    спершу правки З таблиці (проти знімка останнього пушу) їдуть у базу,
    потім свіжа база переписує аркуші рамки. Конфлікт однієї клітинки —
    виграє застосунок. Тихий авто-синк — при вході в розділ. */
+var _trainSyncRun = false; // захист від подвійного 📄 (важкий синк)
 function trainExportRun() {
+  if (_trainSyncRun) { toast('⏳ Синхронізація вже йде…'); return; }
+  _trainSyncRun = true;
   toast('⏳ Синхронізую з таблицею курсу…');
   rpc('trainingSyncSheet', [trainWeekSel], function(r){
+    _trainSyncRun = false;
     var pulled = (r && r.pulled) || 0;
     openModal('📄 Таблиця курсу · '+esc((r && r.frame) || ''),
       '<div class="f"><label>Синхронізовано в обидва боки'+(pulled ? ' · з таблиці підтягнуто правок: '+pulled : '')+'</label>'+
         '<a href="'+esc((r && r.url) || '#')+'" target="_blank" rel="noopener" class="btn btn-green" style="text-decoration:none;display:inline-block">🔗 Відкрити «'+esc((r && r.name) || 'таблицю')+'»</a></div>'+
       '<div class="hint">У таблиці можна працювати як у застосунку: правити статуси, бали, спроби (×N), оцінки й екзамен — зміни підтягнуться сюди при наступній синхронізації. Склад груп і нові студенти ведуться тільки в застосунку. Доступ до файлу роздаєш сам у Google Drive.</div>');
     if (pulled) { trainState.data = null; trainLoad(); }
-  }, function(e){ toast('❌ '+((e && e.message) || e), true); });
+  }, function(e){ _trainSyncRun = false; toast('❌ '+((e && e.message) || e), true); });
 }
 // Тихий авто-синк рамки при вході (адмін курсу, раз на сесію на рамку)
 var _trainSyncDone = {};
@@ -5939,7 +5961,7 @@ function trainDayModalRender_(dateStr) {
     '<datalist id="tdActs">'+TRAIN_ACTS.map(function(a){ return '<option value="'+esc(a)+'">'; }).join('')+'</datalist>'+
     '<div class="btn-row">'+
       '<button class="btn btn-sec" onclick="trainDayDraft.push({act:\'\',start:\'\',end:\'\',main:\'\',helpers:[]});trainDayModalRender_(\''+esc(dateStr)+'\')">＋ Активність</button>'+
-      '<button class="btn btn-green" onclick="trainDaySave(\''+esc(dateStr)+'\')">💾 Зберегти день</button>'+
+      '<button class="btn btn-green" id="tdSaveBtn" onclick="trainDaySave(\''+esc(dateStr)+'\')">💾 Зберегти день</button>'+
       '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
     '</div>');
 }
@@ -5952,6 +5974,8 @@ function trainDayHelperToggle(i, cs) {
 }
 var trainDayModalDate_ = '';
 function trainDaySave(dateStr) {
+  var btn = $('tdSaveBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Зберігаю день…'; }
   var acts = trainDayDraft.filter(function(a){ return a.act; });
   rpc('saveScheduleDay', [dateStr, acts], function(){
     // локальне дзеркало: рядки дня замінюються чернеткою
@@ -5961,7 +5985,11 @@ function trainDaySave(dateStr) {
     });
     toast('💾 День збережено: ' + acts.length + ' активн.');
     closeModal(); renderView();
-  }, function(e){ toast('❌ Не збережено: '+((e && e.message) || e), true); });
+  }, function(e){
+    var b = $('tdSaveBtn');
+    if (b) { b.disabled = false; b.textContent = '💾 Зберегти день'; }
+    toast('❌ Не збережено: '+((e && e.message) || e), true);
+  });
 }
 // Легасі-модалка (старий бекенд без аркуша «Розклад»)
 function trainDayModalLegacy_(dateStr) {
@@ -6205,13 +6233,15 @@ function trainNewFlowModal() {
       '<input type="date" id="tnfE"></div>'+
     '<div class="hint" style="margin-bottom:8px">Дати необовʼязкові — потім можна задати чи змінити кнопкою 📆.</div>'+
     '<div class="btn-row">'+
-      '<button class="btn btn-green" onclick="trainNewFlowDo()">🎯 Архівувати й почати новий</button>'+
+      '<button class="btn btn-green" id="tnfBtn" onclick="trainNewFlowDo()">🎯 Архівувати й почати новий</button>'+
       '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
     '</div>');
 }
 function trainNewFlowDo() {
+  // Подвійний клік = два архіви й два бекапи — блокуємо до відповіді
+  var btn = $('tnfBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Архівую і роблю бекап…'; }
   var s = $('tnfS') ? $('tnfS').value : '', e = $('tnfE') ? $('tnfE').value : '';
-  toast('⏳ Архівую потік і роблю бекап…');
   rpc('trainingNewFlow', [s, e], function(r){
     // локальне дзеркало: рядок POOL стає архівом, новий POOL — порожній
     var wks = trainState.data.weeks;
@@ -6223,7 +6253,11 @@ function trainNewFlowDo() {
     trainPoolSel = 'POOL';
     toast('🎯 Потік заархівовано ('+((r && r.students) || 0)+' студ.)'+(r && r.backup ? ' · копія таблиці в Drive' : ''));
     closeModal(); renderView();
-  }, function(e2){ toast('❌ '+((e2 && e2.message) || e2), true); });
+  }, function(e2){
+    var b = $('tnfBtn');
+    if (b) { b.disabled = false; b.textContent = '🎯 Архівувати й почати новий'; }
+    toast('❌ '+((e2 && e2.message) || e2), true);
+  });
 }
 // Активності дня живуть у рамці СВОГО календарного тижня — тому окремі
 // розкидані дні зберігаються коректно, кожен у своєму FLOW-рядку
@@ -6794,7 +6828,7 @@ function trainShareModal(o) {
             '<option value="">— вибери інструктора —</option>'+
             instrs.map(function(p){ return '<option value="'+esc(p.id)+'">'+esc(p.callsign)+'</option>'; }).join('')+
           '</select>'+
-          '<button class="btn btn-sec" data-o="'+esc(o)+'" onclick="trainTransferDo(this.dataset.o)">→ Передати</button>'+
+          '<button class="btn btn-sec" id="tsTrBtn" data-o="'+esc(o)+'" onclick="trainTransferDo(this.dataset.o)">→ Передати</button>'+
         '</div></div>'
     : '';
   var p = S.personnel.find(function(x){ return x.id === o; });
@@ -6817,7 +6851,7 @@ function trainShareModal(o) {
         typeChip('s', 'Міжосібна', 'Вибрані інструктори працюють разом, оцінки спільні')+
       '</div></div>'+idRows+transfer+
       '<div class="btn-row" style="margin-top:10px">'+
-        '<button class="btn btn-green" data-o="'+esc(o)+'" onclick="trainShareSave(this.dataset.o)">💾 Зберегти</button>'+
+        '<button class="btn btn-green" id="tsSaveBtn" data-o="'+esc(o)+'" onclick="trainShareSave(this.dataset.o)">💾 Зберегти</button>'+
         '<button class="btn btn-sec" onclick="closeModal()">Скасувати</button>'+
       '</div>'+
       '<div class="hint" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">Потрібна спільна робота всіх інструкторів? Для цього є окрема картка «👥 Загальна група» — закидай студентів одразу в неї.</div>';
@@ -6867,24 +6901,34 @@ function trainShareToggleId(o, id) {
   if (k === -1) wk.share.ids.push(id); else wk.share.ids.splice(k, 1);
 }
 function trainShareSave(o) {
+  var btn = $('tsSaveBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Зберігаю…'; }
   var wk = trainRowBy(o);
   var sh = { t: (wk.share && wk.share.t) || 'p', ids: (wk.share && wk.share.ids) || [] };
   rpc('trainingShareGroup', [o, wk.week, sh], function(){
     toast('👥 Спільність збережено: ' + (sh.t === 'c' ? 'загальна' : sh.t === 's' ? 'міжосібна' : 'приватна'));
     closeModal(); renderView();
-  }, function(e){ toast('❌ '+((e && e.message) || e), true); });
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Зберегти'; }
+    toast('❌ '+((e && e.message) || e), true);
+  });
 }
 function trainTransferDo(o) {
   var to = $('tsTransferTo') ? $('tsTransferTo').value : '';
   if (!to) { toast('⚠ Вибери, кому передати', true); return; }
   var p = S.personnel.find(function(x){ return x.id === to; });
   if (!confirm('Передати групу разом з оцінками інструктору «'+(p ? p.callsign : to)+'»?')) return;
+  var btn = $('tsTrBtn');
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = '⏳ Передаю групу…'; }
   var wk = trainRowBy(o);
   rpc('trainingTransferGroup', [o, wk.week, to], function(){
     wk.instructor = to;
     toast('→ Групу передано: ' + (p ? p.callsign : to));
     closeModal(); renderView();
-  }, function(e){ toast('❌ '+((e && e.message) || e), true); });
+  }, function(e){
+    if (btn) { btn.disabled = false; btn.textContent = '→ Передати'; }
+    toast('❌ '+((e && e.message) || e), true);
+  });
 }
 
 /* ── Дії клітинок ── */
@@ -10154,12 +10198,22 @@ function doSaveCrew() {
     }, function(e){ unlock(); toast('❌ ' + e.message, true); });
   }
 }
+var _closeCrewBusy = {};
 function doCloseCrew(crewId) {
+  if (_closeCrewBusy[crewId]) return; // захист від подвійного кліку
   var act = activeFlights().filter(function(f){ return f.crew===crewId; });
   if (act.length) { toast('⚠ Спочатку заверши вильоти: '+act.map(function(f){return f.id;}).join(', '), true); return; }
   var cr = crewById(crewId);
   if (!confirm('🔴 Завершити екіпаж '+((cr && cr.crewName) ? cr.crewName+' ('+crewId+')' : crewId)+'?\nЗ\'єднання стане неактивним, люди й інвентар звільняться.')) return;
-  rpc('endFlight', [crewId, [], 'Екіпаж завершено'], function(){ toast('🔴 '+crewId+' завершено'); loadAll(); });
+  _closeCrewBusy[crewId] = true;
+  toast('⏳ Завершую екіпаж…');
+  rpc('endFlight', [crewId, [], 'Екіпаж завершено'], function(){
+    delete _closeCrewBusy[crewId];
+    toast('🔴 '+crewId+' завершено'); loadAll();
+  }, function(e){
+    delete _closeCrewBusy[crewId];
+    toast('❌ '+((e && e.message) || e), true);
+  });
 }
 
 // ── Перейменування екіпажу (адмін, режим редагування) ──
