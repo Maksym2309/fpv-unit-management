@@ -8835,7 +8835,7 @@ function openLostModal(id) {
     '<div class="f"><label>📍 Координати</label><input type="text" id="lmCoords" placeholder="напр. 48.123, 35.456"></div>'+
     '<div class="f"><label>🗺 Посилання з трекера</label><input type="text" id="lmLink" placeholder="необов\'язково"></div>'+
     '<div class="f"><label>📋 Обставини втрати</label><input type="text" id="lmCirc" placeholder="необов\'язково"></div>'+
-    (trkOpts ? '<div class="f"><label>📡 Трекер, що загубився разом (SIM теж стане втраченою)</label>'+
+    (trkOpts ? '<div class="f"><label>📡 Втрачений трекер</label>'+
       '<select id="lmTrk"><option value=""'+(bound ? '' : ' selected')+'>— без трекера —</option>'+trkOpts+'</select></div>' : '')+
     '<div class="hint">⚠️ Прив\'язаний трекер і його SIM стануть втраченими автоматично; вибраний вручну — теж</div>'+
     '<button class="btn btn-red" id="lmBtn" onclick="doMarkLost(\''+esc(id)+'\')" style="margin-top:8px">❌ Підтвердити втрату</button>'
