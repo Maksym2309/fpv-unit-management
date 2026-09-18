@@ -1043,6 +1043,12 @@ function updateItemStatusById(d) {
         }
       });
     }
+    // Явно вказаний трекер, що загубився разом із бортом (навіть якщо не
+    // був прив'язаний) — теж Втрачений разом зі своєю SIM
+    if (d.lostTracker) {
+      try { cascadeLoseTracker(String(d.lostTracker).trim(), ''); }
+      catch (e) { Logger.log('Каскад втрати вказаного трекера: ' + e); }
+    }
   }
 
   // Знайдений після втрати — архів нотатки, очистити попередню
@@ -3673,7 +3679,11 @@ function updateSimStatus(simId, status) {
 }
 
 // Оновити статус трекера
-function updateSinotrackStatus(id, status, note) {
+// Зміна статусу трекера. При «Втрачений» каскад працює в обидва боки:
+// SIM трекера завжди стає Втраченою (раніше UI це обіцяв, а бекенд ні),
+// а якщо передано droneId — втрачається і вказаний борт (зі своєю
+// нотаткою втрати lostData), включно з його власним каскадом.
+function updateSinotrackStatus(id, status, note, droneId, lostData) {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getSheet(ss, 'Sinotrack');
   if (!sheet) throw new Error('Аркуш Sinotrack не знайдено');
@@ -3684,7 +3694,23 @@ function updateSinotrackStatus(id, status, note) {
   sheet.getRange(row, 3).setValue(status);
   if (note) { sheet.getRange(row, 8).setValue(note); touchSinotrackNote(sheet, row); }
   touchSinotrack(sheet, row);
-  return { id, status };
+  const cascade = [];
+  if (status === 'Втрачений') {
+    // SIM трекера — Втрачена (cascadeLoseTracker пропустить сам трекер,
+    // бо статус уже виставлено, і догубить лише SIM)
+    try { cascade.push.apply(cascade, cascadeLoseTracker(id, note || '')); }
+    catch (e) { Logger.log('Каскад SIM трекера ' + id + ': ' + e); }
+    // Вказаний борт — теж Втрачений, зі своїм каскадом і нотаткою
+    if (droneId) {
+      try {
+        updateItemStatusById({ id: String(droneId).trim(), status: 'Втрачений', lostData: lostData || {} });
+        cascade.push('Борт ' + String(droneId).trim() + ' → Втрачений');
+      } catch (e) {
+        cascade.push('⚠ Борт ' + String(droneId).trim() + ': ' + e.message);
+      }
+    }
+  }
+  return { id, status, cascade };
 }
 
 // ============================================================
