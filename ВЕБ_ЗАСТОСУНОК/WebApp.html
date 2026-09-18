@@ -5159,11 +5159,14 @@ function trainPoolForWeek(weekKey) {
     // випадок, коли потік архівували серед тижня)
     if (weekKey < noPer[i].date) return noPer[i].key;
   }
-  // Поточний потік без періоду — все, що лишилось (після архівів), АЛЕ
-  // не тижні чужого набору — МИНУЛІ, ПОТОЧНІ чи МАЙБУТНІ: якщо в групах
-  // тижня є студенти і ЖОДЕН із них не з поточного пулу — це інший потік
-  // (старий незаархівований або наступний, спланований заздалегідь),
-  // поточних людей туди не підставляємо
+  // Поточний потік без періоду (📆 не задано) — свій тиждень визначається
+  // фактами, а не «скрізь»:
+  //   · у групах тижня є хтось із поточного пулу → тиждень поточного потоку;
+  //   · у групах тижня лише чужі студенти → інший потік (старий
+  //     незаархівований чи наступний), поточних не підставляємо;
+  //   · тиждень порожній (зареєстрований, але без груп) → поточному
+  //     належить ЛИШЕ поточний календарний тиждень; минулі й майбутні
+  //     порожні не успадковують поточний список.
   if (cur && !(cur.period && cur.period.s)) {
     var curNames = {};
     (Array.isArray(cur.students) ? cur.students : []).forEach(function(s){
@@ -5178,8 +5181,9 @@ function trainPoolForWeek(weekKey) {
         if (curNames[String(s.n).trim()]) wkHasMine = true;
       });
     });
-    if (wkHasStudents && !wkHasMine && Object.keys(curNames).length) return '';
-    return 'POOL';
+    if (wkHasMine || !Object.keys(curNames).length) return 'POOL';
+    if (wkHasStudents) return '';
+    return weekKey === trainMonday() ? 'POOL' : '';
   }
   return '';
 }
