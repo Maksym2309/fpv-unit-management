@@ -5994,8 +5994,9 @@ function trainingSaveStudents(instructorId, week, students) {
   instructorId = String(instructorId || '').trim();
   week = String(week || '').trim();
   const isFlow = instructorId === 'FLOW';
-  // Пул: поточний 'POOL' або архівний потік 'POOL-yyyy-MM-dd(-n)'
-  const isPool = isFlow && /^POOL(-\d{4}-\d{2}-\d{2}(-\d+)?)?$/.test(week);
+  // Пул: поточний 'POOL', архівний 'POOL-yyyy-MM-dd(-n)' або тижневий
+  // 'POOL-Wyyyy-MM-dd' (набір, заведений прямо на своєму тижні)
+  const isPool = isFlow && /^POOL(-W?\d{4}-\d{2}-\d{2}(-\d+)?)?$/.test(week);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week) && !isPool) {
     throw new Error('Некоректний тиждень: ' + week);
   }
@@ -6591,8 +6592,9 @@ function trainingExportSheet(week) {
       const ins = String(r[1]).trim(), wk = trainingWeekStr_(r[2]);
       let obj = null;
       try { obj = JSON.parse(String(r[3] || '')); } catch (e) {}
-      if (ins === 'FLOW' && wk === 'POOL') {
-        // Пул буває і масивом, і {list:…} — екзаменні стани беремо з обох
+      if (ins === 'FLOW' && /^POOL/.test(wk)) {
+        // Екзаменні стани — з УСІХ пулів (поточний, архівні, тижневі);
+        // пул буває і масивом, і {list:…}
         const pl = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.list) ? obj.list : []);
         pl.forEach(s => { if (s && s.n && s.ex) poolEx[s.n] = s.ex; });
         return;

@@ -5156,27 +5156,22 @@ function trainPoolForWeek(weekKey) {
     arch.sort(function(a, b){ return b.week.localeCompare(a.week); });
     return arch[0].week;
   }
-  // 2) Фолбек без меж — за датою архівації: архів POOL-дата покриває
-  // тижні, що закінчились ДО цієї дати (між ним і старішим архівом);
-  // поточний потік — усе після найновішого архіву. Точніше — через 📆.
+  // 2) Власний пул тижня (POOL-W<понеділок>) — набір, заведений прямо на
+  // цьому тижні без жодних архівацій: запис у таблиці за своєю датою
+  var wkPool = 'POOL-W' + weekKey;
+  if (rows.some(function(w){ return w.instructor === 'FLOW' && w.week === wkPool; })) return wkPool;
+  // 3) Архіви без меж — за датою архівації: тиждень, що почався до дати
+  // архіву, належить тому архіву (між ним і старішим)
   var noPer = rows.filter(function(w){
-    return w.instructor === 'FLOW' && /^POOL-/.test(w.week) && !(w.period && w.period.s);
+    return w.instructor === 'FLOW' && /^POOL-\d/.test(w.week) && !(w.period && w.period.s);
   }).map(function(w){ return { key: w.week, date: (w.week.match(/^POOL-(\d{4}-\d{2}-\d{2})/) || [])[1] || '' }; })
     .filter(function(a){ return a.date; })
     .sort(function(a, b){ return a.date.localeCompare(b.date); }); // старіші перші
   for (var i = 0; i < noPer.length; i++) {
-    // Тиждень, що ПОЧАВСЯ до дати архівації — того архіву (покриває і
-    // випадок, коли потік архівували серед тижня)
     if (weekKey < noPer[i].date) return noPer[i].key;
   }
-  // Поточний потік без періоду (📆 не задано) — свій тиждень визначається
-  // фактами, а не «скрізь»:
-  //   · у групах тижня є хтось із поточного пулу → тиждень поточного потоку;
-  //   · у групах тижня лише чужі студенти → інший потік (старий
-  //     незаархівований чи наступний), поточних не підставляємо;
-  //   · тиждень порожній (зареєстрований, але без груп) → поточному
-  //     належить ЛИШЕ поточний календарний тиждень; минулі й майбутні
-  //     порожні не успадковують поточний список.
+  // 4) Поточний пул без меж — лише за фактами: його студенти в групах
+  // тижня, або порожній тиждень = поточний календарний
   if (cur && !(cur.period && cur.period.s)) {
     var curNames = {};
     (Array.isArray(cur.students) ? cur.students : []).forEach(function(s){
@@ -5191,11 +5186,13 @@ function trainPoolForWeek(weekKey) {
         if (curNames[String(s.n).trim()]) wkHasMine = true;
       });
     });
-    if (wkHasMine || !Object.keys(curNames).length) return 'POOL';
-    if (wkHasStudents) return '';
-    return weekKey === trainMonday() ? 'POOL' : '';
+    if (wkHasMine) return 'POOL';
+    if (!wkHasStudents && weekKey === trainMonday()) return 'POOL';
+    if (!Object.keys(curNames).length && weekKey === trainMonday()) return 'POOL';
   }
-  return '';
+  // 5) Свій (поки порожній) пул цього тижня — запис створиться при
+  // першому студентові; планувати наступний потік можна без архівацій
+  return wkPool;
 }
 // Вибір потоку селектором: відкриваємо його й стрибаємо на його перший тиждень
 function trainPoolPick(k) {
@@ -5214,9 +5211,13 @@ function trainPoolRef() {
 function trainPoolKeys() {
   var arch = [];
   (trainState.data.weeks || []).forEach(function(w){
-    if (w.instructor === 'FLOW' && /^POOL-/.test(w.week) && arch.indexOf(w.week) === -1) arch.push(w.week);
+    if (w.instructor !== 'FLOW' || !/^POOL-/.test(w.week) || arch.indexOf(w.week) !== -1) return;
+    // Порожні тижневі пули не захаращують селектор — вони й так
+    // відкриваються вибором свого тижня
+    if (/^POOL-W/.test(w.week) && !(Array.isArray(w.students) && w.students.length)) return;
+    arch.push(w.week);
   });
-  arch.sort().reverse(); // новіші архіви зверху
+  arch.sort().reverse(); // новіші зверху
   return ['POOL'].concat(arch);
 }
 function trainPeriodLbl(per) {
@@ -5229,6 +5230,8 @@ function trainPoolLbl(k) {
   var per = row && row.period ? trainPeriodLbl(row.period) : '';
   if (k === 'POOL') return per ? 'Поточний · ' + per : 'Поточний потік';
   if (per) return 'Потік ' + per;
+  var mw = k.match(/^POOL-W(\d{4}-\d{2}-\d{2})$/);
+  if (mw) return 'Потік тижня ' + trainWeekRangeLbl(mw[1]);
   var m = k.match(/^POOL-(\d{4})-(\d{2})-(\d{2})(?:-(\d+))?$/);
   return m ? 'Потік до ' + m[3] + '.' + m[2] + '.' + m[1] + (m[4] ? ' (' + m[4] + ')' : '') : k;
 }
@@ -5399,18 +5402,17 @@ function trainFlowHtml() {
         '<button class="inv-mode-btn'+(trainFlowMode === 'edit' ? ' active' : '')+'" onclick="trainFlowMode=\'edit\';renderView()">Редагування</button>'+
       '</div>'
     : '';
-  // Селектор потоків (коли є архіви) + «Новий потік» — тільки на поточному.
-  // Порожній вибір ('') = вибраний тиждень поза періодами всіх потоків
+  // Селектор потоків (коли є кілька) + «Новий потік» — тільки на поточному
   var poolKeys = trainPoolKeys();
-  var poolSel = poolKeys.length > 1 || !trainPoolSel
+  if (trainPoolSel && poolKeys.indexOf(trainPoolSel) === -1) poolKeys.push(trainPoolSel);
+  var poolSel = poolKeys.length > 1
     ? '<select style="width:auto;min-width:0;font-size:11px" onchange="trainPoolPick(this.value)">'+
-        (!trainPoolSel ? '<option value="" selected>— тиждень поза потоками —</option>' : '')+
         poolKeys.map(function(k){
           return '<option value="'+esc(k)+'"'+(k === trainPoolSel ? ' selected' : '')+'>'+esc(trainPoolLbl(k))+'</option>';
         }).join('')+'</select>'
     : '';
-  var newFlowBtn = canEd && (!trainPoolSel || (!isArch && pool.length))
-    ? '<button class="icon-btn" title="Новий потік: заархівувати поточний пул (повернешся до нього селектором) і почати чистий набір. Перед цим — копія таблиці в Drive і експорт рамки" onclick="trainNewFlowModal()">🎯</button>'
+  var newFlowBtn = canEd && trainPoolSel === 'POOL' && pool.length
+    ? '<button class="icon-btn" title="Закрити потік: заархівувати пул (повернешся до нього селектором чи тижнем) і почати чистий. Перед цим — копія таблиці в Drive і експорт рамки" onclick="trainNewFlowModal()">🎯</button>'
     : '';
   // Період потоку показується бейджем; КНОПКА зміни граничних днів (📆)
   // живе в боковій панелі «Тижні» — поруч із тим, чим керує
@@ -5422,13 +5424,13 @@ function trainFlowHtml() {
         '<button class="icon-btn" title="Імпорт списку з файлу (.txt/.csv — рядок = студент; .xlsx — розпізнаю ПІБ автоматично)" onclick="$(\'trainImpFile\').click()">'+svgIcon('upload')+'</button>'
       : '')+newFlowBtn+flowToggle+'</div>'+
     (canEd ? '<input type="file" id="trainImpFile" accept=".txt,.csv,.xlsx,text/plain" style="display:none" onchange="trainPoolImport(this)">' : '');
-  var archBar = trainPoolSel && isArch
-    ? '<div class="hint" style="padding:6px 12px;border-bottom:1px solid var(--line)">⏳ '+esc(trainPoolLbl(trainPoolSel))+' (архів) — правки зберігаються тільки сюди, поточний потік не зачіпається</div>'
-    : '';
-  // Тиждень поза періодами всіх потоків: потік порожній, підказка що робити
-  var emptyMsg = !trainPoolSel
-    ? 'Тиждень '+esc(trainWeekRangeLbl(trainWeekSel))+' поза періодами потоків. Створи новий потік 🎯, признач період наявному (📆 у ньому) або відкрий потік селектором.'
-    : 'Потік порожній'+(canEd && !isArch ? ' — додай студентів або імпортуй список із файлу' : '');
+  var isWeekPool = /^POOL-W/.test(trainPoolSel);
+  var archBar = isWeekPool
+    ? '<div class="hint" style="padding:6px 12px;border-bottom:1px solid var(--line)">🗂 '+esc(trainPoolLbl(trainPoolSel))+' — окремий набір цього тижня, інші потоки не зачіпаються</div>'
+    : (trainPoolSel && isArch
+      ? '<div class="hint" style="padding:6px 12px;border-bottom:1px solid var(--line)">⏳ '+esc(trainPoolLbl(trainPoolSel))+' (архів) — правки зберігаються тільки сюди, поточний потік не зачіпається</div>'
+      : '');
+  var emptyMsg = 'Потік порожній'+(canEd ? ' — додай студентів або імпортуй список із файлу' : '');
   var main = '<div class="matrix-panel">'+
     '<div class="matrix-panel-head" style="gap:8px;flex-wrap:wrap"><span class="cap">'+(isArch ? '⏳' : '🎓')+' Загал студентів</span>'+
       '<span class="count-pill">'+pool.length+'</span>'+acts+'</div>'+archBar+
